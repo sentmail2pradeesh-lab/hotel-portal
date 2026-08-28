@@ -16,7 +16,8 @@ import {
   CheckCircle2, 
   BedDouble,
   Upload,
-  FileSignature
+  FileSignature,
+  Clock
 } from 'lucide-react';
 
 export const SettingsView = () => {
@@ -25,6 +26,7 @@ export const SettingsView = () => {
     updateUserProfile,
     updateFirmLogo,
     updateESignature,
+    updateSessionTimeout,
     roomsList, 
     addCustomRoom, 
     removeCustomRoom,
@@ -35,6 +37,7 @@ export const SettingsView = () => {
 
   // Active section tab inside Settings: 'analytics' | 'rooms' | 'profile'
   const [section, setSection] = useState('analytics');
+  const [timeoutSuccess, setTimeoutSuccess] = useState('');
 
   // Room Management State
   const [newRoomNumber, setNewRoomNumber] = useState('');
@@ -674,6 +677,49 @@ export const SettingsView = () => {
                 Save Profile Settings
               </button>
             </form>
+          </div>
+
+          {/* Property Session Timeout & Security Controls */}
+          <div className="card-container" style={{ padding: '28px' }}>
+            <h2 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text-main)', marginBottom: '6px', fontFamily: 'var(--font-serif)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Clock size={20} color="#d97706" /> Session Timeout & Security Controls
+            </h2>
+            <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '20px' }}>
+              Configure automatic session inactivity timeout for this property account. When reloading the page, managers are automatically logged out and must re-authenticate, landing directly on the homepage (Overview).
+            </p>
+
+            {timeoutSuccess && (
+              <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', color: '#047857', padding: '12px 16px', borderRadius: 'var(--radius-md)', fontSize: '13px', fontWeight: 700, marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <CheckCircle2 size={16} /> {timeoutSuccess}
+              </div>
+            )}
+
+            <div className="form-group">
+              <label className="form-label">Inactivity Session Timeout Duration</label>
+              <select
+                className="form-input"
+                style={{ width: '100%', cursor: 'pointer', fontWeight: 600 }}
+                value={currentUser?.sessionTimeoutMinutes || 15}
+                onChange={(e) => {
+                  const val = parseInt(e.target.value, 10);
+                  updateSessionTimeout(val);
+                  setTimeoutSuccess(`Session timeout updated to ${val} minutes of inactivity for ${currentUser?.firmName || 'Property'}.`);
+                  setTimeout(() => setTimeoutSuccess(''), 4000);
+                }}
+              >
+                <option value={5}>5 Minutes Inactivity</option>
+                <option value={10}>10 Minutes Inactivity</option>
+                <option value={15}>15 Minutes Inactivity (Default)</option>
+                <option value={30}>30 Minutes Inactivity</option>
+                <option value={60}>60 Minutes Inactivity (1 Hour)</option>
+              </select>
+            </div>
+
+            <div style={{ background: '#f8fafc', padding: '14px 16px', borderRadius: 'var(--radius-md)', border: '1px solid #e2e8f0', fontSize: '12px', color: 'var(--text-secondary)', marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <div style={{ fontWeight: 700, color: 'var(--text-main)' }}>🔒 Security Policy Active:</div>
+              <div>• <strong>Browser Reload:</strong> Refreshing or reloading the page invalidates active session for security and prompts sign in.</div>
+              <div>• <strong>Login Navigation:</strong> Upon successful login, portal always opens directly on the Overview homepage.</div>
+            </div>
           </div>
 
         </div>

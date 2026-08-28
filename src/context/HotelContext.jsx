@@ -69,18 +69,15 @@ export const HotelProvider = ({ children }) => {
     return [];
   });
 
-  // Active Logged-in Property Account State
-  const [currentUser, setCurrentUser] = useState(() => {
-    const saved = localStorage.getItem('frontdesk_active_user');
-    if (saved) {
-      try { return JSON.parse(saved); } catch (e) {}
-    }
-    const legacyUser = localStorage.getItem('frontdesk_user');
-    if (legacyUser) {
-      try { return JSON.parse(legacyUser); } catch (e) {}
-    }
-    return null;
-  });
+  // Active Logged-in Property Account State (In-Memory Session: Reloading invalidates session)
+  const [currentUser, setCurrentUser] = useState(null);
+  const [authNotice, setAuthNotice] = useState('');
+
+  // Clear any legacy persistent login key on app start to ensure reload requires re-login
+  useEffect(() => {
+    localStorage.removeItem('frontdesk_active_user');
+    localStorage.removeItem('frontdesk_user');
+  }, []);
 
   const isAuthenticated = Boolean(currentUser);
 
@@ -155,16 +152,36 @@ export const HotelProvider = ({ children }) => {
     }
   }, [currentUser?.firmId, currentUser?.firmName]);
 
-  // Sync active user to local storage
+  // Session Inactivity Timeout Tracker for active property
+  const [lastActivity, setLastActivity] = useState(Date.now());
+
   useEffect(() => {
-    if (currentUser) {
-      localStorage.setItem('frontdesk_active_user', JSON.stringify(currentUser));
-      localStorage.setItem('frontdesk_user', JSON.stringify(currentUser));
-    } else {
-      localStorage.removeItem('frontdesk_active_user');
-      localStorage.removeItem('frontdesk_user');
-    }
-  }, [currentUser]);
+    if (!currentUser) return;
+
+    const handleUserActivity = () => {
+      setLastActivity(Date.now());
+    };
+
+    const events = ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'];
+    events.forEach((evt) => window.addEventListener(evt, handleUserActivity));
+
+    const timeoutMins = currentUser.sessionTimeoutMinutes || 15;
+    const timeoutMs = timeoutMins * 60 * 1000;
+
+    const intervalId = setInterval(() => {
+      if (Date.now() - lastActivity >= timeoutMs) {
+        const propName = currentUser.firmName || 'Property';
+        setCurrentUser(null);
+        setActiveTab('overview', true);
+        setAuthNotice(`Session timed out after ${timeoutMins} minutes of inactivity for ${propName}. Please sign in again.`);
+      }
+    }, 5000);
+
+    return () => {
+      events.forEach((evt) => window.removeEventListener(evt, handleUserActivity));
+      clearInterval(intervalId);
+    };
+  }, [currentUser, lastActivity]);
 
   // Sync per-property data states to local storage
   useEffect(() => {
@@ -243,6 +260,7 @@ export const HotelProvider = ({ children }) => {
       password: cleanPass,
       firmLogo: null,
       eSignature: null,
+      sessionTimeoutMinutes: 15,
       role: 'Property Manager',
       initials,
       loginTime: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -253,8 +271,10 @@ export const HotelProvider = ({ children }) => {
     setAllProperties(updatedList);
     localStorage.setItem('frontdesk_all_properties', JSON.stringify(updatedList));
 
-    // Log in immediately as the newly registered property
+    // Log in immediately as the newly registered property & view from homepage
     setCurrentUser(newPropertyAccount);
+    setActiveTab('overview', true);
+    setAuthNotice('');
     return { success: true };
   };
 
@@ -285,10 +305,14 @@ export const HotelProvider = ({ children }) => {
 
     const updatedSession = {
       ...matchedProperty,
+      sessionTimeoutMinutes: matchedProperty.sessionTimeoutMinutes || 15,
       loginTime: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     };
 
+    // Set logged in user & always redirect to homepage overview
     setCurrentUser(updatedSession);
+    setActiveTab('overview', true);
+    setAuthNotice('');
     return { success: true };
   };
 
@@ -350,8 +374,26 @@ export const HotelProvider = ({ children }) => {
     });
   };
 
+  const updateSessionTimeout = (minutes) => {
+    if (!currentUser) return;
+    const parsedMins = parseInt(minutes, 10) || 15;
+    const updatedUser = {
+      ...currentUser,
+      sessionTimeoutMinutes: parsedMins
+    };
+    setCurrentUser(updatedUser);
+
+    setAllProperties((prev) => {
+      const updatedList = prev.map((p) => (p.firmId === currentUser.firmId ? updatedUser : p));
+      localStorage.setItem('frontdesk_all_properties', JSON.stringify(updatedList));
+      return updatedList;
+    });
+  };
+
   const logout = () => {
     setCurrentUser(null);
+    setActiveTab('overview', true);
+    setAuthNotice('');
     localStorage.removeItem('frontdesk_active_user');
     localStorage.removeItem('frontdesk_user');
   };
@@ -452,11 +494,14 @@ export const HotelProvider = ({ children }) => {
         setActiveTab,
         currentUser,
         isAuthenticated,
+        authNotice,
+        setAuthNotice,
         login,
         register,
         updateUserProfile,
         updateFirmLogo,
         updateESignature,
+        updateSessionTimeout,
         logout,
         roomsList,
         addCustomRoom,

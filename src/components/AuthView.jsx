@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { useHotel } from '../context/HotelContext';
-import { Building2, KeyRound, User, Mail, ShieldCheck, ArrowRight } from 'lucide-react';
+import { Building2, KeyRound, User, Mail, ShieldCheck, ArrowRight, Clock } from 'lucide-react';
 
 export const AuthView = () => {
-  const { login, register } = useHotel();
+  const { login, register, authNotice } = useHotel();
   const [authMode, setAuthMode] = useState('login'); // 'login' | 'register'
 
   // Login form state
@@ -55,6 +55,25 @@ export const AuthView = () => {
           <h1 className="auth-title">Property Portal</h1>
           <p className="auth-subtitle">Property Manager Dashboard Sign In</p>
         </div>
+
+        {authNotice && (
+          <div style={{
+            background: '#fffbe5',
+            border: '1px solid #fef08a',
+            color: '#854d0e',
+            padding: '12px 14px',
+            borderRadius: 'var(--radius-md)',
+            fontSize: '13px',
+            fontWeight: 600,
+            marginBottom: '16px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}>
+            <Clock size={18} color="#d97706" style={{ flexShrink: 0 }} />
+            <span>{authNotice}</span>
+          </div>
+        )}
 
         {/* Auth Tabs */}
         <div className="auth-tabs">
