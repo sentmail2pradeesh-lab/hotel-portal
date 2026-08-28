@@ -5,7 +5,7 @@ import { ExpenseModal } from './ExpenseModal';
 import { Plus, Search, Trash2, Receipt, Tag } from 'lucide-react';
 
 export const Expenses = () => {
-  const { expenses, deleteExpense } = useHotel();
+  const { expenses, deleteExpense, isRegisterOpen } = useHotel();
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState('All');
@@ -38,7 +38,18 @@ export const Expenses = () => {
           <h1 className="page-heading">Daily Operational Expenses</h1>
           <p className="page-subheading">Track property cash outflow — room supplies, repairs, staff wages, utilities.</p>
         </div>
-        <button className="btn-main" onClick={() => setIsModalOpen(true)}>
+        <button 
+          className="btn-main" 
+          disabled={!isRegisterOpen}
+          onClick={() => {
+            if (!isRegisterOpen) {
+              alert('Shift Register is Closed. Please open the shift register to log expenses.');
+              return;
+            }
+            setIsModalOpen(true);
+          }}
+          title={isRegisterOpen ? 'Log Expense' : 'Shift Register is Closed (View-Only Mode)'}
+        >
           <Plus size={17} /> Log Expense
         </button>
       </div>
@@ -85,7 +96,18 @@ export const Expenses = () => {
               No cash outflow entries exist yet. Click "+ Log First Expense" to add a record.
             </p>
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-              <button className="btn-main" onClick={() => setIsModalOpen(true)}>
+              <button 
+                className="btn-main" 
+                disabled={!isRegisterOpen}
+                onClick={() => {
+                  if (!isRegisterOpen) {
+                    alert('Shift Register is Closed. Please open the shift register to log expenses.');
+                    return;
+                  }
+                  setIsModalOpen(true);
+                }}
+                title={isRegisterOpen ? 'Log First Expense' : 'Shift Register is Closed (View-Only Mode)'}
+              >
                 <Plus size={16} /> Log First Expense
               </button>
             </div>
@@ -139,7 +161,12 @@ export const Expenses = () => {
                         <button 
                           className="icon-btn"
                           style={{ color: '#be123c' }}
+                          disabled={!isRegisterOpen}
                           onClick={() => {
+                            if (!isRegisterOpen) {
+                              alert('Shift Register is Closed. Please open the shift register to delete expense records.');
+                              return;
+                            }
                             if (confirmDouble(
                               `Are you sure you want to delete expense record "${exp.description}"?`,
                               `PERMANENT DELETION CONFIRMATION: Are you double sure you want to delete expense "${exp.description}" (₹${exp.amount})? This cannot be undone.`
@@ -147,7 +174,7 @@ export const Expenses = () => {
                               deleteExpense(exp.id);
                             }
                           }}
-                          title="Delete Expense Record"
+                          title={isRegisterOpen ? "Delete Expense Record" : "Shift Register is Closed (View-Only Mode)"}
                         >
                           <Trash2 size={15} />
                         </button>

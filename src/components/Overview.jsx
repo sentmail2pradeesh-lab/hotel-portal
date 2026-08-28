@@ -265,22 +265,46 @@ export const Overview = () => {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <button 
                 className="btn-main" 
+                disabled={!isRegisterOpen}
                 style={{ width: '100%', justifyContent: 'flex-start', padding: '12px 16px' }} 
-                onClick={() => setActiveTab('bookings')}
+                onClick={() => {
+                  if (!isRegisterOpen) {
+                    alert('Shift Register is Closed. Please open shift register to add stay records.');
+                    return;
+                  }
+                  setActiveTab('bookings');
+                }}
+                title={isRegisterOpen ? "+ New Room Stay" : "Shift Register is Closed (View-Only Mode)"}
               >
                 <PlusCircle size={18} /> + New Room Stay
               </button>
               <button 
                 className="btn-sub" 
+                disabled={!isRegisterOpen}
                 style={{ width: '100%', justifyContent: 'flex-start', padding: '12px 16px', color: '#be123c' }} 
-                onClick={() => setActiveTab('expenses')}
+                onClick={() => {
+                  if (!isRegisterOpen) {
+                    alert('Shift Register is Closed. Please open shift register to log expenses.');
+                    return;
+                  }
+                  setActiveTab('expenses');
+                }}
+                title={isRegisterOpen ? "+ Log Daily Expense" : "Shift Register is Closed (View-Only Mode)"}
               >
                 <ArrowDownRight size={18} color="#be123c" /> + Log Daily Expense
               </button>
               <button 
                 className="btn-sub" 
+                disabled={!isRegisterOpen}
                 style={{ width: '100%', justifyContent: 'flex-start', padding: '12px 16px', color: '#047857' }} 
-                onClick={() => setActiveTab('bills')}
+                onClick={() => {
+                  if (!isRegisterOpen) {
+                    alert('Shift Register is Closed. Please open shift register to issue room bills.');
+                    return;
+                  }
+                  setActiveTab('bills');
+                }}
+                title={isRegisterOpen ? "+ Issue Room Bill" : "Shift Register is Closed (View-Only Mode)"}
               >
                 <ArrowUpRight size={18} color="#047857" /> + Issue Room Bill
               </button>

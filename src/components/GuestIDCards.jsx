@@ -5,7 +5,7 @@ import { IDCardViewerModal } from './IDCardViewerModal';
 import { Search, IdCard, Eye, Upload, CheckCircle2, AlertCircle, FileText } from 'lucide-react';
 
 export const GuestIDCards = () => {
-  const { bookings, updateBooking } = useHotel();
+  const { bookings, updateBooking, isRegisterOpen } = useHotel();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedBookingForView, setSelectedBookingForView] = useState(null);
 
@@ -22,6 +22,10 @@ export const GuestIDCards = () => {
   const totalUploadedIDs = bookings.filter((b) => Boolean(b.idCard)).length;
 
   const handleFileUploadForBooking = (bookingId, e) => {
+    if (!isRegisterOpen) {
+      alert('Shift Register is Closed. Please open the shift register to upload guest ID cards.');
+      return;
+    }
     const file = e.target.files[0];
     if (file) {
       const reader = new FileReader();
@@ -151,6 +155,7 @@ export const GuestIDCards = () => {
                       type="file"
                       accept="image/*,application/pdf,.pdf"
                       id={`id-upload-gallery-${booking.id}`}
+                      disabled={!isRegisterOpen}
                       style={{ display: 'none' }}
                       onChange={(e) => handleFileUploadForBooking(booking.id, e)}
                     />
@@ -163,8 +168,10 @@ export const GuestIDCards = () => {
                         fontSize: '12px',
                         justify: 'center',
                         margin: 0,
-                        cursor: 'pointer'
+                        cursor: isRegisterOpen ? 'pointer' : 'not-allowed',
+                        opacity: isRegisterOpen ? 1 : 0.55
                       }}
+                      title={isRegisterOpen ? "Upload or replace ID card" : "Shift Register is Closed (View-Only Mode)"}
                     >
                       <Upload size={14} color="#047857" /> {booking.idCard ? 'Replace' : 'Upload ID'}
                     </label>

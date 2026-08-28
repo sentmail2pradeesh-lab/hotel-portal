@@ -6,7 +6,7 @@ import { IDCardViewerModal } from './IDCardViewerModal';
 import { Plus, Search, Trash2, Edit2, CheckCircle2, BedDouble, PhoneCall } from 'lucide-react';
 
 export const Bookings = () => {
-  const { bookings, deleteBooking } = useHotel();
+  const { bookings, deleteBooking, isRegisterOpen } = useHotel();
   
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -24,11 +24,19 @@ export const Bookings = () => {
   });
 
   const handleEdit = (booking) => {
+    if (!isRegisterOpen) {
+      alert('Shift Register is Closed. Please open the shift register to edit stays.');
+      return;
+    }
     setEditingBooking(booking);
     setIsModalOpen(true);
   };
 
   const handleDelete = (id, guestName) => {
+    if (!isRegisterOpen) {
+      alert('Shift Register is Closed. Please open the shift register to delete stay records.');
+      return;
+    }
     if (confirmDouble(
       `Are you sure you want to delete the booking record for ${guestName} (${id})?`,
       `PERMANENT DELETION CONFIRMATION: Are you double sure you want to delete stay record ${id} (${guestName})? This action cannot be undone.`
@@ -46,10 +54,16 @@ export const Bookings = () => {
         </div>
         <button 
           className="btn-main"
+          disabled={!isRegisterOpen}
           onClick={() => {
+            if (!isRegisterOpen) {
+              alert('Shift Register is Closed. Please open the shift register to add a new booking.');
+              return;
+            }
             setEditingBooking(null);
             setIsModalOpen(true);
           }}
+          title={isRegisterOpen ? 'New Booking' : 'Shift Register is Closed (View-Only Mode)'}
         >
           <Plus size={17} /> New Booking
         </button>
@@ -83,10 +97,16 @@ export const Bookings = () => {
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
               <button 
                 className="btn-main"
+                disabled={!isRegisterOpen}
                 onClick={() => {
+                  if (!isRegisterOpen) {
+                    alert('Shift Register is Closed. Please open the shift register to add a new booking.');
+                    return;
+                  }
                   setEditingBooking(null);
                   setIsModalOpen(true);
                 }}
+                title={isRegisterOpen ? 'New Booking' : 'Shift Register is Closed (View-Only Mode)'}
               >
                 <Plus size={16} /> New Booking
               </button>
@@ -164,8 +184,9 @@ export const Bookings = () => {
                       ) : (
                         <button 
                           className="id-status-badge no-id"
+                          disabled={!isRegisterOpen}
                           onClick={() => handleEdit(b)}
-                          title="No ID uploaded. Click to edit booking & upload ID."
+                          title={isRegisterOpen ? "No ID uploaded. Click to edit booking & upload ID." : "Shift Register is Closed (View-Only Mode)"}
                         >
                           + Attach ID
                         </button>
@@ -175,16 +196,18 @@ export const Bookings = () => {
                       <div style={{ display: 'inline-flex', gap: '6px' }}>
                         <button 
                           className="icon-btn"
+                          disabled={!isRegisterOpen}
                           onClick={() => handleEdit(b)}
-                          title="Edit Stay Details"
+                          title={isRegisterOpen ? "Edit Stay Details" : "Shift Register is Closed (View-Only Mode)"}
                         >
                           <Edit2 size={15} />
                         </button>
                         <button 
                           className="icon-btn"
                           style={{ color: '#be123c' }}
+                          disabled={!isRegisterOpen}
                           onClick={() => handleDelete(b.id, b.guestName)}
-                          title="Delete Stay Record"
+                          title={isRegisterOpen ? "Delete Stay Record" : "Shift Register is Closed (View-Only Mode)"}
                         >
                           <Trash2 size={15} />
                         </button>

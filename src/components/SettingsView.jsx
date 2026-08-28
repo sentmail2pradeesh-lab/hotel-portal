@@ -32,7 +32,8 @@ export const SettingsView = () => {
     removeCustomRoom,
     bookings,
     expenses,
-    bills
+    bills,
+    isRegisterOpen
   } = useHotel();
 
   // Active section tab inside Settings: 'analytics' | 'rooms' | 'profile'
@@ -58,6 +59,10 @@ export const SettingsView = () => {
   // Add Room Handler
   const handleAddRoom = (e) => {
     e.preventDefault();
+    if (!isRegisterOpen) {
+      setRoomError('Shift Register is Closed. Please open shift register to add rooms.');
+      return;
+    }
     setRoomError('');
     setRoomSuccess('');
     const res = addCustomRoom(newRoomNumber);
@@ -71,6 +76,10 @@ export const SettingsView = () => {
 
   // Delete Room Handler
   const handleDeleteRoom = (roomNum) => {
+    if (!isRegisterOpen) {
+      alert('Shift Register is Closed. Please open shift register to remove rooms.');
+      return;
+    }
     if (confirmDouble(
       `Remove Room ${roomNum} from property inventory?`,
       `PERMANENT DELETION: Are you double sure you want to remove Room ${roomNum}?`
@@ -82,6 +91,10 @@ export const SettingsView = () => {
   // Profile Save Handler
   const handleProfileSave = (e) => {
     e.preventDefault();
+    if (!isRegisterOpen) {
+      alert('Shift Register is Closed. Please open shift register to update profile.');
+      return;
+    }
     updateUserProfile(firmName, managerName, workEmail);
     setProfileSuccess('Property & manager profile updated successfully!');
     setTimeout(() => setProfileSuccess(''), 4000);
@@ -418,7 +431,13 @@ export const SettingsView = () => {
                 />
               </div>
 
-              <button type="submit" className="btn-main" style={{ width: '100%', padding: '10px', fontSize: '14px', marginTop: '8px' }}>
+              <button 
+                type="submit" 
+                className="btn-main" 
+                disabled={!isRegisterOpen}
+                style={{ width: '100%', padding: '10px', fontSize: '14px', marginTop: '8px' }}
+                title={isRegisterOpen ? "Add Room to Inventory" : "Shift Register is Closed (View-Only Mode)"}
+              >
                 <Plus size={16} /> Add Room to Inventory
               </button>
             </form>
@@ -454,8 +473,9 @@ export const SettingsView = () => {
                       <button 
                         className="icon-btn" 
                         style={{ color: '#be123c' }} 
+                        disabled={!isRegisterOpen}
                         onClick={() => handleDeleteRoom(r)}
-                        title="Remove room"
+                        title={isRegisterOpen ? "Remove room" : "Shift Register is Closed (View-Only Mode)"}
                       >
                         <Trash2 size={14} />
                       </button>
@@ -526,8 +546,10 @@ export const SettingsView = () => {
                     type="file"
                     accept="image/*"
                     id="property-logo-upload-input"
+                    disabled={!isRegisterOpen}
                     style={{ display: 'none' }}
                     onChange={(e) => {
+                      if (!isRegisterOpen) return;
                       const file = e.target.files[0];
                       if (file) {
                         const reader = new FileReader();
@@ -538,7 +560,18 @@ export const SettingsView = () => {
                       }
                     }}
                   />
-                  <label htmlFor="property-logo-upload-input" className="btn-main" style={{ padding: '6px 14px', fontSize: '12px', cursor: 'pointer', margin: 0 }}>
+                  <label 
+                    htmlFor="property-logo-upload-input" 
+                    className="btn-main" 
+                    style={{ 
+                      padding: '6px 14px', 
+                      fontSize: '12px', 
+                      cursor: isRegisterOpen ? 'pointer' : 'not-allowed', 
+                      margin: 0,
+                      opacity: isRegisterOpen ? 1 : 0.55
+                    }}
+                    title={isRegisterOpen ? "Upload Custom Logo" : "Shift Register is Closed (View-Only Mode)"}
+                  >
                     <Upload size={14} /> Upload Custom Logo
                   </label>
 
@@ -546,7 +579,9 @@ export const SettingsView = () => {
                     <button 
                       className="btn-sub" 
                       style={{ padding: '6px 12px', fontSize: '12px', color: '#be123c' }}
+                      disabled={!isRegisterOpen}
                       onClick={() => updateFirmLogo(null)}
+                      title={isRegisterOpen ? "Reset Default Icon" : "Shift Register is Closed (View-Only Mode)"}
                     >
                       Reset Default Icon
                     </button>
@@ -599,8 +634,10 @@ export const SettingsView = () => {
                     type="file"
                     accept="image/*"
                     id="manager-esignature-upload-input"
+                    disabled={!isRegisterOpen}
                     style={{ display: 'none' }}
                     onChange={(e) => {
+                      if (!isRegisterOpen) return;
                       const file = e.target.files[0];
                       if (file) {
                         const reader = new FileReader();
@@ -611,7 +648,20 @@ export const SettingsView = () => {
                       }
                     }}
                   />
-                  <label htmlFor="manager-esignature-upload-input" className="btn-main" style={{ padding: '6px 14px', fontSize: '12px', cursor: 'pointer', margin: 0, background: '#047857', borderColor: '#047857' }}>
+                  <label 
+                    htmlFor="manager-esignature-upload-input" 
+                    className="btn-main" 
+                    style={{ 
+                      padding: '6px 14px', 
+                      fontSize: '12px', 
+                      cursor: isRegisterOpen ? 'pointer' : 'not-allowed', 
+                      margin: 0, 
+                      background: '#047857', 
+                      borderColor: '#047857',
+                      opacity: isRegisterOpen ? 1 : 0.55
+                    }}
+                    title={isRegisterOpen ? "Upload E-Signature" : "Shift Register is Closed (View-Only Mode)"}
+                  >
                     <Upload size={14} /> Upload E-Signature
                   </label>
 
@@ -619,7 +669,9 @@ export const SettingsView = () => {
                     <button 
                       className="btn-sub" 
                       style={{ padding: '6px 12px', fontSize: '12px', color: '#be123c' }}
+                      disabled={!isRegisterOpen}
                       onClick={() => updateESignature(null)}
+                      title={isRegisterOpen ? "Remove Signature" : "Shift Register is Closed (View-Only Mode)"}
                     >
                       Remove Signature
                     </button>
@@ -673,7 +725,13 @@ export const SettingsView = () => {
                 </div>
               </div>
 
-              <button type="submit" className="btn-main" style={{ width: '100%', padding: '12px', fontSize: '15px', marginTop: '10px' }}>
+              <button 
+                type="submit" 
+                className="btn-main" 
+                disabled={!isRegisterOpen}
+                style={{ width: '100%', padding: '12px', fontSize: '15px', marginTop: '10px' }}
+                title={isRegisterOpen ? "Save Profile Settings" : "Shift Register is Closed (View-Only Mode)"}
+              >
                 Save Profile Settings
               </button>
             </form>

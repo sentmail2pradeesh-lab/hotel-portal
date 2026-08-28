@@ -4,7 +4,7 @@ import { generateId, formatCurrency } from '../utils/formatters';
 import { X, Plus, FileText } from 'lucide-react';
 
 export const BillModal = ({ isOpen, onClose, onCreated, initialData = null }) => {
-  const { bookings, addBill, updateBill } = useHotel();
+  const { bookings, addBill, updateBill, isRegisterOpen } = useHotel();
 
   const [billNo, setBillNo] = useState(initialData?.id || generateId('BILL'));
   const [selectedBookingId, setSelectedBookingId] = useState(initialData?.bookingId || '');
@@ -216,7 +216,12 @@ export const BillModal = ({ isOpen, onClose, onCreated, initialData = null }) =>
             <button type="button" className="btn-sub" onClick={onClose}>
               Cancel
             </button>
-            <button type="submit" className="btn-main">
+            <button 
+              type="submit" 
+              className="btn-main"
+              disabled={!isRegisterOpen}
+              title={isRegisterOpen ? "Generate Bill Statement" : "Shift Register is Closed (View-Only Mode)"}
+            >
               Generate Bill Statement
             </button>
           </div>

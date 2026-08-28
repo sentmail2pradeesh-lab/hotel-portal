@@ -4,7 +4,7 @@ import { generateId } from '../utils/formatters';
 import { X, Receipt } from 'lucide-react';
 
 export const ExpenseModal = ({ isOpen, onClose }) => {
-  const { addExpense } = useHotel();
+  const { addExpense, isRegisterOpen } = useHotel();
 
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [category, setCategory] = useState('Supplies');
@@ -15,6 +15,10 @@ export const ExpenseModal = ({ isOpen, onClose }) => {
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    if (!isRegisterOpen) {
+      alert('Shift Register is Closed. Please open the shift register to record outflow.');
+      return;
+    }
     if (!description.trim() || !amount) {
       alert('Please fill out expense description and amount.');
       return;
@@ -99,7 +103,12 @@ export const ExpenseModal = ({ isOpen, onClose }) => {
             <button type="button" className="btn-sub" onClick={onClose}>
               Cancel
             </button>
-            <button type="submit" className="btn-main">
+            <button 
+              type="submit" 
+              className="btn-main"
+              disabled={!isRegisterOpen}
+              title={isRegisterOpen ? "Record Outflow" : "Shift Register is Closed (View-Only Mode)"}
+            >
               Record Outflow
             </button>
           </div>

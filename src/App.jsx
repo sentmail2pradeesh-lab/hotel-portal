@@ -8,6 +8,7 @@ import { Bills } from './components/Bills';
 import { GuestIDCards } from './components/GuestIDCards';
 import { SettingsView } from './components/SettingsView';
 import { AuthView } from './components/AuthView';
+import { Lock } from 'lucide-react';
 
 const MainView = () => {
   const { activeTab } = useHotel();
@@ -31,7 +32,7 @@ const MainView = () => {
 };
 
 const AppContent = () => {
-  const { isAuthenticated } = useHotel();
+  const { isAuthenticated, isRegisterOpen } = useHotel();
 
   if (!isAuthenticated) {
     return <AuthView />;
@@ -40,6 +41,14 @@ const AppContent = () => {
   return (
     <div className="app-container">
       <Navbar />
+      {!isRegisterOpen && (
+        <div className="register-closed-banner">
+          <Lock size={18} />
+          <span>
+            <strong>Shift Register Closed</strong> — The portal is currently in <strong>View-Only Mode</strong>. Operations & actions (adding/editing/deleting bookings, expenses, statements, and room inventory) are disabled until the register shift is re-opened.
+          </span>
+        </div>
+      )}
       <main className="view-body">
         <MainView />
       </main>

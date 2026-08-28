@@ -4,7 +4,7 @@ import { generateId } from '../utils/formatters';
 import { Upload, X, CheckCircle2, FileText, Sparkles } from 'lucide-react';
 
 export const BookingModal = ({ isOpen, onClose, initialData = null }) => {
-  const { bookings, roomsList, addBooking, updateBooking } = useHotel();
+  const { bookings, roomsList, addBooking, updateBooking, isRegisterOpen } = useHotel();
 
   // Find currently occupied rooms (excluding current booking being edited)
   const occupiedRooms = bookings
@@ -277,7 +277,12 @@ export const BookingModal = ({ isOpen, onClose, initialData = null }) => {
             <button type="button" className="btn-sub" onClick={onClose}>
               Cancel
             </button>
-            <button type="submit" className="btn-main">
+            <button 
+              type="submit" 
+              className="btn-main" 
+              disabled={!isRegisterOpen}
+              title={isRegisterOpen ? 'Save Stay Record' : 'Shift Register is Closed (View-Only Mode)'}
+            >
               Save Stay Record
             </button>
           </div>

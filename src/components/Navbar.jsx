@@ -110,7 +110,12 @@ export const Navbar = () => {
           <button 
             className="btn-sub"
             style={{ padding: '6px 12px', fontSize: '12px', color: '#fb7185', whiteSpace: 'nowrap' }}
+            disabled={!isRegisterOpen}
             onClick={() => {
+              if (!isRegisterOpen) {
+                alert('Shift Register is Closed. Please open the shift register to perform operations.');
+                return;
+              }
               if (confirmDouble(
                 'Are you sure you want to clear all register entries (bookings, expenses, bills)?',
                 'CRITICAL CONFIRMATION: Clearing register will permanently wipe all active stays, expenses, and bills. Are you double sure?'
@@ -118,7 +123,7 @@ export const Navbar = () => {
                 clearAllData();
               }
             }}
-            title="Clear all register entries"
+            title={isRegisterOpen ? "Clear all register entries" : "Shift Register is Closed (View-Only Mode)"}
           >
             <Trash2 size={13} /> Clear Register
           </button>

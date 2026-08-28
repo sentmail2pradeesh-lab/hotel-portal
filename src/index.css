@@ -1094,32 +1094,103 @@ html, body {
   padding-left: 42px;
 }
 
-/* Print Styles for Guest Receipt Statement */
+/* Print Styles for Guest Receipt Statement & Reports */
 @media print {
-  body * {
-    visibility: hidden;
+  html, body {
+    background: #ffffff !important;
+    color: #0f172a !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
   }
-  #invoice-printable-area, #invoice-printable-area * {
-    visibility: visible;
+
+  /* Hide interactive navigation, sidebar, tabs, and modal control buttons */
+  header, nav, .top-nav, .sidebar, .modal-header-row, .modal-actions, .icon-btn, .btn-main, .btn-sub, .auth-tabs {
+    display: none !important;
   }
-  #invoice-printable-area {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 100%;
-    border: none !important;
-    box-shadow: none !important;
-    margin: 0 !important;
-    padding: 24px !important;
-  }
-  .modal-overlay, .modal-card {
+
+  /* Reset modal containers so fixed positioning, blur filters, overflow clips, or animations don't hide print content */
+  .modal-overlay,
+  .modal-card {
+    position: static !important;
+    display: block !important;
     background: transparent !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
     box-shadow: none !important;
     padding: 0 !important;
     margin: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    animation: none !important;
+    transform: none !important;
+    width: 100% !important;
   }
-  .modal-header-row, .modal-actions, header, nav, .top-nav, .sidebar {
-    display: none !important;
+
+  /* Hide background elements when printing invoice statement */
+  body:has(#invoice-printable-area) * {
+    visibility: hidden;
   }
+
+  body:has(#invoice-printable-area) .modal-overlay,
+  body:has(#invoice-printable-area) .modal-card,
+  body:has(#invoice-printable-area) #invoice-printable-area,
+  body:has(#invoice-printable-area) #invoice-printable-area * {
+    visibility: visible !important;
+  }
+
+  #invoice-printable-area {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    border: 1px solid #0f172a !important;
+    box-shadow: none !important;
+    margin: 0 !important;
+    padding: 32px !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+    overflow: visible !important;
+    border-radius: 12px !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Force background colors, badges, signatures, and images to print accurately */
+  #invoice-printable-area * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}
+
+/* Register Shift Closed Banner & View-Only Mode Styles */
+.register-closed-banner {
+  background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+  border-bottom: 1px solid #fde68a;
+  color: #92400e;
+  padding: 12px 24px;
+  font-size: 13.5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  box-shadow: inset 0 -1px 2px rgba(217, 119, 6, 0.1);
+  animation: slideDown 0.25s ease-out;
+}
+
+.register-closed-banner svg {
+  color: #d97706;
+  flex-shrink: 0;
+}
+
+button:disabled,
+.btn-main:disabled,
+.btn-sub:disabled,
+.icon-btn:disabled {
+  opacity: 0.55 !important;
+  cursor: not-allowed !important;
+  filter: grayscale(40%);
+  pointer-events: auto !important;
 }
 

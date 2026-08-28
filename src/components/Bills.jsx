@@ -6,7 +6,7 @@ import { BillInvoiceModal } from './BillInvoiceModal';
 import { Plus, Search, Trash2, Eye, FileText, Edit2 } from 'lucide-react';
 
 export const Bills = () => {
-  const { bills = [], deleteBill } = useHotel();
+  const { bills = [], deleteBill, isRegisterOpen } = useHotel();
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingBill, setEditingBill] = useState(null);
@@ -25,6 +25,10 @@ export const Bills = () => {
 
   const handleDeleteBill = (b) => {
     if (!b || !b.id) return;
+    if (!isRegisterOpen) {
+      alert('Shift Register is Closed. Please open the shift register to delete room bills.');
+      return;
+    }
     if (confirmDouble(
       `Are you sure you want to delete bill statement ${b.id} for ${b.guestName || 'Guest'}?`,
       `PERMANENT DELETION CONFIRMATION: Are you double sure you want to delete bill ${b.id}? This action cannot be undone.`
@@ -42,7 +46,19 @@ export const Bills = () => {
             Itemized room billing statements — stay charges, extra amenities, and exportable guest receipts.
           </p>
         </div>
-        <button className="btn-main" onClick={() => { setEditingBill(null); setIsModalOpen(true); }}>
+        <button 
+          className="btn-main" 
+          disabled={!isRegisterOpen}
+          onClick={() => {
+            if (!isRegisterOpen) {
+              alert('Shift Register is Closed. Please open the shift register to create new bills.');
+              return;
+            }
+            setEditingBill(null); 
+            setIsModalOpen(true); 
+          }}
+          title={isRegisterOpen ? 'New Bill Statement' : 'Shift Register is Closed (View-Only Mode)'}
+        >
           <Plus size={17} /> New Bill Statement
         </button>
       </div>
@@ -71,7 +87,19 @@ export const Bills = () => {
               Click "+ Issue First Bill" to create an itemized room billing statement.
             </p>
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-              <button className="btn-main" onClick={() => { setEditingBill(null); setIsModalOpen(true); }}>
+              <button 
+                className="btn-main" 
+                disabled={!isRegisterOpen}
+                onClick={() => {
+                  if (!isRegisterOpen) {
+                    alert('Shift Register is Closed. Please open the shift register to issue bills.');
+                    return;
+                  }
+                  setEditingBill(null); 
+                  setIsModalOpen(true); 
+                }}
+                title={isRegisterOpen ? 'Issue First Bill' : 'Shift Register is Closed (View-Only Mode)'}
+              >
                 <Plus size={16} /> Issue First Bill
               </button>
             </div>
@@ -136,16 +164,24 @@ export const Bills = () => {
                         <button
                           className="icon-btn"
                           style={{ color: '#0284c7' }}
-                          onClick={() => setEditingBill(b)}
-                          title="Edit Bill Statement"
+                          disabled={!isRegisterOpen}
+                          onClick={() => {
+                            if (!isRegisterOpen) {
+                              alert('Shift Register is Closed. Please open the shift register to edit bills.');
+                              return;
+                            }
+                            setEditingBill(b);
+                          }}
+                          title={isRegisterOpen ? "Edit Bill Statement" : "Shift Register is Closed (View-Only Mode)"}
                         >
                           <Edit2 size={15} />
                         </button>
                         <button
                           className="icon-btn"
                           style={{ color: '#be123c' }}
+                          disabled={!isRegisterOpen}
                           onClick={() => handleDeleteBill(b)}
-                          title="Delete Bill"
+                          title={isRegisterOpen ? "Delete Bill" : "Shift Register is Closed (View-Only Mode)"}
                         >
                           <Trash2 size={15} />
                         </button>

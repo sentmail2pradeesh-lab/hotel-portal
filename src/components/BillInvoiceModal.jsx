@@ -5,7 +5,7 @@ import { Download, Printer, X, Building2, Edit3, FileText } from 'lucide-react';
 import { useHotel } from '../context/HotelContext';
 
 export const BillInvoiceModal = ({ bill, onClose, onEditBill }) => {
-  const { currentUser } = useHotel();
+  const { currentUser, isRegisterOpen } = useHotel();
   const invoiceRef = useRef(null);
 
   if (!bill) return null;
@@ -158,10 +158,16 @@ export const BillInvoiceModal = ({ bill, onClose, onEditBill }) => {
             <button 
               className="btn-sub" 
               style={{ color: '#0284c7', borderColor: '#0284c7' }} 
+              disabled={!isRegisterOpen}
               onClick={() => {
+                if (!isRegisterOpen) {
+                  alert('Shift Register is Closed. Please open the shift register to edit bills.');
+                  return;
+                }
                 onEditBill(bill);
                 onClose();
               }}
+              title={isRegisterOpen ? "Edit Bill" : "Shift Register is Closed (View-Only Mode)"}
             >
               <Edit3 size={15} /> Edit Bill
             </button>

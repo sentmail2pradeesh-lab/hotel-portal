@@ -1,16 +1,21 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { ALL_PROPERTY_ROOMS } from '../utils/formatters';
+import { api } from '../services/api';
 
 const HotelContext = createContext();
 
-// Storage Key Helper for Property Data Isolation
-const getFirmIdKey = (userObj) => {
-  if (!userObj) return 'firm_default';
-  return userObj.firmId || ('firm_' + userObj.firmName.trim().toLowerCase().replace(/[^a-z0-9]/g, '_'));
-};
-
 export const HotelProvider = ({ children }) => {
   const [activeTab, setActiveTabState] = useState('overview');
+  const [currentUser, setCurrentUser] = useState(null);
+  const [authNotice, setAuthNotice] = useState('');
+  const [isServerConnected, setIsServerConnected] = useState(true);
+
+  // Property Operational Data States
+  const [roomsList, setRoomsList] = useState(ALL_PROPERTY_ROOMS);
+  const [bookings, setBookings] = useState([]);
+  const [expenses, setExpenses] = useState([]);
+  const [bills, setBills] = useState([]);
+  const [isRegisterOpen, setIsRegisterOpen] = useState(true);
 
   // Sync active tab with browser history (popstate listener for back button)
   const setActiveTab = (tabName, replaceHistory = false) => {
@@ -29,11 +34,7 @@ export const HotelProvider = ({ children }) => {
         setActiveTabState(event.state.tab);
       } else {
         const hash = window.location.hash.replace('#', '');
-        if (hash) {
-          setActiveTabState(hash);
-        } else {
-          setActiveTabState('overview');
-        }
+        setActiveTabState(hash || 'overview');
       }
     };
 
@@ -49,100 +50,54 @@ export const HotelProvider = ({ children }) => {
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  // Multi-Property User Database state stored in 'frontdesk_all_properties'
-  const [allProperties, setAllProperties] = useState(() => {
-    const saved = localStorage.getItem('frontdesk_all_properties');
-    if (saved) {
-      try { return JSON.parse(saved); } catch (e) {}
-    }
-    // Migration: If legacy single user exists, convert into first property record
-    const legacyUser = localStorage.getItem('frontdesk_user');
-    if (legacyUser) {
-      try {
-        const parsed = JSON.parse(legacyUser);
-        const firmId = 'firm_' + Date.now();
-        const initialRecord = { ...parsed, firmId: parsed.firmId || firmId };
-        localStorage.setItem('frontdesk_all_properties', JSON.stringify([initialRecord]));
-        return [initialRecord];
-      } catch (e) {}
-    }
-    return [];
-  });
+  // Fetch all property data from Python API
+  const refreshPropertyData = useCallback(async () => {
+    if (!currentUser) return;
+    try {
+      const [fetchedRooms, fetchedBookings, fetchedExpenses, fetchedBills, fetchedRegStatus] = await Promise.all([
+        api.getRooms().catch(() => ALL_PROPERTY_ROOMS),
+        api.getBookings().catch(() => []),
+        api.getExpenses().catch(() => []),
+        api.getBills().catch(() => []),
+        api.getRegisterStatus().catch(() => ({ isOpen: true }))
+      ]);
 
-  // Active Logged-in Property Account State (In-Memory Session: Reloading invalidates session)
-  const [currentUser, setCurrentUser] = useState(null);
-  const [authNotice, setAuthNotice] = useState('');
+      setRoomsList(fetchedRooms && fetchedRooms.length > 0 ? fetchedRooms : ALL_PROPERTY_ROOMS);
+      setBookings(fetchedBookings || []);
+      setExpenses(fetchedExpenses || []);
+      setBills(fetchedBills || []);
+      setIsRegisterOpen(fetchedRegStatus?.isOpen ?? true);
+      setIsServerConnected(true);
+    } catch (err) {
+      console.warn('Backend server disconnected or fetching error:', err);
+      setIsServerConnected(false);
+    }
+  }, [currentUser]);
 
-  // Clear any legacy persistent login key on app start to ensure reload requires re-login
+  // Initial user session check on app start
   useEffect(() => {
-    localStorage.removeItem('frontdesk_active_user');
-    localStorage.removeItem('frontdesk_user');
+    const checkMe = async () => {
+      try {
+        const me = await api.getMe();
+        if (me) {
+          setCurrentUser(me);
+        }
+      } catch (e) {
+        console.warn('Authentication check failed:', e);
+      }
+    };
+    checkMe();
   }, []);
 
-  const isAuthenticated = Boolean(currentUser);
-
-  // Derived property storage key
-  const activeFirmId = getFirmIdKey(currentUser);
-
-  // Loader helper for property-isolated state
-  const loadFirmData = (firmId, dataType, defaultValue) => {
-    const propertyKey = `data_${firmId}_${dataType}`;
-    const savedProp = localStorage.getItem(propertyKey);
-    if (savedProp !== null) {
-      try { return JSON.parse(savedProp); } catch (e) {}
-    }
-    // Migration fallback for legacy keys
-    const legacyKey = `prop_${currentUser?.firmName?.trim().toLowerCase().replace(/[^a-z0-9]/g, '_')}_${dataType}`;
-    const savedLegacyProp = localStorage.getItem(legacyKey);
-    if (savedLegacyProp !== null) {
-      try {
-        const parsed = JSON.parse(savedLegacyProp);
-        localStorage.setItem(propertyKey, JSON.stringify(parsed));
-        return parsed;
-      } catch (e) {}
-    }
-    const savedGlobal = localStorage.getItem(`frontdesk_${dataType}`);
-    if (savedGlobal !== null) {
-      try {
-        const parsed = JSON.parse(savedGlobal);
-        localStorage.setItem(propertyKey, JSON.stringify(parsed));
-        return parsed;
-      } catch (e) {}
-    }
-    return defaultValue;
-  };
-
-  // Property Rooms Inventory State (isolated per property)
-  const [roomsList, setRoomsList] = useState(() => 
-    loadFirmData(activeFirmId, 'rooms', ALL_PROPERTY_ROOMS)
-  );
-
-  // Property Operational Data States (isolated per property)
-  const [bookings, setBookings] = useState(() => 
-    loadFirmData(activeFirmId, 'bookings', [])
-  );
-
-  const [expenses, setExpenses] = useState(() => 
-    loadFirmData(activeFirmId, 'expenses', [])
-  );
-
-  const [bills, setBills] = useState(() => 
-    loadFirmData(activeFirmId, 'bills', [])
-  );
-
-  const [isRegisterOpen, setIsRegisterOpen] = useState(() => 
-    loadFirmData(activeFirmId, 'register_open', true)
-  );
-
-  // Whenever the active logged-in property changes, dynamically reload that property's isolated data
+  // Whenever currentUser logs in or changes, fetch property data and set up live polling (simultaneous multi-device sync)
   useEffect(() => {
     if (currentUser) {
-      const key = getFirmIdKey(currentUser);
-      setRoomsList(loadFirmData(key, 'rooms', ALL_PROPERTY_ROOMS));
-      setBookings(loadFirmData(key, 'bookings', []));
-      setExpenses(loadFirmData(key, 'expenses', []));
-      setBills(loadFirmData(key, 'bills', []));
-      setIsRegisterOpen(loadFirmData(key, 'register_open', true));
+      refreshPropertyData();
+      // Poll Python backend every 5 seconds for live multi-user/multi-device synchronization
+      const intervalId = setInterval(() => {
+        refreshPropertyData();
+      }, 5000);
+      return () => clearInterval(intervalId);
     } else {
       setRoomsList(ALL_PROPERTY_ROOMS);
       setBookings([]);
@@ -150,7 +105,7 @@ export const HotelProvider = ({ children }) => {
       setBills([]);
       setIsRegisterOpen(true);
     }
-  }, [currentUser?.firmId, currentUser?.firmName]);
+  }, [currentUser, refreshPropertyData]);
 
   // Session Inactivity Timeout Tracker for active property
   const [lastActivity, setLastActivity] = useState(Date.now());
@@ -171,8 +126,7 @@ export const HotelProvider = ({ children }) => {
     const intervalId = setInterval(() => {
       if (Date.now() - lastActivity >= timeoutMs) {
         const propName = currentUser.firmName || 'Property';
-        setCurrentUser(null);
-        setActiveTab('overview', true);
+        logout();
         setAuthNotice(`Session timed out after ${timeoutMins} minutes of inactivity for ${propName}. Please sign in again.`);
       }
     }, 5000);
@@ -183,288 +137,236 @@ export const HotelProvider = ({ children }) => {
     };
   }, [currentUser, lastActivity]);
 
-  // Sync per-property data states to local storage
-  useEffect(() => {
-    if (currentUser) {
-      const key = getFirmIdKey(currentUser);
-      localStorage.setItem(`data_${key}_rooms`, JSON.stringify(roomsList));
-    }
-  }, [roomsList, currentUser?.firmId]);
-
-  useEffect(() => {
-    if (currentUser) {
-      const key = getFirmIdKey(currentUser);
-      localStorage.setItem(`data_${key}_bookings`, JSON.stringify(bookings));
-    }
-  }, [bookings, currentUser?.firmId]);
-
-  useEffect(() => {
-    if (currentUser) {
-      const key = getFirmIdKey(currentUser);
-      localStorage.setItem(`data_${key}_expenses`, JSON.stringify(expenses));
-    }
-  }, [expenses, currentUser?.firmId]);
-
-  useEffect(() => {
-    if (currentUser) {
-      const key = getFirmIdKey(currentUser);
-      localStorage.setItem(`data_${key}_bills`, JSON.stringify(bills));
-    }
-  }, [bills, currentUser?.firmId]);
-
-  useEffect(() => {
-    if (currentUser) {
-      const key = getFirmIdKey(currentUser);
-      localStorage.setItem(`data_${key}_register_open`, JSON.stringify(isRegisterOpen));
-    }
-  }, [isRegisterOpen, currentUser?.firmId]);
+  const isAuthenticated = Boolean(currentUser);
 
   // Authentication Action: Register New Property
-  const register = (firmName, name, email, password) => {
-    const cleanFirm = firmName.trim();
-    const cleanName = name.trim();
-    const cleanEmail = (email || '').trim().toLowerCase();
-    const cleanPass = password.trim();
-
-    if (!cleanFirm || !cleanName || !cleanPass) {
-      return { success: false, message: 'Please fill out all property registration fields.' };
+  const register = async (firmName, name, email, password) => {
+    try {
+      const res = await api.register(firmName, name, email, password);
+      if (res.user) {
+        setCurrentUser(res.user);
+        setActiveTab('overview', true);
+        setAuthNotice('');
+        return { success: true };
+      }
+    } catch (err) {
+      return { success: false, message: err.message || 'Registration failed.' };
     }
-
-    // Check if property name or email is already registered in allProperties
-    const existing = allProperties.find(
-      (p) =>
-        p.firmName.toLowerCase() === cleanFirm.toLowerCase() ||
-        (cleanEmail && p.email && p.email.toLowerCase() === cleanEmail) ||
-        p.name.toLowerCase() === cleanName.toLowerCase()
-    );
-
-    if (existing) {
-      return {
-        success: false,
-        message: `Property "${cleanFirm}" or Manager "${cleanName}" is already registered. Please sign in instead.`
-      };
-    }
-
-    const firmId = 'firm_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
-
-    const parts = cleanName.split(' ');
-    const initials = parts.length >= 2 
-      ? (parts[0][0] + parts[1][0]).toUpperCase() 
-      : cleanName.substring(0, 2).toUpperCase();
-
-    const newPropertyAccount = {
-      firmId,
-      firmName: cleanFirm,
-      name: cleanName,
-      email: cleanEmail || `${cleanName.toLowerCase().replace(/\s+/g, '')}@property.com`,
-      password: cleanPass,
-      firmLogo: null,
-      eSignature: null,
-      sessionTimeoutMinutes: 15,
-      role: 'Property Manager',
-      initials,
-      loginTime: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      createdAt: new Date().toISOString()
-    };
-
-    const updatedList = [...allProperties, newPropertyAccount];
-    setAllProperties(updatedList);
-    localStorage.setItem('frontdesk_all_properties', JSON.stringify(updatedList));
-
-    // Log in immediately as the newly registered property & view from homepage
-    setCurrentUser(newPropertyAccount);
-    setActiveTab('overview', true);
-    setAuthNotice('');
-    return { success: true };
+    return { success: false, message: 'Registration failed.' };
   };
 
   // Authentication Action: Sign In to Existing Property Account
-  const login = (identity, password) => {
-    const cleanId = identity.trim().toLowerCase();
-    const cleanPass = password.trim();
-
-    if (!cleanId || !cleanPass) {
-      return { success: false, message: 'Please enter your manager username/email and password.' };
+  const login = async (identity, password) => {
+    try {
+      const res = await api.login(identity, password);
+      if (res.user) {
+        setCurrentUser(res.user);
+        setActiveTab('overview', true);
+        setAuthNotice('');
+        return { success: true };
+      }
+    } catch (err) {
+      return { success: false, message: err.message || 'Invalid login credentials.' };
     }
+    return { success: false, message: 'Invalid credentials.' };
+  };
 
-    // Search property accounts database
-    const matchedProperty = allProperties.find(
-      (p) =>
-        (p.firmName.toLowerCase() === cleanId ||
-         p.name.toLowerCase() === cleanId ||
-         (p.email && p.email.toLowerCase() === cleanId)) &&
-        p.password === cleanPass
-    );
-
-    if (!matchedProperty) {
-      return {
-        success: false,
-        message: 'Invalid Property Manager credentials or incorrect password. Please check your credentials or click "Register Property".'
-      };
+  const checkRegisterOpen = () => {
+    if (!isRegisterOpen) {
+      alert('Shift Register is Closed. Please open the shift register to perform operations.');
+      return false;
     }
-
-    const updatedSession = {
-      ...matchedProperty,
-      sessionTimeoutMinutes: matchedProperty.sessionTimeoutMinutes || 15,
-      loginTime: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    };
-
-    // Set logged in user & always redirect to homepage overview
-    setCurrentUser(updatedSession);
-    setActiveTab('overview', true);
-    setAuthNotice('');
-    return { success: true };
+    return true;
   };
 
-  const updateUserProfile = (newFirmName, newName, newEmail) => {
+  const updateUserProfile = async (newFirmName, newName, newEmail) => {
     if (!currentUser) return;
-    const cleanFirm = newFirmName.trim() || currentUser.firmName;
-    const cleanName = newName.trim() || currentUser.name;
-    const cleanEmail = (newEmail || currentUser.email || '').trim();
-
-    const parts = cleanName.split(' ');
-    const initials = parts.length >= 2 
-      ? (parts[0][0] + parts[1][0]).toUpperCase() 
-      : cleanName.substring(0, 2).toUpperCase();
-
-    const updatedUser = {
-      ...currentUser,
-      firmName: cleanFirm,
-      name: cleanName,
-      email: cleanEmail,
-      initials
-    };
-
-    setCurrentUser(updatedUser);
-
-    setAllProperties((prev) => {
-      const updatedList = prev.map((p) => (p.firmId === currentUser.firmId ? updatedUser : p));
-      localStorage.setItem('frontdesk_all_properties', JSON.stringify(updatedList));
-      return updatedList;
-    });
+    if (!checkRegisterOpen()) return;
+    try {
+      const updated = await api.updateProfile({
+        firmName: newFirmName,
+        name: newName,
+        email: newEmail
+      });
+      setCurrentUser(updated);
+    } catch (err) {
+      console.error('Failed to update profile:', err);
+    }
   };
 
-  const updateFirmLogo = (logoDataUri) => {
+  const updateFirmLogo = async (logoDataUri) => {
     if (!currentUser) return;
-    const updatedUser = {
-      ...currentUser,
-      firmLogo: logoDataUri
-    };
-    setCurrentUser(updatedUser);
-
-    setAllProperties((prev) => {
-      const updatedList = prev.map((p) => (p.firmId === currentUser.firmId ? updatedUser : p));
-      localStorage.setItem('frontdesk_all_properties', JSON.stringify(updatedList));
-      return updatedList;
-    });
+    if (!checkRegisterOpen()) return;
+    try {
+      const updated = await api.updateProfile({ firmLogo: logoDataUri });
+      setCurrentUser(updated);
+    } catch (err) {
+      console.error('Failed to update logo:', err);
+    }
   };
 
-  const updateESignature = (eSignatureDataUri) => {
+  const updateESignature = async (eSignatureDataUri) => {
     if (!currentUser) return;
-    const updatedUser = {
-      ...currentUser,
-      eSignature: eSignatureDataUri
-    };
-    setCurrentUser(updatedUser);
-
-    setAllProperties((prev) => {
-      const updatedList = prev.map((p) => (p.firmId === currentUser.firmId ? updatedUser : p));
-      localStorage.setItem('frontdesk_all_properties', JSON.stringify(updatedList));
-      return updatedList;
-    });
+    if (!checkRegisterOpen()) return;
+    try {
+      const updated = await api.updateProfile({ eSignature: eSignatureDataUri });
+      setCurrentUser(updated);
+    } catch (err) {
+      console.error('Failed to update eSignature:', err);
+    }
   };
 
-  const updateSessionTimeout = (minutes) => {
+  const updateSessionTimeout = async (minutes) => {
     if (!currentUser) return;
     const parsedMins = parseInt(minutes, 10) || 15;
-    const updatedUser = {
-      ...currentUser,
-      sessionTimeoutMinutes: parsedMins
-    };
-    setCurrentUser(updatedUser);
-
-    setAllProperties((prev) => {
-      const updatedList = prev.map((p) => (p.firmId === currentUser.firmId ? updatedUser : p));
-      localStorage.setItem('frontdesk_all_properties', JSON.stringify(updatedList));
-      return updatedList;
-    });
+    try {
+      const updated = await api.updateProfile({ sessionTimeoutMinutes: parsedMins });
+      setCurrentUser(updated);
+    } catch (err) {
+      console.error('Failed to update session timeout:', err);
+    }
   };
 
   const logout = () => {
+    localStorage.removeItem('frontdesk_jwt_token');
     setCurrentUser(null);
     setActiveTab('overview', true);
     setAuthNotice('');
-    localStorage.removeItem('frontdesk_active_user');
-    localStorage.removeItem('frontdesk_user');
   };
 
   // Rooms Management Actions
-  const addCustomRoom = (roomNum) => {
+  const addCustomRoom = async (roomNum) => {
+    if (!checkRegisterOpen()) return { success: false, message: 'Shift Register is Closed.' };
     const cleanNum = roomNum.trim();
     if (!cleanNum) return { success: false, message: 'Room identifier is required.' };
     if (roomsList.includes(cleanNum)) {
       return { success: false, message: `Room ${cleanNum} already exists in property inventory.` };
     }
-    const updated = [...roomsList, cleanNum].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-    setRoomsList(updated);
-    return { success: true };
+    try {
+      await api.addRoom(cleanNum);
+      await refreshPropertyData();
+      return { success: true };
+    } catch (err) {
+      return { success: false, message: err.message };
+    }
   };
 
-  const removeCustomRoom = (roomNum) => {
-    setRoomsList((prev) => prev.filter((r) => r !== roomNum));
+  const removeCustomRoom = async (roomNum) => {
+    if (!checkRegisterOpen()) return;
+    try {
+      await api.deleteRoom(roomNum);
+      await refreshPropertyData();
+    } catch (err) {
+      console.error('Failed to delete room:', err);
+    }
   };
 
-  // Data Actions
-  const addBooking = (newBooking) => {
-    setBookings((prev) => [newBooking, ...prev]);
+  // Bookings Data Actions
+  const addBooking = async (newBooking) => {
+    if (!checkRegisterOpen()) return;
+    try {
+      const created = await api.createBooking(newBooking);
+      setBookings((prev) => [created, ...prev]);
+    } catch (err) {
+      console.error('Failed to add booking:', err);
+    }
   };
 
-  const updateBooking = (id, updatedFields) => {
-    setBookings((prev) =>
-      prev.map((b) => (b.id === id ? { ...b, ...updatedFields } : b))
-    );
+  const updateBooking = async (id, updatedFields) => {
+    if (!checkRegisterOpen()) return;
+    try {
+      const updated = await api.updateBooking(id, updatedFields);
+      setBookings((prev) => prev.map((b) => (b.id === id ? updated : b)));
+    } catch (err) {
+      console.error('Failed to update booking:', err);
+    }
   };
 
-  const deleteBooking = (id) => {
-    setBookings((prev) => prev.filter((b) => b.id !== id));
+  const deleteBooking = async (id) => {
+    if (!checkRegisterOpen()) return;
+    try {
+      await api.deleteBooking(id);
+      setBookings((prev) => prev.filter((b) => b.id !== id));
+    } catch (err) {
+      console.error('Failed to delete booking:', err);
+    }
   };
 
-  const addExpense = (newExpense) => {
-    setExpenses((prev) => [newExpense, ...prev]);
+  // Expenses Data Actions
+  const addExpense = async (newExpense) => {
+    if (!checkRegisterOpen()) return;
+    try {
+      const created = await api.createExpense(newExpense);
+      setExpenses((prev) => [created, ...prev]);
+    } catch (err) {
+      console.error('Failed to add expense:', err);
+    }
   };
 
-  const deleteExpense = (id) => {
-    setExpenses((prev) => prev.filter((e) => e.id !== id));
+  const deleteExpense = async (id) => {
+    if (!checkRegisterOpen()) return;
+    try {
+      await api.deleteExpense(id);
+      setExpenses((prev) => prev.filter((e) => e.id !== id));
+    } catch (err) {
+      console.error('Failed to delete expense:', err);
+    }
   };
 
-  const addBill = (newBill) => {
-    setBills((prev) => [newBill, ...prev]);
+  // Bills Data Actions
+  const addBill = async (newBill) => {
+    if (!checkRegisterOpen()) return;
+    try {
+      const created = await api.createBill(newBill);
+      setBills((prev) => [created, ...prev]);
+    } catch (err) {
+      console.error('Failed to add bill:', err);
+    }
   };
 
-  const updateBill = (updatedBill) => {
-    setBills((prev) =>
-      prev.map((b) => (b.id === updatedBill.id ? { ...b, ...updatedBill } : b))
-    );
+  const updateBill = async (updatedBill) => {
+    if (!checkRegisterOpen()) return;
+    try {
+      const updated = await api.updateBill(updatedBill);
+      setBills((prev) => prev.map((b) => (b.id === updated.id ? updated : b)));
+    } catch (err) {
+      console.error('Failed to update bill:', err);
+    }
   };
 
-  const deleteBill = (id) => {
-    setBills((prev) => prev.filter((b) => b.id !== id));
+  const deleteBill = async (id) => {
+    if (!checkRegisterOpen()) return;
+    try {
+      await api.deleteBill(id);
+      setBills((prev) => prev.filter((b) => b.id !== id));
+    } catch (err) {
+      console.error('Failed to delete bill:', err);
+    }
   };
 
-  const toggleRegisterStatus = () => {
-    setIsRegisterOpen((prev) => !prev);
+  const toggleRegisterStatus = async () => {
+    try {
+      const res = await api.toggleRegisterStatus();
+      setIsRegisterOpen(res.isOpen);
+    } catch (err) {
+      console.error('Failed to toggle register:', err);
+    }
   };
 
-  const clearAllData = () => {
+  const clearAllData = async () => {
+    if (!checkRegisterOpen()) return;
+    for (const b of bookings) {
+      await api.deleteBooking(b.id).catch(() => {});
+    }
+    for (const e of expenses) {
+      await api.deleteExpense(e.id).catch(() => {});
+    }
+    for (const bill of bills) {
+      await api.deleteBill(bill.id).catch(() => {});
+    }
     setBookings([]);
     setExpenses([]);
     setBills([]);
-    if (currentUser) {
-      const key = getFirmIdKey(currentUser);
-      localStorage.removeItem(`data_${key}_bookings`);
-      localStorage.removeItem(`data_${key}_expenses`);
-      localStorage.removeItem(`data_${key}_bills`);
-    }
   };
 
   // Aggregated Stats for current property
@@ -496,6 +398,7 @@ export const HotelProvider = ({ children }) => {
         isAuthenticated,
         authNotice,
         setAuthNotice,
+        isServerConnected,
         login,
         register,
         updateUserProfile,
@@ -524,7 +427,8 @@ export const HotelProvider = ({ children }) => {
         totalExpenses,
         netRevenue,
         totalBookingsCount,
-        guestIDCards
+        guestIDCards,
+        refreshPropertyData
       }}
     >
       {children}
