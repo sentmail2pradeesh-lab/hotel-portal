@@ -69,10 +69,42 @@ export const exportToCSV = (filename, headers, rows) => {
   document.body.removeChild(link);
 };
 
-/**
- * Double confirmation dialog helper.
- * Asks the user twice before executing sensitive deletion actions.
- */
+export const getAutoStayStatus = (checkInStr, checkOutStr, currentStatus) => {
+  if (currentStatus === 'Completed') return 'Completed';
+  if (currentStatus === 'In-House') return 'In-House';
+  
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const todayStr = today.toISOString().split('T')[0];
+
+  const inDate = checkInStr ? checkInStr.split('T')[0] : '';
+  const outDate = checkOutStr ? checkOutStr.split('T')[0] : '';
+
+  if (outDate && outDate < todayStr) {
+    return 'Completed';
+  }
+  if (inDate && inDate <= todayStr && (!outDate || outDate >= todayStr)) {
+    return 'In-House';
+  }
+  if (inDate && inDate > todayStr) {
+    return 'Upcoming';
+  }
+  return currentStatus || 'Upcoming';
+};
+
+export const calculateNights = (checkInStr, checkOutStr) => {
+  if (!checkInStr || !checkOutStr) return 1;
+  try {
+    const d1 = new Date(checkInStr);
+    const d2 = new Date(checkOutStr);
+    const diffTime = d2.getTime() - d1.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 3600 * 24));
+    return diffDays > 0 ? diffDays : 1;
+  } catch (e) {
+    return 1;
+  }
+};
+
 export const confirmDouble = (firstMessage, secondMessage) => {
   const step1 = window.confirm(firstMessage);
   if (!step1) return false;

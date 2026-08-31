@@ -69,6 +69,7 @@ class BookingBase(BaseModel):
     manualId: Optional[str] = None
     guestName: str
     phone: Optional[str] = ""
+    email: Optional[str] = ""
     room: str
     checkIn: str
     checkOut: str
@@ -78,6 +79,7 @@ class BookingBase(BaseModel):
     idCard: Optional[str] = None
     idCardName: Optional[str] = "ID Photo"
     status: Optional[str] = "Upcoming"
+    isHidden: Optional[bool] = False
 
 class BookingCreate(BookingBase):
     manualId: str
@@ -86,6 +88,7 @@ class BookingUpdate(BaseModel):
     manualId: Optional[str] = None
     guestName: Optional[str] = None
     phone: Optional[str] = None
+    email: Optional[str] = None
     room: Optional[str] = None
     checkIn: Optional[str] = None
     checkOut: Optional[str] = None
@@ -95,6 +98,7 @@ class BookingUpdate(BaseModel):
     idCard: Optional[str] = None
     idCardName: Optional[str] = None
     status: Optional[str] = None
+    isHidden: Optional[bool] = None
 
 class BookingResponse(BookingBase):
     id: str
@@ -102,6 +106,9 @@ class BookingResponse(BookingBase):
 
     class Config:
         from_attributes = True
+
+class EarlyCheckoutRequest(BaseModel):
+    createHiddenSlot: bool = True
 
 class ExpenseBase(BaseModel):
     id: Optional[str] = None
@@ -157,3 +164,25 @@ class RoomCreate(BaseModel):
 
 class RegisterStateResponse(BaseModel):
     isOpen: bool
+
+class InvitationCreateRequest(BaseModel):
+    propertyId: str
+    email: str
+
+class InvitationResponse(BaseModel):
+    id: str
+    propertyId: str
+    propertyName: str
+    email: str
+    senderEmail: str
+    status: str
+    inviteUrl: str
+    createdAt: str
+
+    class Config:
+        from_attributes = True
+
+class AcceptInvitationRequest(BaseModel):
+    token: str
+    name: str
+    password: str

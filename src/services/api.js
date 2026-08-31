@@ -190,6 +190,17 @@ export const api = {
     return data;
   },
 
+  async earlyCheckOutBooking(bookingId, createHiddenSlot = true) {
+    const res = await fetch(`${API_BASE_URL}/bookings/${encodeURIComponent(bookingId)}/early-checkout`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ createHiddenSlot })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to process early check out.');
+    return data;
+  },
+
   async deleteBooking(bookingId) {
     const res = await fetch(`${API_BASE_URL}/bookings/${encodeURIComponent(bookingId)}`, {
       method: 'DELETE',
@@ -276,5 +287,41 @@ export const api = {
     const data = await res.json();
     if (!res.ok) throw new Error('Failed to toggle register status.');
     return data;
+  },
+
+  async sendManagerInvitation(propertyId, email) {
+    const res = await fetch(`${API_BASE_URL}/invitations/send`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ propertyId, email })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to send manager invitation.');
+    return data;
+  },
+
+  async getInvitationDetails(token) {
+    const res = await fetch(`${API_BASE_URL}/invitations/${encodeURIComponent(token)}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Invalid or expired invitation token.');
+    return data;
+  },
+
+  async acceptManagerInvitation(token, name, password) {
+    const res = await fetch(`${API_BASE_URL}/invitations/accept`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, name, password })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to accept invitation.');
+    if (data.token) localStorage.setItem('frontdesk_jwt_token', data.token);
+    return data;
+  },
+
+  async getInvitations() {
+    const res = await fetch(`${API_BASE_URL}/invitations`, { headers: getAuthHeaders() });
+    if (!res.ok) throw new Error('Failed to fetch invitations list.');
+    return await res.json();
   }
 };

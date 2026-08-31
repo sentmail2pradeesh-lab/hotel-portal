@@ -14,7 +14,8 @@ import {
   ChevronDown,
   BedDouble,
   Plus,
-  Check
+  Check,
+  Edit2
 } from 'lucide-react';
 import { useHotel } from '../context/HotelContext';
 import { confirmDouble } from '../utils/formatters';
@@ -28,6 +29,7 @@ export const Navbar = () => {
     propertiesList,
     activePropertyId,
     switchProperty,
+    updateUserProfile,
     logout,
     isRegisterOpen, 
     toggleRegisterStatus,
@@ -40,6 +42,8 @@ export const Navbar = () => {
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showPropertyMenu, setShowPropertyMenu] = useState(false);
   const [showAddPropertyModal, setShowAddPropertyModal] = useState(false);
+  const [editingProp, setEditingProp] = useState(null);
+  const [renameInput, setRenameInput] = useState('');
 
   const profileMenuRef = useRef(null);
   const propertyMenuRef = useRef(null);
@@ -117,27 +121,48 @@ export const Navbar = () => {
               {propertiesList.map((p) => {
                 const isSelected = p.firmId === activePropertyId;
                 return (
-                  <button
+                  <div
                     key={p.firmId}
                     className={`property-select-item ${isSelected ? 'active' : ''}`}
-                    onClick={() => {
-                      switchProperty(p.firmId);
-                      setShowPropertyMenu(false);
-                    }}
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
                   >
-                    <div className="prop-item-logo">
-                      {p.firmLogo ? (
-                        <img src={p.firmLogo} alt={p.firmName} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                      ) : (
-                        <Building2 size={16} color="#d97706" />
-                      )}
+                    <div 
+                      style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, cursor: 'pointer' }}
+                      onClick={() => {
+                        switchProperty(p.firmId);
+                        setShowPropertyMenu(false);
+                      }}
+                    >
+                      <div className="prop-item-logo">
+                        {p.firmLogo ? (
+                          <img src={p.firmLogo} alt={p.firmName} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        ) : (
+                          <Building2 size={16} color="#d97706" />
+                        )}
+                      </div>
+                      <div className="prop-item-info">
+                        <div className="prop-item-name">{p.firmName}</div>
+                        <div className="prop-item-sub">Firm ID: {p.firmId}</div>
+                      </div>
                     </div>
-                    <div className="prop-item-info">
-                      <div className="prop-item-name">{p.firmName}</div>
-                      <div className="prop-item-sub">Firm ID: {p.firmId}</div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <button
+                        className="icon-btn"
+                        style={{ padding: '4px', color: '#0284c7' }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingProp(p);
+                          setRenameInput(p.firmName);
+                          setShowPropertyMenu(false);
+                        }}
+                        title="Rename Property"
+                      >
+                        <Edit2 size={13} />
+                      </button>
+                      {isSelected && <Check size={16} color="#047857" />}
                     </div>
-                    {isSelected && <Check size={16} color="#047857" style={{ marginLeft: 'auto' }} />}
-                  </button>
+                  </div>
                 );
               })}
             </div>
@@ -377,6 +402,49 @@ export const Navbar = () => {
                 {isRegisterOpen ? 'Close Shift Register' : 'Open Shift Register'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {editingProp && (
+        <div className="modal-overlay" onClick={() => setEditingProp(null)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '440px' }}>
+            <div className="modal-header-row">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <Edit2 size={20} color="#0284c7" />
+                <h3 className="modal-heading">Rename Property</h3>
+              </div>
+              <button className="icon-btn" onClick={() => setEditingProp(null)}>
+                <X size={16} />
+              </button>
+            </div>
+            
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              if (!renameInput.trim()) return;
+              if (editingProp.firmId !== activePropertyId) {
+                switchProperty(editingProp.firmId);
+              }
+              updateUserProfile(renameInput.trim(), null, null);
+              setEditingProp(null);
+            }}>
+              <div className="form-group" style={{ margin: '16px 0' }}>
+                <label className="form-label">Property / Firm Name</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={renameInput}
+                  onChange={(e) => setRenameInput(e.target.value)}
+                  placeholder="Enter new property name..."
+                  required
+                />
+              </div>
+
+              <div className="modal-actions">
+                <button type="button" className="btn-sub" onClick={() => setEditingProp(null)}>Cancel</button>
+                <button type="submit" className="btn-main">Save Property Name</button>
+              </div>
+            </form>
           </div>
         </div>
       )}

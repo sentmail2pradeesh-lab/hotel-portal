@@ -17,9 +17,13 @@ import {
   BedDouble,
   Upload,
   FileSignature,
-  Clock
+  Clock,
+  Edit2,
+  X,
+  Mail
 } from 'lucide-react';
 import { AddPropertyModal } from './AddPropertyModal';
+import { InviteManagerModal } from './InviteManagerModal';
 
 export const SettingsView = () => {
   const { 
@@ -43,7 +47,12 @@ export const SettingsView = () => {
   // Active section tab inside Settings: 'analytics' | 'rooms' | 'profile'
   const [section, setSection] = useState('analytics');
   const [showAddPropertyModal, setShowAddPropertyModal] = useState(false);
+  const [showInviteModal, setShowInviteModal] = useState(false);
   const [timeoutSuccess, setTimeoutSuccess] = useState('');
+
+  // Rename Property State for Admin
+  const [editingProp, setEditingProp] = useState(null);
+  const [renameInput, setRenameInput] = useState('');
 
   // Room Management State
   const [newRoomNumber, setNewRoomNumber] = useState('');
@@ -520,9 +529,16 @@ export const SettingsView = () => {
                   Properties owned & managed under your Super Admin manager account.
                 </p>
               </div>
-              <button className="btn-main" onClick={() => setShowAddPropertyModal(true)} style={{ padding: '8px 14px', fontSize: '13px' }}>
-                <Plus size={15} /> Add New Property
-              </button>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                {currentUser?.role === 'Overall Admin' && (
+                  <button className="btn-sub" onClick={() => setShowInviteModal(true)} style={{ padding: '8px 14px', fontSize: '13px', background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0' }}>
+                    <Mail size={15} /> Invite Manager
+                  </button>
+                )}
+                <button className="btn-main" onClick={() => setShowAddPropertyModal(true)} style={{ padding: '8px 14px', fontSize: '13px' }}>
+                  <Plus size={15} /> Add New Property
+                </button>
+              </div>
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -565,6 +581,17 @@ export const SettingsView = () => {
                     </div>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <button
+                        className="icon-btn"
+                        style={{ color: '#0284c7' }}
+                        onClick={() => {
+                          setEditingProp(p);
+                          setRenameInput(p.firmName);
+                        }}
+                        title="Rename Property"
+                      >
+                        <Edit2 size={15} />
+                      </button>
                       {isActive ? (
                         <span style={{ fontSize: '12px', fontWeight: 800, color: '#047857', background: '#d1fae5', padding: '4px 10px', borderRadius: '12px' }}>
                           Active Dashboard
@@ -762,61 +789,63 @@ export const SettingsView = () => {
             </div>
           </div>
 
-          {/* Manager & Property Info Form Card */}
-          <div className="card-container" style={{ padding: '28px' }}>
-            <h2 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text-main)', marginBottom: '6px', fontFamily: 'var(--font-serif)' }}>
-              Property & Manager Profile
-            </h2>
-            <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '20px' }}>
-              Update your property firm name and manager username.
-            </p>
+          {/* Manager & Property Info Form Card (For Overall Admin Only) */}
+          {currentUser?.role === 'Overall Admin' && (
+            <div className="card-container" style={{ padding: '28px' }}>
+              <h2 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text-main)', marginBottom: '6px', fontFamily: 'var(--font-serif)' }}>
+                Property & Manager Profile
+              </h2>
+              <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '20px' }}>
+                Update your property firm name and manager username.
+              </p>
 
-            {profileSuccess && (
-              <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', color: '#047857', padding: '12px 16px', borderRadius: 'var(--radius-md)', fontSize: '13px', fontWeight: 700, marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <CheckCircle2 size={16} /> {profileSuccess}
-              </div>
-            )}
-
-            <form onSubmit={handleProfileSave} className="auth-form">
-              <div className="form-group">
-                <label className="form-label">Property / Firm Name (Header Title)</label>
-                <div className="input-icon-wrapper">
-                  <Building2 size={16} className="input-icon" />
-                  <input 
-                    type="text" 
-                    className="form-input icon-padded" 
-                    value={firmName} 
-                    onChange={(e) => setFirmName(e.target.value)} 
-                    required 
-                  />
+              {profileSuccess && (
+                <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', color: '#047857', padding: '12px 16px', borderRadius: 'var(--radius-md)', fontSize: '13px', fontWeight: 700, marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <CheckCircle2 size={16} /> {profileSuccess}
                 </div>
-              </div>
+              )}
 
-              <div className="form-group">
-                <label className="form-label">Property Manager Username / Name</label>
-                <div className="input-icon-wrapper">
-                  <User size={16} className="input-icon" />
-                  <input 
-                    type="text" 
-                    className="form-input icon-padded" 
-                    value={managerName} 
-                    onChange={(e) => setManagerName(e.target.value)} 
-                    required 
-                  />
+              <form onSubmit={handleProfileSave} className="auth-form">
+                <div className="form-group">
+                  <label className="form-label">Property / Firm Name (Header Title)</label>
+                  <div className="input-icon-wrapper">
+                    <Building2 size={16} className="input-icon" />
+                    <input 
+                      type="text" 
+                      className="form-input icon-padded" 
+                      value={firmName} 
+                      onChange={(e) => setFirmName(e.target.value)} 
+                      required 
+                    />
+                  </div>
                 </div>
-              </div>
 
-              <button 
-                type="submit" 
-                className="btn-main" 
-                disabled={!isRegisterOpen}
-                style={{ width: '100%', padding: '12px', fontSize: '15px', marginTop: '10px' }}
-                title={isRegisterOpen ? "Save Profile Settings" : "Shift Register is Closed (View-Only Mode)"}
-              >
-                Save Profile Settings
-              </button>
-            </form>
-          </div>
+                <div className="form-group">
+                  <label className="form-label">Property Manager Username / Name</label>
+                  <div className="input-icon-wrapper">
+                    <User size={16} className="input-icon" />
+                    <input 
+                      type="text" 
+                      className="form-input icon-padded" 
+                      value={managerName} 
+                      onChange={(e) => setManagerName(e.target.value)} 
+                      required 
+                    />
+                  </div>
+                </div>
+
+                <button 
+                  type="submit" 
+                  className="btn-main" 
+                  disabled={!isRegisterOpen}
+                  style={{ width: '100%', padding: '12px', fontSize: '15px', marginTop: '10px' }}
+                  title={isRegisterOpen ? "Save Profile Settings" : "Shift Register is Closed (View-Only Mode)"}
+                >
+                  Save Profile Settings
+                </button>
+              </form>
+            </div>
+          )}
 
           {/* Property Session Timeout & Security Controls */}
           <div className="card-container" style={{ padding: '28px' }}>
@@ -868,6 +897,56 @@ export const SettingsView = () => {
         <AddPropertyModal
           isOpen={showAddPropertyModal}
           onClose={() => setShowAddPropertyModal(false)}
+        />
+      )}
+
+      {editingProp && (
+        <div className="modal-overlay" onClick={() => setEditingProp(null)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '440px' }}>
+            <div className="modal-header-row">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <Edit2 size={20} color="#0284c7" />
+                <h3 className="modal-heading">Rename Property</h3>
+              </div>
+              <button className="icon-btn" onClick={() => setEditingProp(null)}>
+                <X size={16} />
+              </button>
+            </div>
+            
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              if (!renameInput.trim()) return;
+              if (editingProp.firmId !== activePropertyId) {
+                switchProperty(editingProp.firmId);
+              }
+              updateUserProfile(renameInput.trim(), null, null);
+              setEditingProp(null);
+            }}>
+              <div className="form-group" style={{ margin: '16px 0' }}>
+                <label className="form-label">Property / Firm Name</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={renameInput}
+                  onChange={(e) => setRenameInput(e.target.value)}
+                  placeholder="Enter new property name..."
+                  required
+                />
+              </div>
+
+              <div className="modal-actions">
+                <button type="button" className="btn-sub" onClick={() => setEditingProp(null)}>Cancel</button>
+                <button type="submit" className="btn-main">Save Property Name</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showInviteModal && (
+        <InviteManagerModal
+          isOpen={showInviteModal}
+          onClose={() => setShowInviteModal(false)}
         />
       )}
     </div>

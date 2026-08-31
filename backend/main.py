@@ -1,3 +1,4 @@
+import os
 import json
 import uuid
 from datetime import datetime, timedelta
@@ -14,16 +15,17 @@ from passlib.context import CryptContext
 from backend.database import engine, Base, get_db
 from backend.models import (
     ManagerAccount, PropertyAccount, RoomModel, BookingModel,
-    ExpenseModel, BillModel, RegisterStateModel
+    ExpenseModel, BillModel, RegisterStateModel, InvitationModel
 )
 from backend.schemas import (
     ManagerRegisterRequest, ManagerLoginRequest, ManagerResponse,
     PropertyCreateRequest, PropertyResponse,
     RegisterRequest, LoginRequest, UserProfileResponse, ProfileUpdateRequest,
-    BookingCreate, BookingUpdate, BookingResponse,
+    BookingCreate, BookingUpdate, BookingResponse, EarlyCheckoutRequest,
     ExpenseCreate, ExpenseResponse,
     BillCreate, BillUpdate, BillResponse,
-    RoomCreate, RegisterStateResponse
+    RoomCreate, RegisterStateResponse,
+    InvitationCreateRequest, InvitationResponse, AcceptInvitationRequest
 )
 
 # Initialize database tables
@@ -45,6 +47,12 @@ try:
             conn.commit()
         if "manual_id" not in b_cols:
             conn.execute(text("ALTER TABLE bookings ADD COLUMN manual_id VARCHAR"))
+            conn.commit()
+        if "email" not in b_cols:
+            conn.execute(text("ALTER TABLE bookings ADD COLUMN email VARCHAR"))
+            conn.commit()
+        if "is_hidden" not in b_cols:
+            conn.execute(text("ALTER TABLE bookings ADD COLUMN is_hidden BOOLEAN DEFAULT 0"))
             conn.commit()
 except Exception as e:
     print("Database auto-migration info:", e)
@@ -114,15 +122,23 @@ def get_current_property(
         raise HTTPException(status_code=401, detail="Could not validate credentials.")
 
     if manager_id:
+        mgr = db.query(ManagerAccount).filter(ManagerAccount.id == manager_id).first()
+        is_overall_admin = mgr and (mgr.role == "Overall Admin" or mgr.email == "mail2pradeesh1621@gmail.com")
         if x_property_id:
-            prop = db.query(PropertyAccount).filter(
-                PropertyAccount.firm_id == x_property_id,
-                PropertyAccount.manager_id == manager_id
-            ).first()
+            if is_overall_admin:
+                prop = db.query(PropertyAccount).filter(PropertyAccount.firm_id == x_property_id).first()
+            else:
+                prop = db.query(PropertyAccount).filter(
+                    PropertyAccount.firm_id == x_property_id,
+                    PropertyAccount.manager_id == manager_id
+                ).first()
             if prop:
                 return prop
-        # Fallback to first property owned by manager
-        prop = db.query(PropertyAccount).filter(PropertyAccount.manager_id == manager_id).first()
+        # Fallback to first property
+        if is_overall_admin:
+            prop = db.query(PropertyAccount).first()
+        else:
+            prop = db.query(PropertyAccount).filter(PropertyAccount.manager_id == manager_id).first()
         if prop:
             return prop
         raise HTTPException(status_code=404, detail="No properties found under this manager account.")
@@ -148,14 +164,15 @@ def register_manager(req: ManagerRegisterRequest, db: Session = Depends(get_db))
 
     existing = db.query(ManagerAccount).filter(ManagerAccount.email.ilike(clean_email)).first()
     if existing:
-        raise HTTPException(status_code=400, detail=f'Super Admin manager "{clean_email}" is already registered.')
+        raise HTTPException(status_code=400, detail=f'Manager "{clean_email}" is already registered.')
 
     mgr_id = f"mgr_{int(datetime.utcnow().timestamp())}_{uuid.uuid4().hex[:4]}"
     new_mgr = ManagerAccount(
         id=mgr_id,
         name=clean_name,
         email=clean_email,
-        password_hash=hash_password(clean_pass)
+        password_hash=hash_password(clean_pass),
+        role="Property Manager"
     )
     db.add(new_mgr)
     db.commit()
@@ -181,43 +198,68 @@ def login_manager(req: ManagerLoginRequest, db: Session = Depends(get_db)):
     clean_pass = req.password.strip()
 
     if not clean_id or not clean_pass:
-        raise HTTPException(status_code=400, detail="Please enter manager identity and password.")
+        raise HTTPException(status_code=400, detail="Please enter identity and password.")
 
-    matched = db.query(ManagerAccount).filter(
-        (ManagerAccount.email.ilike(clean_id)) | (ManagerAccount.name.ilike(clean_id))
-    ).first()
-
-    # Fallback check for property account if user typed property login credentials
-    if not matched:
-        prop_account = db.query(PropertyAccount).filter(
-            (PropertyAccount.firm_name.ilike(clean_id)) |
-            (PropertyAccount.name.ilike(clean_id)) |
-            (PropertyAccount.email.ilike(clean_id))
-        ).first()
-        if prop_account and verify_password(clean_pass, prop_account.password_hash):
-            # Auto-create or link manager account if none exists
-            if not prop_account.manager_id:
-                mgr_id = f"mgr_{int(datetime.utcnow().timestamp())}_{uuid.uuid4().hex[:4]}"
-                new_mgr = ManagerAccount(
-                    id=mgr_id,
-                    name=prop_account.name,
-                    email=prop_account.email,
-                    password_hash=prop_account.password_hash
-                )
-                db.add(new_mgr)
-                prop_account.manager_id = mgr_id
+    # Direct login for Overall Admin
+    if clean_id == "mail2pradeesh1621@gmail.com" and clean_pass == "Prajan@1621":
+        admin_mgr = db.query(ManagerAccount).filter(ManagerAccount.email.ilike("mail2pradeesh1621@gmail.com")).first()
+        if not admin_mgr:
+            admin_mgr = ManagerAccount(
+                id="mgr_overall_admin",
+                name="Overall Admin",
+                email="mail2pradeesh1621@gmail.com",
+                password_hash=hash_password("Prajan@1621"),
+                role="Overall Admin"
+            )
+            db.add(admin_mgr)
+            db.commit()
+            db.refresh(admin_mgr)
+        else:
+            if admin_mgr.role != "Overall Admin":
+                admin_mgr.role = "Overall Admin"
                 db.commit()
-                matched = new_mgr
-            else:
-                matched = db.query(ManagerAccount).filter(ManagerAccount.id == prop_account.manager_id).first()
+        matched = admin_mgr
+    else:
+        matched = db.query(ManagerAccount).filter(
+            (ManagerAccount.email.ilike(clean_id)) | (ManagerAccount.name.ilike(clean_id))
+        ).first()
 
-    if not matched or not verify_password(clean_pass, matched.password_hash):
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid Super Admin credentials or incorrect password."
-        )
+        # Fallback check for property account if user typed property login credentials
+        if not matched:
+            prop_account = db.query(PropertyAccount).filter(
+                (PropertyAccount.firm_name.ilike(clean_id)) |
+                (PropertyAccount.name.ilike(clean_id)) |
+                (PropertyAccount.email.ilike(clean_id))
+            ).first()
+            if prop_account and verify_password(clean_pass, prop_account.password_hash):
+                if not prop_account.manager_id:
+                    mgr_id = f"mgr_{int(datetime.utcnow().timestamp())}_{uuid.uuid4().hex[:4]}"
+                    new_mgr = ManagerAccount(
+                        id=mgr_id,
+                        name=prop_account.name,
+                        email=prop_account.email,
+                        password_hash=prop_account.password_hash,
+                        role="Property Manager"
+                    )
+                    db.add(new_mgr)
+                    prop_account.manager_id = mgr_id
+                    db.commit()
+                    matched = new_mgr
+                else:
+                    matched = db.query(ManagerAccount).filter(ManagerAccount.id == prop_account.manager_id).first()
 
-    props = db.query(PropertyAccount).filter(PropertyAccount.manager_id == matched.id).all()
+        if not matched or not verify_password(clean_pass, matched.password_hash):
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid credentials or incorrect password."
+            )
+
+    is_admin = matched.role == "Overall Admin" or matched.email == "mail2pradeesh1621@gmail.com"
+    if is_admin:
+        props = db.query(PropertyAccount).all()
+    else:
+        props = db.query(PropertyAccount).filter(PropertyAccount.manager_id == matched.id).all()
+
     prop_responses = [
         PropertyResponse(
             firmId=p.firm_id,
@@ -240,7 +282,7 @@ def login_manager(req: ManagerLoginRequest, db: Session = Depends(get_db)):
             "id": matched.id,
             "name": matched.name,
             "email": matched.email,
-            "role": matched.role or "Super Admin",
+            "role": "Overall Admin" if is_admin else (matched.role or "Property Manager"),
             "properties": prop_responses,
             "activeProperty": prop_responses[0] if prop_responses else None
         }
@@ -268,7 +310,12 @@ def get_manager_me(
         if not mgr:
             raise HTTPException(status_code=404, detail="Manager account not found.")
 
-        props = db.query(PropertyAccount).filter(PropertyAccount.manager_id == mgr.id).all()
+        is_admin = mgr.role == "Overall Admin" or mgr.email == "mail2pradeesh1621@gmail.com"
+        if is_admin:
+            props = db.query(PropertyAccount).all()
+        else:
+            props = db.query(PropertyAccount).filter(PropertyAccount.manager_id == mgr.id).all()
+
         prop_responses = [
             PropertyResponse(
                 firmId=p.firm_id,
@@ -294,7 +341,7 @@ def get_manager_me(
             "id": mgr.id,
             "name": mgr.name,
             "email": mgr.email,
-            "role": mgr.role or "Super Admin",
+            "role": "Overall Admin" if is_admin else (mgr.role or "Property Manager"),
             "properties": prop_responses,
             "activeProperty": active_prop
         }
@@ -317,7 +364,7 @@ def get_manager_me(
             "id": f"mgr_{prop.firm_id}",
             "name": prop.name,
             "email": prop.email,
-            "role": "Super Admin",
+            "role": "Property Manager",
             "properties": [prop_resp],
             "activeProperty": prop_resp
         }
@@ -341,7 +388,11 @@ def get_manager_properties(
     if not manager_id:
         raise HTTPException(status_code=401, detail="Manager authorization required.")
 
-    props = db.query(PropertyAccount).filter(PropertyAccount.manager_id == manager_id).all()
+    mgr = db.query(ManagerAccount).filter(ManagerAccount.id == manager_id).first()
+    if mgr and (mgr.role == "Overall Admin" or mgr.email == "mail2pradeesh1621@gmail.com"):
+        props = db.query(PropertyAccount).all()
+    else:
+        props = db.query(PropertyAccount).filter(PropertyAccount.manager_id == manager_id).all()
     return [
         PropertyResponse(
             firmId=p.firm_id,
@@ -654,6 +705,7 @@ def get_bookings(
             manualId=b.manual_id or b.id,
             guestName=b.guest_name,
             phone=b.phone or "",
+            email=b.email or "",
             room=b.room,
             checkIn=b.check_in,
             checkOut=b.check_out,
@@ -663,6 +715,7 @@ def get_bookings(
             idCard=b.id_card,
             idCardName=b.id_card_name or "ID Photo",
             status=b.status or "Upcoming",
+            isHidden=bool(b.is_hidden),
             createdAt=b.created_at
         ))
     return res
@@ -697,6 +750,7 @@ def create_booking(
         firm_id=current_user.firm_id,
         guest_name=req.guestName.strip(),
         phone=req.phone,
+        email=req.email,
         room=req.room,
         check_in=req.checkIn,
         check_out=req.checkOut,
@@ -706,6 +760,7 @@ def create_booking(
         id_card=req.idCard,
         id_card_name=req.idCardName or "ID Photo",
         status=req.status or "Upcoming",
+        is_hidden=bool(req.isHidden),
         created_at=now_iso
     )
     db.add(new_b)
@@ -717,6 +772,7 @@ def create_booking(
         manualId=new_b.manual_id or new_b.id,
         guestName=new_b.guest_name,
         phone=new_b.phone or "",
+        email=new_b.email or "",
         room=new_b.room,
         checkIn=new_b.check_in,
         checkOut=new_b.check_out,
@@ -726,6 +782,7 @@ def create_booking(
         idCard=new_b.id_card,
         idCardName=new_b.id_card_name or "ID Photo",
         status=new_b.status or "Upcoming",
+        isHidden=bool(new_b.is_hidden),
         createdAt=new_b.created_at
     )
 
@@ -753,6 +810,7 @@ def checkin_booking(
         manualId=b.manual_id or b.id,
         guestName=b.guest_name,
         phone=b.phone or "",
+        email=b.email or "",
         room=b.room,
         checkIn=b.check_in,
         checkOut=b.check_out,
@@ -762,6 +820,7 @@ def checkin_booking(
         idCard=b.id_card,
         idCardName=b.id_card_name or "ID Photo",
         status=b.status,
+        isHidden=bool(b.is_hidden),
         createdAt=b.created_at
     )
 
@@ -789,6 +848,7 @@ def checkout_booking(
         manualId=b.manual_id or b.id,
         guestName=b.guest_name,
         phone=b.phone or "",
+        email=b.email or "",
         room=b.room,
         checkIn=b.check_in,
         checkOut=b.check_out,
@@ -798,8 +858,89 @@ def checkout_booking(
         idCard=b.id_card,
         idCardName=b.id_card_name or "ID Photo",
         status=b.status,
+        isHidden=bool(b.is_hidden),
         createdAt=b.created_at
     )
+
+
+@app.post("/api/bookings/{booking_id}/early-checkout")
+def early_checkout_booking(
+    booking_id: str,
+    req: EarlyCheckoutRequest,
+    current_user: PropertyAccount = Depends(get_current_property),
+    db: Session = Depends(get_db)
+):
+    b = db.query(BookingModel).filter(
+        BookingModel.id == booking_id,
+        BookingModel.firm_id == current_user.firm_id
+    ).first()
+
+    if not b:
+        raise HTTPException(status_code=404, detail="Booking not found.")
+
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    orig_checkout = b.check_out
+
+    b.status = "Completed"
+    b.check_out = today_str
+
+    hidden_booking = None
+    if req.createHiddenSlot and orig_checkout > today_str:
+        prop_bookings = db.query(BookingModel).filter(BookingModel.firm_id == current_user.firm_id).all()
+        max_num = 0
+        for pb in prop_bookings:
+            if pb.id and pb.id.startswith("ASZ-"):
+                try:
+                    num_part = int(pb.id.replace("ASZ-", ""))
+                    if num_part > max_num:
+                        max_num = num_part
+                except ValueError:
+                    pass
+        new_id = f"ASZ-{(max_num + 1):03d}"
+        hidden_b = BookingModel(
+            id=new_id,
+            manual_id=f"HIDDEN-{b.manual_id or b.id}",
+            firm_id=current_user.firm_id,
+            guest_name=f"[HIDDEN BOOKING] Room {b.room}",
+            phone=b.phone or "",
+            email=b.email or "",
+            room=b.room,
+            check_in=today_str,
+            check_out=orig_checkout,
+            amount_paid=0.0,
+            paid_via="N/A",
+            notes=f"Early release hidden slot from original stay {b.id} ({b.guest_name})",
+            status="Upcoming",
+            is_hidden=True,
+            created_at=datetime.utcnow().isoformat() + "Z"
+        )
+        db.add(hidden_b)
+        hidden_booking = hidden_b
+
+    db.commit()
+    db.refresh(b)
+    if hidden_booking:
+        db.refresh(hidden_booking)
+
+    return {
+        "updatedBooking": BookingResponse(
+            id=b.id, manualId=b.manual_id or b.id, guestName=b.guest_name,
+            phone=b.phone or "", email=b.email or "", room=b.room, checkIn=b.check_in,
+            checkOut=b.check_out, amountPaid=b.amount_paid, paidVia=b.paid_via or "Cash",
+            notes=b.notes or "", idCard=b.id_card, idCardName=b.id_card_name or "ID Photo",
+            status=b.status, isHidden=bool(b.is_hidden), createdAt=b.created_at
+        ),
+        "hiddenBooking": BookingResponse(
+            id=hidden_booking.id, manualId=hidden_booking.manual_id or hidden_booking.id,
+            guestName=hidden_booking.guest_name, phone=hidden_booking.phone or "",
+            email=hidden_booking.email or "", room=hidden_booking.room,
+            checkIn=hidden_booking.check_in, checkOut=hidden_booking.check_out,
+            amountPaid=hidden_booking.amount_paid, paidVia=hidden_booking.paid_via or "Cash",
+            notes=hidden_booking.notes or "", idCard=hidden_booking.id_card,
+            idCardName=hidden_booking.id_card_name or "ID Photo",
+            status=hidden_booking.status, isHidden=True, createdAt=hidden_booking.created_at
+        ) if hidden_booking else None
+    }
 
 
 @app.post("/api/bookings/{booking_id}/confirm", response_model=BookingResponse)
@@ -825,6 +966,7 @@ def confirm_booking(
         manualId=b.manual_id or b.id,
         guestName=b.guest_name,
         phone=b.phone or "",
+        email=b.email or "",
         room=b.room,
         checkIn=b.check_in,
         checkOut=b.check_out,
@@ -834,6 +976,7 @@ def confirm_booking(
         idCard=b.id_card,
         idCardName=b.id_card_name or "ID Photo",
         status=b.status,
+        isHidden=bool(b.is_hidden),
         createdAt=b.created_at
     )
 
@@ -859,6 +1002,8 @@ def update_booking(
         b.guest_name = req.guestName
     if req.phone is not None:
         b.phone = req.phone
+    if req.email is not None:
+        b.email = req.email
     if req.room is not None:
         b.room = req.room
     if req.checkIn is not None:
@@ -877,6 +1022,8 @@ def update_booking(
         b.id_card_name = req.idCardName
     if req.status is not None:
         b.status = req.status
+    if req.isHidden is not None:
+        b.is_hidden = req.isHidden
 
     db.commit()
     db.refresh(b)
@@ -886,6 +1033,7 @@ def update_booking(
         manualId=b.manual_id or b.id,
         guestName=b.guest_name,
         phone=b.phone or "",
+        email=b.email or "",
         room=b.room,
         checkIn=b.check_in,
         checkOut=b.check_out,
@@ -895,6 +1043,7 @@ def update_booking(
         idCard=b.id_card,
         idCardName=b.id_card_name or "ID Photo",
         status=b.status or "Upcoming",
+        isHidden=bool(b.is_hidden),
         createdAt=b.created_at
     )
 
@@ -1142,3 +1291,203 @@ def toggle_register_status(
     db.commit()
     db.refresh(state)
     return RegisterStateResponse(isOpen=state.is_open)
+
+
+# --- INVITATION SYSTEM ENDPOINTS ---
+
+def send_invitation_email(recipient_email: str, property_name: str, invite_url: str):
+    """
+    Sends an invitation email from admin email mail2pradeesh1621@gmail.com.
+    Logs email details and gracefully handles network SMTP delivery.
+    """
+    admin_sender = os.environ.get("SMTP_EMAIL", "mail2pradeesh1621@gmail.com")
+    smtp_pass = os.environ.get("SMTP_PASSWORD", "")
+    subject = f"Invitation to manage {property_name}"
+    body = (
+        f"Hello,\n\n"
+        f"You have been invited by the Overall Admin ({admin_sender}) to register as the Property Manager for '{property_name}'.\n\n"
+        f"Please click the secure activation link below to complete your setup:\n"
+        f"{invite_url}\n\n"
+        f"Best regards,\n"
+        f"Hotel Operations Team"
+    )
+    if smtp_pass:
+        try:
+            import smtplib
+            from email.mime.text import MIMEText
+            msg = MIMEText(body)
+            msg['Subject'] = subject
+            msg['From'] = admin_sender
+            msg['To'] = recipient_email
+            with smtplib.SMTP('smtp.gmail.com', 587) as server:
+                server.starttls()
+                server.login(admin_sender, smtp_pass)
+                server.sendmail(admin_sender, [recipient_email], msg.as_string())
+            print(f"[SMTP DISPATCH SUCCESS] Email sent to {recipient_email}")
+        except Exception as e:
+            print(f"[SMTP DISPATCH NOTICE] Could not deliver live SMTP ({e}). Activation Link: {invite_url}")
+    else:
+        print(f"[INVITATION DISPATCH LOG] From: {admin_sender} -> To: {recipient_email} | Link: {invite_url}")
+
+@app.post("/api/invitations/send")
+def send_invitation(
+    req: InvitationCreateRequest,
+    db: Session = Depends(get_db),
+    mgr_token_payload: dict = Depends(get_manager_me)
+):
+    if mgr_token_payload.get("role") != "Overall Admin":
+        raise HTTPException(status_code=403, detail="Only Overall Admin can send manager invitations.")
+
+    prop = db.query(PropertyAccount).filter(PropertyAccount.firm_id == req.propertyId).first()
+    if not prop:
+        raise HTTPException(status_code=404, detail="Property not found.")
+
+    token = f"inv_{uuid.uuid4().hex}"
+    invite = InvitationModel(
+        id=token,
+        property_id=prop.firm_id,
+        property_name=prop.firm_name,
+        email=req.email.strip().lower(),
+        sender_email="mail2pradeesh1621@gmail.com",
+        status="pending"
+    )
+    db.add(invite)
+    db.commit()
+    db.refresh(invite)
+
+    invite_url = f"http://localhost:5173/#register?token={token}"
+    send_invitation_email(req.email.strip(), prop.firm_name, invite_url)
+
+    return {
+        "id": invite.id,
+        "propertyId": invite.property_id,
+        "propertyName": invite.property_name,
+        "email": invite.email,
+        "senderEmail": invite.sender_email,
+        "status": invite.status,
+        "inviteUrl": invite_url,
+        "createdAt": invite.created_at.isoformat() if invite.created_at else ""
+    }
+
+@app.get("/api/invitations/{token}")
+def get_invitation_details(token: str, db: Session = Depends(get_db)):
+    invite = db.query(InvitationModel).filter(InvitationModel.id == token).first()
+    if not invite:
+        raise HTTPException(status_code=404, detail="Invitation link is invalid or expired.")
+    if invite.status == "accepted":
+        raise HTTPException(status_code=400, detail="This invitation has already been accepted.")
+
+    return {
+        "id": invite.id,
+        "propertyId": invite.property_id,
+        "propertyName": invite.property_name,
+        "email": invite.email,
+        "senderEmail": invite.sender_email,
+        "status": invite.status,
+        "createdAt": invite.created_at.isoformat() if invite.created_at else ""
+    }
+
+@app.post("/api/invitations/accept")
+def accept_invitation(req: AcceptInvitationRequest, db: Session = Depends(get_db)):
+    invite = db.query(InvitationModel).filter(InvitationModel.id == req.token).first()
+    if not invite:
+        raise HTTPException(status_code=404, detail="Invitation link is invalid or expired.")
+    if invite.status == "accepted":
+        raise HTTPException(status_code=400, detail="This invitation has already been accepted.")
+
+    clean_name = req.name.strip()
+    clean_pass = req.password.strip()
+    if not clean_name or not clean_pass:
+        raise HTTPException(status_code=400, detail="Please enter your name and password.")
+
+    # Check if manager account with this email already exists
+    existing_mgr = db.query(ManagerAccount).filter(ManagerAccount.email.ilike(invite.email)).first()
+    if existing_mgr:
+        existing_mgr.name = clean_name
+        existing_mgr.password_hash = hash_password(clean_pass)
+        mgr_user = existing_mgr
+    else:
+        mgr_id = f"mgr_{int(datetime.utcnow().timestamp())}_{uuid.uuid4().hex[:4]}"
+        mgr_user = ManagerAccount(
+            id=mgr_id,
+            name=clean_name,
+            email=invite.email,
+            password_hash=hash_password(clean_pass),
+            role="Property Manager"
+        )
+        db.add(mgr_user)
+
+    # Link Manager to Property
+    prop = db.query(PropertyAccount).filter(PropertyAccount.firm_id == invite.property_id).first()
+    if prop:
+        prop.manager_id = mgr_user.id
+        prop.name = mgr_user.name
+        prop.email = invite.email
+        prop.password_hash = mgr_user.password_hash
+
+    invite.status = "accepted"
+    try:
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        # Fallback in case of DB constraint: update without changing prop email
+        if prop:
+            prop.manager_id = mgr_user.id
+            prop.name = mgr_user.name
+            prop.password_hash = mgr_user.password_hash
+        invite.status = "accepted"
+        db.commit()
+
+    token = create_access_token({
+        "sub": mgr_user.id,
+        "manager_id": mgr_user.id,
+        "role": mgr_user.role or "Property Manager",
+        "email": mgr_user.email
+    })
+
+    prop_resp = PropertyResponse(
+        firmId=prop.firm_id,
+        firmName=prop.firm_name,
+        name=prop.name,
+        email=prop.email,
+        firmLogo=prop.firm_logo,
+        eSignature=prop.e_signature,
+        sessionTimeoutMinutes=prop.session_timeout_minutes or 15,
+        role=prop.role or "Property Manager",
+        initials=get_initials(prop.firm_name)
+    ) if prop else None
+
+    return {
+        "token": token,
+        "manager": {
+            "id": mgr_user.id,
+            "name": mgr_user.name,
+            "email": mgr_user.email,
+            "role": mgr_user.role,
+            "properties": [prop_resp] if prop_resp else [],
+            "activeProperty": prop_resp
+        }
+    }
+
+@app.get("/api/invitations")
+def list_invitations(
+    db: Session = Depends(get_db),
+    mgr_token_payload: dict = Depends(get_manager_me)
+):
+    if mgr_token_payload.get("role") != "Overall Admin":
+        raise HTTPException(status_code=403, detail="Only Overall Admin can view invitations.")
+
+    invites = db.query(InvitationModel).order_by(InvitationModel.created_at.desc()).all()
+    res = []
+    for inv in invites:
+        res.append({
+            "id": inv.id,
+            "propertyId": inv.property_id,
+            "propertyName": inv.property_name,
+            "email": inv.email,
+            "senderEmail": inv.sender_email,
+            "status": inv.status,
+            "inviteUrl": f"http://localhost:5173/#register?token={inv.id}",
+            "createdAt": inv.created_at.isoformat() if inv.created_at else ""
+        })
+    return res

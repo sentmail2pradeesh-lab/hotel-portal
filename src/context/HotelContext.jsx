@@ -393,6 +393,25 @@ export const HotelProvider = ({ children }) => {
     }
   };
 
+  const earlyCheckOutBooking = async (bookingId, createHiddenSlot = true) => {
+    if (!checkRegisterOpen()) return;
+    try {
+      const res = await api.earlyCheckOutBooking(bookingId, createHiddenSlot);
+      if (res && res.updatedBooking) {
+        setBookings((prev) => {
+          let updatedList = prev.map((b) => (b.id === bookingId ? res.updatedBooking : b));
+          if (res.hiddenBooking) {
+            updatedList = [res.hiddenBooking, ...updatedList];
+          }
+          return updatedList;
+        });
+      }
+    } catch (err) {
+      console.error('Failed to process early check out:', err);
+      alert(err.message || 'Failed to process early check out.');
+    }
+  };
+
   const updateBooking = async (id, updatedFields) => {
     if (!checkRegisterOpen()) return;
     try {
@@ -432,6 +451,16 @@ export const HotelProvider = ({ children }) => {
       setExpenses((prev) => prev.filter((e) => e.id !== id));
     } catch (err) {
       console.error('Failed to delete expense:', err);
+    }
+  };
+
+  const updateExpense = async (id, updatedFields) => {
+    if (!checkRegisterOpen()) return;
+    try {
+      const updated = await api.updateExpense(id, updatedFields);
+      setExpenses((prev) => prev.map((e) => (e.id === id ? updated : e)));
+    } catch (err) {
+      console.error('Failed to update expense:', err);
     }
   };
 
@@ -491,11 +520,15 @@ export const HotelProvider = ({ children }) => {
     setBills([]);
   };
 
-  // Aggregated Stats
-  const totalCollected = bookings.reduce((sum, b) => sum + (parseFloat(b.amountPaid) || 0), 0);
+  // Aggregated Stats (Exclude Hidden Bookings from standard financial totals)
+  const standardBookings = bookings.filter((b) => !b.isHidden);
+  const hiddenBookingsList = bookings.filter((b) => b.isHidden);
+
+  const totalCollected = standardBookings.reduce((sum, b) => sum + (parseFloat(b.amountPaid) || 0), 0);
+  const hiddenRevenue = hiddenBookingsList.reduce((sum, b) => sum + (parseFloat(b.amountPaid) || 0), 0);
   const totalExpenses = expenses.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
   const netRevenue = totalCollected - totalExpenses;
-  const totalBookingsCount = bookings.length;
+  const totalBookingsCount = standardBookings.length;
 
   const guestIDCards = bookings.map((b) => ({
     bookingId: b.id,
@@ -529,32 +562,37 @@ export const HotelProvider = ({ children }) => {
         register: managerRegister,
         managerLogin,
         managerRegister,
+        logout,
         updateUserProfile,
         updateFirmLogo,
         updateESignature,
         updateSessionTimeout,
-        logout,
+        isRegisterOpen,
+        toggleRegisterStatus,
         roomsList,
         addCustomRoom,
         removeCustomRoom,
         bookings,
+        standardBookings,
+        hiddenBookingsList,
         expenses,
         bills,
-        isRegisterOpen,
         addBooking,
         confirmBooking,
         checkInBooking,
         checkOutBooking,
+        earlyCheckOutBooking,
         updateBooking,
         deleteBooking,
         addExpense,
+        updateExpense,
         deleteExpense,
         addBill,
         updateBill,
         deleteBill,
-        toggleRegisterStatus,
         clearAllData,
         totalCollected,
+        hiddenRevenue,
         totalExpenses,
         netRevenue,
         totalBookingsCount,

@@ -33,8 +33,9 @@ const MainView = () => {
 
 const AppContent = () => {
   const { isAuthenticated, isRegisterOpen } = useHotel();
+  const isInviteLink = window.location.href.includes('token=');
 
-  if (!isAuthenticated) {
+  if (!isAuthenticated || isInviteLink) {
     return <AuthView />;
   }
 

@@ -20,7 +20,7 @@ class PropertyAccount(Base):
     firm_id = Column(String, unique=True, index=True, nullable=False)
     firm_name = Column(String, nullable=False)
     name = Column(String, nullable=False)
-    email = Column(String, unique=True, index=True, nullable=False)
+    email = Column(String, index=True, nullable=False)
     password_hash = Column(String, nullable=False)
     firm_logo = Column(Text, nullable=True)
     e_signature = Column(Text, nullable=True)
@@ -44,6 +44,7 @@ class BookingModel(Base):
     firm_id = Column(String, index=True, nullable=False)
     guest_name = Column(String, nullable=False)
     phone = Column(String, nullable=True)
+    email = Column(String, nullable=True)
     room = Column(String, nullable=False)
     check_in = Column(String, nullable=False)
     check_out = Column(String, nullable=False)
@@ -53,6 +54,7 @@ class BookingModel(Base):
     id_card = Column(Text, nullable=True)
     id_card_name = Column(String, nullable=True)
     status = Column(String, default="Upcoming", nullable=True)
+    is_hidden = Column(Boolean, default=False)
     created_at = Column(String, nullable=True)
 
 class ExpenseModel(Base):
@@ -84,3 +86,14 @@ class RegisterStateModel(Base):
 
     firm_id = Column(String, primary_key=True, index=True)
     is_open = Column(Boolean, default=True)
+
+class InvitationModel(Base):
+    __tablename__ = "invitations"
+
+    id = Column(String, primary_key=True, index=True)
+    property_id = Column(String, index=True, nullable=False)
+    property_name = Column(String, nullable=False)
+    email = Column(String, nullable=False)
+    sender_email = Column(String, default="mail2pradeesh1621@gmail.com")
+    status = Column(String, default="pending")
+    created_at = Column(DateTime, default=datetime.utcnow)

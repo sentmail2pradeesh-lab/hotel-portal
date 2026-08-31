@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useHotel } from '../context/HotelContext';
-import { generateSystemBookingId } from '../utils/formatters';
+import { generateSystemBookingId, getAutoStayStatus } from '../utils/formatters';
 import { Upload, X, CheckCircle2, FileText, Sparkles, Hash, FileCheck } from 'lucide-react';
 
 export const BookingModal = ({ isOpen, onClose, initialData = null }) => {
@@ -13,21 +13,27 @@ export const BookingModal = ({ isOpen, onClose, initialData = null }) => {
 
   const availableRooms = roomsList.filter(r => !occupiedRooms.includes(r));
 
+  const isHiddenAllocation = Boolean(initialData?.isHidden);
   const [id, setId] = useState(initialData?.id || generateSystemBookingId(bookings));
   const [manualId, setManualId] = useState(initialData?.manualId || '');
-  const [guestName, setGuestName] = useState(initialData?.guestName || '');
+  const [guestName, setGuestName] = useState(
+    initialData?.guestName && initialData.guestName.startsWith('[HIDDEN BOOKING]') ? '' : (initialData?.guestName || '')
+  );
   const [phone, setPhone] = useState(initialData?.phone || '');
+  const [email, setEmail] = useState(initialData?.email || '');
   const [room, setRoom] = useState(initialData?.room || availableRooms[0] || roomsList[0] || '');
   const [checkIn, setCheckIn] = useState(initialData?.checkIn || new Date().toISOString().split('T')[0]);
   const [checkOut, setCheckOut] = useState(initialData?.checkOut || '');
   const [amountPaid, setAmountPaid] = useState(initialData?.amountPaid || 0);
   const [paidVia, setPaidVia] = useState(initialData?.paidVia || 'Cash');
-  const [status, setStatus] = useState(initialData?.status || 'Upcoming');
   const [notes, setNotes] = useState(initialData?.notes || '');
   
   // ID Card document upload state (Photo or PDF)
   const [idCardDataUrl, setIdCardDataUrl] = useState(initialData?.idCard || null);
   const [idCardFileName, setIdCardFileName] = useState(initialData?.idCardName || '');
+
+  // Compute status automatically based on dates
+  const computedStatus = getAutoStayStatus(checkIn, checkOut, initialData?.status);
 
   if (!isOpen) return null;
 
@@ -52,7 +58,15 @@ export const BookingModal = ({ isOpen, onClose, initialData = null }) => {
       return;
     }
     if (!guestName.trim()) {
-      alert('Please enter guest name.');
+      alert('Please enter guest full name.');
+      return;
+    }
+    if (!phone.trim()) {
+      alert('Phone number is mandatory for booking.');
+      return;
+    }
+    if (!email.trim()) {
+      alert('Guest Mail ID is mandatory for booking.');
       return;
     }
     if (!room) {
@@ -65,12 +79,13 @@ export const BookingModal = ({ isOpen, onClose, initialData = null }) => {
       manualId: manualId.trim(),
       guestName: guestName.trim(),
       phone: phone.trim(),
+      email: email.trim(),
       room: room.trim(),
       checkIn,
       checkOut,
       amountPaid: parseFloat(amountPaid) || 0,
       paidVia,
-      status,
+      status: computedStatus,
       notes: notes.trim(),
       idCard: idCardDataUrl,
       idCardName: idCardFileName,
@@ -97,13 +112,16 @@ export const BookingModal = ({ isOpen, onClose, initialData = null }) => {
           <button className="icon-btn" onClick={onClose}><X size={18} /></button>
         </div>
 
+        {isHiddenAllocation && (
+          <div style={{ background: '#fffbeb', border: '1px solid #fde68a', color: '#b45309', padding: '10px 14px', borderRadius: '8px', margin: '12px 0', fontSize: '12px' }}>
+            <strong>🔒 Allocating Released Hidden Slot:</strong> Room <strong>Room {room}</strong> & Hidden ID <strong>{manualId || id}</strong> are fixed for this early-released stay. Please enter the new guest name, phone, email, and ID document below.
+          </div>
+        )}
+
         <form onSubmit={handleSubmit}>
           <div className="form-grid-2">
             <div className="form-group">
-              <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span>System Booking ID</span>
-                <span style={{ fontSize: '11px', color: '#0284c7', fontWeight: 600 }}>System Generated (ASZ-XXX)</span>
-              </label>
+              <label className="form-label">System Booking ID (Auto-Generated)</label>
               <input
                 type="text"
                 className="form-input mono"
@@ -123,6 +141,8 @@ export const BookingModal = ({ isOpen, onClose, initialData = null }) => {
                 placeholder="e.g. OYO-10234 or Ref #9921"
                 value={manualId}
                 onChange={(e) => setManualId(e.target.value)}
+                readOnly={isHiddenAllocation}
+                style={isHiddenAllocation ? { background: '#f8fafc', color: '#b45309', fontWeight: 700, cursor: 'not-allowed' } : {}}
                 required
               />
             </div>
@@ -132,7 +152,7 @@ export const BookingModal = ({ isOpen, onClose, initialData = null }) => {
               <input
                 type="text"
                 className="form-input"
-                placeholder="Full guest name"
+                placeholder="Enter new guest full name"
                 value={guestName}
                 onChange={(e) => setGuestName(e.target.value)}
                 required
@@ -140,26 +160,26 @@ export const BookingModal = ({ isOpen, onClose, initialData = null }) => {
             </div>
 
             <div className="form-group">
-              <label className="form-label">Stay Status</label>
-              <select
-                className="form-select"
-                value={status}
-                onChange={(e) => setStatus(e.target.value)}
-              >
-                <option value="Upcoming">Upcoming (Reserved)</option>
-                <option value="In-House">In-House (Checked-In)</option>
-                <option value="Completed">Completed (Checked-Out)</option>
-              </select>
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">Phone Number</label>
+              <label className="form-label">Phone Number <span style={{ color: '#dc2626' }}>*</span></label>
               <input
                 type="text"
                 className="form-input mono"
-                placeholder="Contact number"
+                placeholder="Guest phone number"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
+                required
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Guest Mail ID <span style={{ color: '#dc2626' }}>*</span></label>
+              <input
+                type="email"
+                className="form-input"
+                placeholder="guest@email.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
               />
             </div>
 
@@ -169,6 +189,8 @@ export const BookingModal = ({ isOpen, onClose, initialData = null }) => {
                 className="form-select mono"
                 value={room}
                 onChange={(e) => setRoom(e.target.value)}
+                disabled={isHiddenAllocation}
+                style={isHiddenAllocation ? { background: '#f8fafc', cursor: 'not-allowed', fontWeight: 700 } : {}}
                 required
               >
                 {roomsList.map((r) => {
@@ -183,7 +205,7 @@ export const BookingModal = ({ isOpen, onClose, initialData = null }) => {
             </div>
 
             <div className="form-group">
-              <label className="form-label">Check-in Date (DD/MM/YYYY)</label>
+              <label className="form-label">Check-in Date (DD/MM/YYYY) <span style={{ color: '#dc2626' }}>*</span></label>
               <input
                 type="date"
                 className="form-input"
@@ -194,7 +216,7 @@ export const BookingModal = ({ isOpen, onClose, initialData = null }) => {
             </div>
 
             <div className="form-group">
-              <label className="form-label">Check-out Date (DD/MM/YYYY)</label>
+              <label className="form-label">Check-out Date (DD/MM/YYYY) <span style={{ color: '#dc2626' }}>*</span></label>
               <input
                 type="date"
                 className="form-input"

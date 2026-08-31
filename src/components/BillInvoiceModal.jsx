@@ -79,39 +79,55 @@ export const BillInvoiceModal = ({ bill, onClose, onEditBill }) => {
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '28px', fontSize: '13px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px', fontSize: '13px' }}>
             <div style={{ background: '#f8fafc', padding: '14px', borderRadius: 'var(--radius-md)', border: '1px solid #e2e8f0' }}>
-              <span style={{ color: 'var(--text-secondary)', fontSize: '10px', fontWeight: 800, display: 'block', marginBottom: '4px', letterSpacing: '0.05em' }}>GUEST VISITOR</span>
-              <strong style={{ fontSize: '16px', color: '#0f172a' }}>{bill.guestName || 'Walk-in Guest'}</strong>
+              <span style={{ color: 'var(--text-secondary)', fontSize: '10px', fontWeight: 800, display: 'block', marginBottom: '4px', letterSpacing: '0.05em' }}>GUEST VISITOR DETAILS</span>
+              <strong style={{ fontSize: '15px', color: '#0f172a', display: 'block', marginBottom: '4px' }}>{bill.guestName || 'Walk-in Guest'}</strong>
+              <div style={{ fontSize: '11px', color: '#64748b', lineHeight: 1.5 }}>
+                {bill.guestEmail && bill.guestEmail !== 'N/A' && <div>Email: {bill.guestEmail}</div>}
+                {bill.guestPhone && bill.guestPhone !== 'N/A' && <div>Phone: {bill.guestPhone}</div>}
+              </div>
             </div>
+
             <div style={{ background: '#f8fafc', padding: '14px', borderRadius: 'var(--radius-md)', border: '1px solid #e2e8f0' }}>
-              <span style={{ color: 'var(--text-secondary)', fontSize: '10px', fontWeight: 800, display: 'block', marginBottom: '4px', letterSpacing: '0.05em' }}>STAY / SUITE RECORD</span>
-              <strong style={{ fontSize: '14px', fontFamily: 'var(--font-mono)', color: '#0284c7' }}>
-                {bill.bookingId ? `${bill.bookingId} (Room ${bill.roomNo || 'N/A'})` : 'Standalone Bill'}
+              <span style={{ color: 'var(--text-secondary)', fontSize: '10px', fontWeight: 800, display: 'block', marginBottom: '4px', letterSpacing: '0.05em' }}>STAY & CHECK-IN / CHECK-OUT</span>
+              <strong style={{ fontSize: '14px', fontFamily: 'var(--font-mono)', color: '#0284c7', display: 'block', marginBottom: '6px' }}>
+                {bill.bookingId ? `${bill.bookingId} • Room ${bill.roomNo || 'N/A'}` : 'Standalone Bill'}
               </strong>
+              <div style={{ fontSize: '11px', color: '#334155', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                <div><strong>Check-in:</strong> {formatDate(bill.checkIn)} ({bill.checkInTime || '10:00 AM'})</div>
+                <div><strong>Check-out:</strong> {formatDate(bill.checkOut)} ({bill.checkOutTime || '12:00 PM'})</div>
+                <div><strong>Duration:</strong> {bill.nights || 1} {bill.nights === 1 ? 'Night' : 'Nights'}</div>
+              </div>
             </div>
           </div>
 
-          {/* Line items */}
+          {/* Line items Table matching Receipt Template */}
           <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '24px', fontSize: '13px' }}>
             <thead>
-              <tr style={{ borderBottom: '2px solid #e2e8f0', backgroundColor: '#f8fafc' }}>
-                <th style={{ textAlign: 'left', padding: '10px 12px', fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 800 }}>ITEM / DESCRIPTION</th>
-                <th style={{ textAlign: 'right', padding: '10px 12px', fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 800 }}>AMOUNT</th>
+              <tr style={{ borderBottom: '2px solid #0f172a', backgroundColor: '#0f172a', color: '#ffffff' }}>
+                <th style={{ textAlign: 'center', padding: '10px 12px', fontSize: '11px', fontWeight: 800 }}>QTY</th>
+                <th style={{ textAlign: 'left', padding: '10px 12px', fontSize: '11px', fontWeight: 800 }}>DESCRIPTION</th>
+                <th style={{ textAlign: 'right', padding: '10px 12px', fontSize: '11px', fontWeight: 800 }}>UNIT PRICE</th>
+                <th style={{ textAlign: 'right', padding: '10px 12px', fontSize: '11px', fontWeight: 800 }}>AMOUNT</th>
               </tr>
             </thead>
             <tbody>
-              <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                <td style={{ padding: '12px', color: '#0f172a', fontWeight: 600 }}>Room Accommodation Charge</td>
+              <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
+                <td style={{ textAlign: 'center', padding: '12px', fontFamily: 'var(--font-mono)' }}>{bill.nights || 1}.00</td>
+                <td style={{ padding: '12px', color: '#0f172a', fontWeight: 600 }}>Nights Accommodation in Room {bill.roomNo || 'Suite'}</td>
+                <td style={{ textAlign: 'right', padding: '12px', fontFamily: 'var(--font-mono)' }}>
+                  {formatCurrency((bill.roomCharge || 0) / (bill.nights || 1))}
+                </td>
                 <td style={{ textAlign: 'right', padding: '12px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#0f172a' }}>
-                  {formatCurrency(bill.roomCharge)}
+                  {formatCurrency(bill.roomCharge || 0)}
                 </td>
               </tr>
               {bill.addOns && bill.addOns.map((addon, index) => (
-                <tr key={index} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                  <td style={{ padding: '12px', color: 'var(--text-secondary)' }}>
-                    + {addon.name || 'Add-on service'}
-                  </td>
+                <tr key={index} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                  <td style={{ textAlign: 'center', padding: '12px', fontFamily: 'var(--font-mono)' }}>{(addon.quantity || 1)}.00</td>
+                  <td style={{ padding: '12px', color: 'var(--text-secondary)' }}>{addon.name}</td>
+                  <td style={{ textAlign: 'right', padding: '12px', fontFamily: 'var(--font-mono)' }}>{formatCurrency(addon.unitPrice || addon.amount)}</td>
                   <td style={{ textAlign: 'right', padding: '12px', fontFamily: 'var(--font-mono)', color: '#047857', fontWeight: 700 }}>
                     {formatCurrency(addon.amount)}
                   </td>
@@ -121,11 +137,25 @@ export const BillInvoiceModal = ({ bill, onClose, onEditBill }) => {
           </table>
 
           {/* Total Summary */}
-          <div style={{ display: 'flex', justifyContent: 'flex-end', borderTop: '2px dashed #cbd5e1', paddingTop: '18px' }}>
-            <div style={{ textAlign: 'right' }}>
-              <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 800, display: 'block', letterSpacing: '0.08em' }}>GRAND TOTAL DUE</span>
-              <div style={{ fontFamily: 'var(--font-mono)', fontSize: '28px', fontWeight: 800, color: '#d97706' }}>
-                {formatCurrency(bill.total)}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', borderTop: '2px dashed #cbd5e1', paddingTop: '16px' }}>
+            <div style={{ textAlign: 'right', minWidth: '220px' }}>
+              {bill.subtotal !== undefined && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px', fontSize: '13px', color: 'var(--text-secondary)' }}>
+                  <span>Subtotal:</span>
+                  <strong style={{ fontFamily: 'var(--font-mono)', color: '#0f172a' }}>{formatCurrency(bill.subtotal)}</strong>
+                </div>
+              )}
+              {bill.taxAmount > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', fontSize: '13px', color: 'var(--text-secondary)' }}>
+                  <span>Tax / GST ({bill.taxPercent}%):</span>
+                  <strong style={{ fontFamily: 'var(--font-mono)', color: '#0f172a' }}>{formatCurrency(bill.taxAmount)}</strong>
+                </div>
+              )}
+              <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #e2e8f0', paddingTop: '8px', marginTop: '4px' }}>
+                <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 800, letterSpacing: '0.05em' }}>GRAND TOTAL DUE</span>
+                <div style={{ fontFamily: 'var(--font-mono)', fontSize: '24px', fontWeight: 800, color: '#d97706' }}>
+                  {formatCurrency(bill.total)}
+                </div>
               </div>
             </div>
           </div>

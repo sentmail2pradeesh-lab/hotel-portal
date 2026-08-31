@@ -1,10 +1,15 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useHotel } from '../context/HotelContext';
-import { Building2, KeyRound, User, Mail, ShieldCheck, ArrowRight, Clock, Upload, FileSignature, Plus } from 'lucide-react';
+import { api } from '../services/api';
+import { Building2, KeyRound, User, Mail, ShieldCheck, ArrowRight, Clock, Upload, FileSignature, Plus, CheckCircle2, Lock } from 'lucide-react';
 
 export const AuthView = () => {
   const { manager, propertiesList, managerLogin, managerRegister, addProperty, authNotice } = useHotel();
-  const [authMode, setAuthMode] = useState('login'); // 'login' | 'register'
+  const [authMode, setAuthMode] = useState('login'); // 'login' | 'register' | 'invite'
+
+  // Invitation Activation State
+  const [inviteToken, setInviteToken] = useState('');
+  const [inviteDetails, setInviteDetails] = useState(null);
 
   // Manager Login State
   const [loginIdentity, setLoginIdentity] = useState('');
@@ -26,19 +31,52 @@ export const AuthView = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // Check URL token parameter on mount
+  useEffect(() => {
+    const extractToken = () => {
+      const href = window.location.href;
+      if (!href.includes('token=')) return '';
+      const match = href.match(/token=([a-zA-Z0-9_-]+)/);
+      return match ? match[1] : '';
+    };
+
+    const tokenVal = extractToken();
+    if (tokenVal) {
+      setInviteToken(tokenVal);
+      setAuthMode('invite');
+      setLoading(true);
+      api.getInvitationDetails(tokenVal)
+        .then((details) => {
+          setInviteDetails(details);
+          setRegEmail(details.email || '');
+        })
+        .catch((err) => {
+          setError(err.message || 'Invalid or expired invitation link.');
+        })
+        .finally(() => {
+          setLoading(false);
+        });
+    }
+  }, []);
+
   // Handle Manager Login
   const handleLoginSubmit = async (e) => {
     e.preventDefault();
     if (!loginIdentity.trim() || !loginPassword) {
-      setError('Please enter your Super Admin manager email or username and password.');
+      setError('Please enter your email/username and password.');
       return;
     }
     setError('');
     setLoading(true);
-    const res = await managerLogin(loginIdentity.trim(), loginPassword);
-    setLoading(false);
-    if (res && !res.success) {
-      setError(res.message);
+    try {
+      const res = await managerLogin(loginIdentity.trim(), loginPassword);
+      if (res && !res.success) {
+        setError(res.message || 'Sign in failed.');
+      }
+    } catch (err) {
+      setError(err.message || 'Failed to connect to backend server. Make sure server is running.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -51,10 +89,36 @@ export const AuthView = () => {
     }
     setError('');
     setLoading(true);
-    const res = await managerRegister(regName.trim(), regEmail.trim(), regPassword);
-    setLoading(false);
-    if (res && !res.success) {
-      setError(res.message);
+    try {
+      const res = await managerRegister(regName.trim(), regEmail.trim(), regPassword);
+      if (res && !res.success) {
+        setError(res.message || 'Registration failed.');
+      }
+    } catch (err) {
+      setError(err.message || 'Failed to connect to backend server. Make sure server is running.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handle Invitation Acceptance & Activation
+  const handleAcceptInviteSubmit = async (e) => {
+    e.preventDefault();
+    if (!regName.trim() || !regPassword) {
+      setError('Please enter your manager name and set a password.');
+      return;
+    }
+    setError('');
+    setLoading(true);
+    try {
+      const res = await api.acceptManagerInvitation(inviteToken, regName.trim(), regPassword);
+      if (res && res.token) {
+        window.location.href = '/';
+      }
+    } catch (err) {
+      setError(err.message || 'Failed to activate manager account.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -363,8 +427,8 @@ export const AuthView = () => {
           <div className="auth-logo">
             <Building2 size={28} color="#000000" />
           </div>
-          <h1 className="auth-title">Super Admin Portal</h1>
-          <p className="auth-subtitle">Multi-Property Manager Master Sign In</p>
+          <h1 className="auth-title">Hotel Operations Portal</h1>
+          <p className="auth-subtitle">Sign in as Overall Admin or Property Manager</p>
         </div>
 
         {authNotice && (
@@ -387,20 +451,22 @@ export const AuthView = () => {
         )}
 
         {/* Auth Tabs */}
-        <div className="auth-tabs">
-          <button
-            className={`auth-tab-btn ${authMode === 'login' ? 'active' : ''}`}
-            onClick={() => { setAuthMode('login'); setError(''); }}
-          >
-            Manager Sign In
-          </button>
-          <button
-            className={`auth-tab-btn ${authMode === 'register' ? 'active' : ''}`}
-            onClick={() => { setAuthMode('register'); setError(''); }}
-          >
-            Create Manager Account
-          </button>
-        </div>
+        {authMode !== 'invite' && (
+          <div className="auth-tabs">
+            <button
+              className={`auth-tab-btn ${authMode === 'login' ? 'active' : ''}`}
+              onClick={() => { setAuthMode('login'); setError(''); }}
+            >
+              Portal Sign In
+            </button>
+            <button
+              className={`auth-tab-btn ${authMode === 'register' ? 'active' : ''}`}
+              onClick={() => { setAuthMode('register'); setError(''); }}
+            >
+              Manager Registration
+            </button>
+          </div>
+        )}
 
         {error && (
           <div className="auth-error-banner">
@@ -408,17 +474,100 @@ export const AuthView = () => {
           </div>
         )}
 
-        {/* LOGIN FORM */}
-        {authMode === 'login' ? (
-          <form onSubmit={handleLoginSubmit} className="auth-form">
+        {/* INVITATION ACTIVATION FORM */}
+        {authMode === 'invite' ? (
+          <form onSubmit={handleAcceptInviteSubmit} className="auth-form">
+            <div style={{
+              background: '#ecfdf5',
+              border: '1px solid #a7f3d0',
+              color: '#047857',
+              padding: '12px 14px',
+              borderRadius: 'var(--radius-md)',
+              fontSize: '13px',
+              fontWeight: 600,
+              marginBottom: '16px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}>
+              <CheckCircle2 size={18} color="#047857" style={{ flexShrink: 0 }} />
+              <span>You are invited by Admin ({inviteDetails?.senderEmail || 'mail2pradeesh1621@gmail.com'}) to manage this property.</span>
+            </div>
+
             <div className="form-group">
-              <label className="form-label">Super Admin Email or Username</label>
+              <label className="form-label">Property Name (Fixed by Admin)</label>
+              <div className="input-icon-wrapper" style={{ position: 'relative' }}>
+                <Building2 size={16} className="input-icon" />
+                <input
+                  type="text"
+                  className="form-input icon-padded"
+                  value={inviteDetails?.propertyName || 'Loading property...'}
+                  disabled
+                  style={{ background: '#f1f5f9', cursor: 'not-allowed', color: '#334155', fontWeight: 700 }}
+                />
+                <Lock size={14} color="#64748b" style={{ position: 'absolute', right: '12px', top: '13px' }} />
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Manager Email Address (Fixed)</label>
+              <div className="input-icon-wrapper" style={{ position: 'relative' }}>
+                <Mail size={16} className="input-icon" />
+                <input
+                  type="email"
+                  className="form-input icon-padded"
+                  value={inviteDetails?.email || regEmail || ''}
+                  disabled
+                  style={{ background: '#f1f5f9', cursor: 'not-allowed', color: '#334155', fontWeight: 700 }}
+                />
+                <Lock size={14} color="#64748b" style={{ position: 'absolute', right: '12px', top: '13px' }} />
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Manager Full Name <span style={{ color: '#e11d48' }}>*</span></label>
               <div className="input-icon-wrapper">
                 <User size={16} className="input-icon" />
                 <input
                   type="text"
                   className="form-input icon-padded"
-                  placeholder="Enter manager email or username"
+                  placeholder="Enter your full name"
+                  value={regName}
+                  onChange={(e) => setRegName(e.target.value)}
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Create Password <span style={{ color: '#e11d48' }}>*</span></label>
+              <div className="input-icon-wrapper">
+                <KeyRound size={16} className="input-icon" />
+                <input
+                  type="password"
+                  className="form-input icon-padded"
+                  placeholder="••••••••"
+                  value={regPassword}
+                  onChange={(e) => setRegPassword(e.target.value)}
+                  required
+                />
+              </div>
+            </div>
+
+            <button type="submit" className="btn-main" disabled={loading} style={{ width: '100%', padding: '12px', fontSize: '15px', marginTop: '6px' }}>
+              {loading ? 'Activating Account...' : <><ArrowRight size={16} /> Activate Account & Sign In</>}
+            </button>
+          </form>
+        ) : authMode === 'login' ? (
+          <form onSubmit={handleLoginSubmit} className="auth-form">
+            <div className="form-group">
+              <label className="form-label">Email ID or Username</label>
+              <div className="input-icon-wrapper">
+                <User size={16} className="input-icon" />
+                <input
+                  type="text"
+                  className="form-input icon-padded"
+                  placeholder="e.g. mail2pradeesh1621@gmail.com or manager@hotel.com"
                   value={loginIdentity}
                   onChange={(e) => setLoginIdentity(e.target.value)}
                   required
@@ -442,7 +591,7 @@ export const AuthView = () => {
             </div>
 
             <button type="submit" className="btn-main" disabled={loading} style={{ width: '100%', padding: '12px', fontSize: '15px', marginTop: '6px' }}>
-              {loading ? 'Signing In...' : <><ArrowRight size={16} /> Sign In to Master Portal</>}
+              {loading ? 'Signing In...' : <><ArrowRight size={16} /> Sign In to Portal</>}
             </button>
           </form>
         ) : (

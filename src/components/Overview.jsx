@@ -20,9 +20,11 @@ import {
 export const Overview = () => {
   const { 
     totalCollected, 
+    hiddenRevenue,
     totalExpenses, 
     netRevenue, 
     totalBookingsCount, 
+    currentUser,
     isRegisterOpen, 
     bookings,
     roomsList,
@@ -64,9 +66,24 @@ export const Overview = () => {
           </div>
           <div style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.9)', marginTop: '8px', display: 'flex', alignItems: 'center', gap: '4px' }}>
             <TrendingUp size={13} />
-            <span style={{ fontWeight: 700 }}>+12.4%</span> vs previous shift
+            <span style={{ fontWeight: 700 }}>Standard Intake</span>
           </div>
         </div>
+
+        {currentUser?.role === 'Overall Admin' && (
+          <div className="metric-card amber" style={{ background: 'linear-gradient(135deg, #b45309 0%, #d97706 100%)' }}>
+            <div className="metric-title">
+              <span>HIDDEN REVENUE (ADMIN ONLY)</span>
+              <DollarSign size={18} color="#ffffff" />
+            </div>
+            <div className="metric-number">
+              {formatCurrency(hiddenRevenue || 0)}
+            </div>
+            <div style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.9)', marginTop: '8px' }}>
+              Isolated early checkout slots
+            </div>
+          </div>
+        )}
 
         <div className="metric-card rose">
           <div className="metric-title">
