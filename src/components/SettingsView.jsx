@@ -19,10 +19,14 @@ import {
   FileSignature,
   Clock
 } from 'lucide-react';
+import { AddPropertyModal } from './AddPropertyModal';
 
 export const SettingsView = () => {
   const { 
-    currentUser, 
+    currentUser,
+    propertiesList,
+    activePropertyId,
+    switchProperty,
     updateUserProfile,
     updateFirmLogo,
     updateESignature,
@@ -38,6 +42,7 @@ export const SettingsView = () => {
 
   // Active section tab inside Settings: 'analytics' | 'rooms' | 'profile'
   const [section, setSection] = useState('analytics');
+  const [showAddPropertyModal, setShowAddPropertyModal] = useState(false);
   const [timeoutSuccess, setTimeoutSuccess] = useState('');
 
   // Room Management State
@@ -504,6 +509,82 @@ export const SettingsView = () => {
       {section === 'profile' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', maxWidth: '640px' }}>
           
+          {/* Properties Portfolio & Switcher Card */}
+          <div className="card-container" style={{ padding: '28px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <div>
+                <h2 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text-main)', fontFamily: 'var(--font-serif)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Building2 size={20} color="#d97706" /> Properties Portfolio ({propertiesList.length})
+                </h2>
+                <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+                  Properties owned & managed under your Super Admin manager account.
+                </p>
+              </div>
+              <button className="btn-main" onClick={() => setShowAddPropertyModal(true)} style={{ padding: '8px 14px', fontSize: '13px' }}>
+                <Plus size={15} /> Add New Property
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {propertiesList.map((p) => {
+                const isActive = p.firmId === activePropertyId;
+                return (
+                  <div
+                    key={p.firmId}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '12px 16px',
+                      background: isActive ? '#ecfdf5' : '#f8fafc',
+                      border: `1px solid ${isActive ? '#a7f3d0' : '#e2e8f0'}`,
+                      borderRadius: 'var(--radius-md)'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <div style={{
+                        width: '42px',
+                        height: '42px',
+                        borderRadius: '8px',
+                        background: '#0f172a',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        overflow: 'hidden'
+                      }}>
+                        {p.firmLogo ? (
+                          <img src={p.firmLogo} alt={p.firmName} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        ) : (
+                          <Building2 size={20} color="#f59e0b" />
+                        )}
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-main)' }}>{p.firmName}</div>
+                        <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Firm ID: {p.firmId}</div>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      {isActive ? (
+                        <span style={{ fontSize: '12px', fontWeight: 800, color: '#047857', background: '#d1fae5', padding: '4px 10px', borderRadius: '12px' }}>
+                          Active Dashboard
+                        </span>
+                      ) : (
+                        <button
+                          className="btn-sub"
+                          style={{ padding: '6px 12px', fontSize: '12px' }}
+                          onClick={() => switchProperty(p.firmId)}
+                        >
+                          Switch to Dashboard
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
           {/* Custom Property Logo Upload Card */}
           <div className="card-container" style={{ padding: '28px' }}>
             <h2 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text-main)', marginBottom: '4px', fontFamily: 'var(--font-serif)', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -781,6 +862,13 @@ export const SettingsView = () => {
           </div>
 
         </div>
+      )}
+
+      {showAddPropertyModal && (
+        <AddPropertyModal
+          isOpen={showAddPropertyModal}
+          onClose={() => setShowAddPropertyModal(false)}
+        />
       )}
     </div>
   );

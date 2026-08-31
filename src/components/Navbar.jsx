@@ -12,16 +12,22 @@ import {
   Trash2,
   Settings,
   ChevronDown,
-  BedDouble
+  BedDouble,
+  Plus,
+  Check
 } from 'lucide-react';
 import { useHotel } from '../context/HotelContext';
 import { confirmDouble } from '../utils/formatters';
+import { AddPropertyModal } from './AddPropertyModal';
 
 export const Navbar = () => {
   const { 
     activeTab, 
     setActiveTab, 
     currentUser,
+    propertiesList,
+    activePropertyId,
+    switchProperty,
     logout,
     isRegisterOpen, 
     toggleRegisterStatus,
@@ -32,13 +38,20 @@ export const Navbar = () => {
 
   const [showShiftModal, setShowShiftModal] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
-  const profileMenuRef = useRef(null);
+  const [showPropertyMenu, setShowPropertyMenu] = useState(false);
+  const [showAddPropertyModal, setShowAddPropertyModal] = useState(false);
 
-  // Close profile dropdown when clicking outside
+  const profileMenuRef = useRef(null);
+  const propertyMenuRef = useRef(null);
+
+  // Close dropdowns when clicking outside
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (profileMenuRef.current && !profileMenuRef.current.contains(event.target)) {
         setShowProfileMenu(false);
+      }
+      if (propertyMenuRef.current && !propertyMenuRef.current.contains(event.target)) {
+        setShowPropertyMenu(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -57,22 +70,89 @@ export const Navbar = () => {
 
   return (
     <header className="top-nav">
-      <div className="brand-section" onClick={() => setActiveTab('overview')}>
-        <div className="brand-logo">
-          {currentUser?.firmLogo ? (
-            <img 
-              src={currentUser.firmLogo} 
-              alt={currentUser?.firmName || 'Property Logo'} 
-              style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'var(--radius-md)' }} 
-            />
-          ) : (
-            <Building2 size={22} color="#000000" />
-          )}
+      {/* Brand & Property Switcher Section */}
+      <div className="brand-section" ref={propertyMenuRef}>
+        <div 
+          className="property-switcher-trigger"
+          onClick={() => setShowPropertyMenu((prev) => !prev)}
+          title="Click to switch property or add new property"
+        >
+          <div className="brand-logo">
+            {currentUser?.firmLogo ? (
+              <img 
+                src={currentUser.firmLogo} 
+                alt={currentUser?.firmName || 'Property Logo'} 
+                style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'var(--radius-md)' }} 
+              />
+            ) : (
+              <Building2 size={22} color="#000000" />
+            )}
+          </div>
+          <div className="brand-text">
+            <div className="brand-title" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span>{currentUser?.firmName || 'Property Register'}</span>
+              <ChevronDown size={14} className={`dropdown-chevron ${showPropertyMenu ? 'open' : ''}`} color="#d97706" />
+            </div>
+            <div className="brand-subtitle">Super Admin Multi-Property Portal</div>
+          </div>
         </div>
-        <div className="brand-text">
-          <div className="brand-title">{currentUser?.firmName || 'Property Register'}</div>
-          <div className="brand-subtitle">Property Management Portal</div>
-        </div>
+
+        {/* Property Switcher Dropdown */}
+        {showPropertyMenu && (
+          <div className="property-dropdown-menu">
+            <div className="property-dropdown-header">
+              <span>MY PROPERTIES ({propertiesList.length})</span>
+              <button 
+                className="add-prop-btn-pill"
+                onClick={() => {
+                  setShowAddPropertyModal(true);
+                  setShowPropertyMenu(false);
+                }}
+              >
+                <Plus size={12} /> Add Property
+              </button>
+            </div>
+            <div className="dropdown-divider" />
+            <div className="property-list-group">
+              {propertiesList.map((p) => {
+                const isSelected = p.firmId === activePropertyId;
+                return (
+                  <button
+                    key={p.firmId}
+                    className={`property-select-item ${isSelected ? 'active' : ''}`}
+                    onClick={() => {
+                      switchProperty(p.firmId);
+                      setShowPropertyMenu(false);
+                    }}
+                  >
+                    <div className="prop-item-logo">
+                      {p.firmLogo ? (
+                        <img src={p.firmLogo} alt={p.firmName} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      ) : (
+                        <Building2 size={16} color="#d97706" />
+                      )}
+                    </div>
+                    <div className="prop-item-info">
+                      <div className="prop-item-name">{p.firmName}</div>
+                      <div className="prop-item-sub">Firm ID: {p.firmId}</div>
+                    </div>
+                    {isSelected && <Check size={16} color="#047857" style={{ marginLeft: 'auto' }} />}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="dropdown-divider" />
+            <button
+              className="dropdown-item-btn primary-action"
+              onClick={() => {
+                setShowAddPropertyModal(true);
+                setShowPropertyMenu(false);
+              }}
+            >
+              <Plus size={15} /> Add Another Property
+            </button>
+          </div>
+        )}
       </div>
 
       <nav className="nav-tabs">
@@ -134,10 +214,10 @@ export const Navbar = () => {
           <div 
             className={`user-profile-trigger ${showProfileMenu ? 'active' : ''}`}
             onClick={() => setShowProfileMenu((prev) => !prev)}
-            title="Property Manager Account & Settings"
+            title="Super Admin Manager Account & Settings"
           >
             <div className="user-avatar">
-              {currentUser?.initials || 'PM'}
+              {currentUser?.initials || 'SA'}
             </div>
             <div className="user-profile-text">
               <span className="user-profile-name">{currentUser?.name || 'Manager'}</span>
@@ -149,16 +229,30 @@ export const Navbar = () => {
           {showProfileMenu && (
             <div className="profile-dropdown-menu">
               <div className="profile-dropdown-header">
-                <div className="dropdown-avatar">{currentUser?.initials || 'PM'}</div>
+                <div className="dropdown-avatar">{currentUser?.initials || 'SA'}</div>
                 <div className="dropdown-user-details">
-                  <div className="dropdown-user-name">{currentUser?.name || 'Property Manager'}</div>
-                  <span className="dropdown-firm-tag">{currentUser?.firmName || 'Property Firm'}</span>
+                  <div className="dropdown-user-name">{currentUser?.name || 'Super Admin'}</div>
+                  <span className="dropdown-firm-tag">Manager (Super Admin)</span>
                 </div>
               </div>
 
               <div className="dropdown-divider" />
 
               <div className="dropdown-items-group">
+                <button 
+                  className="dropdown-item"
+                  onClick={() => {
+                    setShowAddPropertyModal(true);
+                    setShowProfileMenu(false);
+                  }}
+                >
+                  <Plus size={16} color="#047857" />
+                  <div className="dropdown-item-text">
+                    <span className="item-title" style={{ fontWeight: 700, color: '#047857' }}>+ Add New Property</span>
+                    <span className="item-sub">Create & switch to new property</span>
+                  </div>
+                </button>
+
                 <button 
                   className="dropdown-item"
                   onClick={() => {
@@ -218,6 +312,14 @@ export const Navbar = () => {
           )}
         </div>
       </div>
+
+      {/* Add Property Modal */}
+      {showAddPropertyModal && (
+        <AddPropertyModal
+          isOpen={showAddPropertyModal}
+          onClose={() => setShowAddPropertyModal(false)}
+        />
+      )}
 
       {/* Shift Register Status Modal */}
       {showShiftModal && (

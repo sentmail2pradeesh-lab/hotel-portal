@@ -2,13 +2,71 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api'
 
 const getAuthHeaders = () => {
   const token = localStorage.getItem('frontdesk_jwt_token');
+  const activeFirmId = localStorage.getItem('frontdesk_active_firm_id');
   return {
     'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {})
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(activeFirmId ? { 'X-Property-ID': activeFirmId } : {})
   };
 };
 
 export const api = {
+  async managerRegister(name, email, password) {
+    const res = await fetch(`${API_BASE_URL}/auth/manager/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, email, password })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Manager registration failed.');
+    if (data.token) localStorage.setItem('frontdesk_jwt_token', data.token);
+    return data;
+  },
+
+  async managerLogin(identity, password) {
+    const res = await fetch(`${API_BASE_URL}/auth/manager/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identity, password })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Manager sign in failed.');
+    if (data.token) localStorage.setItem('frontdesk_jwt_token', data.token);
+    return data;
+  },
+
+  async getManagerMe() {
+    const token = localStorage.getItem('frontdesk_jwt_token');
+    if (!token) return null;
+    const res = await fetch(`${API_BASE_URL}/auth/manager/me`, {
+      headers: getAuthHeaders()
+    });
+    if (!res.ok) {
+      localStorage.removeItem('frontdesk_jwt_token');
+      return null;
+    }
+    return await res.json();
+  },
+
+  async getProperties() {
+    const res = await fetch(`${API_BASE_URL}/properties`, {
+      headers: getAuthHeaders()
+    });
+    if (!res.ok) throw new Error('Failed to fetch manager properties.');
+    return await res.json();
+  },
+
+  async createProperty(firmName, firmLogo = null, eSignature = null) {
+    const res = await fetch(`${API_BASE_URL}/properties`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ firmName, firmLogo, eSignature })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to create property.');
+    return data;
+  },
+
   async register(firmName, name, email, password) {
     const res = await fetch(`${API_BASE_URL}/auth/register`, {
       method: 'POST',
@@ -34,16 +92,7 @@ export const api = {
   },
 
   async getMe() {
-    const token = localStorage.getItem('frontdesk_jwt_token');
-    if (!token) return null;
-    const res = await fetch(`${API_BASE_URL}/auth/me`, {
-      headers: getAuthHeaders()
-    });
-    if (!res.ok) {
-      localStorage.removeItem('frontdesk_jwt_token');
-      return null;
-    }
-    return await res.json();
+    return await this.getManagerMe();
   },
 
   async updateProfile(profileData) {
@@ -108,6 +157,36 @@ export const api = {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || 'Failed to update booking.');
+    return data;
+  },
+
+  async confirmBooking(bookingId) {
+    const res = await fetch(`${API_BASE_URL}/bookings/${encodeURIComponent(bookingId)}/confirm`, {
+      method: 'POST',
+      headers: getAuthHeaders()
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to confirm booking.');
+    return data;
+  },
+
+  async checkInBooking(bookingId) {
+    const res = await fetch(`${API_BASE_URL}/bookings/${encodeURIComponent(bookingId)}/checkin`, {
+      method: 'POST',
+      headers: getAuthHeaders()
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to check in booking.');
+    return data;
+  },
+
+  async checkOutBooking(bookingId) {
+    const res = await fetch(`${API_BASE_URL}/bookings/${encodeURIComponent(bookingId)}/checkout`, {
+      method: 'POST',
+      headers: getAuthHeaders()
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to check out booking.');
     return data;
   },
 

@@ -220,7 +220,10 @@ export const Overview = () => {
                         </div>
                         <div>
                           <div style={{ fontWeight: 700, color: 'var(--text-main)' }}>{b.guestName}</div>
-                          <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{b.id}</div>
+                          <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', display: 'flex', gap: '6px', marginTop: '3px' }}>
+                            <span className="system-id-badge" style={{ fontSize: '10px', padding: '1px 5px' }}>{b.id}</span>
+                            <span className="manual-id-badge" style={{ fontSize: '10px', padding: '1px 5px' }}>{b.manualId || b.id}</span>
+                          </div>
                         </div>
                       </div>
                     </td>

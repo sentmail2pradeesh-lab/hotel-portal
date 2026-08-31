@@ -1,19 +1,20 @@
 import React, { useState } from 'react';
 import { useHotel } from '../context/HotelContext';
-import { generateId } from '../utils/formatters';
-import { Upload, X, CheckCircle2, FileText, Sparkles } from 'lucide-react';
+import { generateSystemBookingId } from '../utils/formatters';
+import { Upload, X, CheckCircle2, FileText, Sparkles, Hash, FileCheck } from 'lucide-react';
 
 export const BookingModal = ({ isOpen, onClose, initialData = null }) => {
   const { bookings, roomsList, addBooking, updateBooking, isRegisterOpen } = useHotel();
 
-  // Find currently occupied rooms (excluding current booking being edited)
+  // Find currently occupied rooms (excluding current booking being edited and completed stays)
   const occupiedRooms = bookings
-    .filter((b) => !initialData || b.id !== initialData.id)
+    .filter((b) => (!initialData || b.id !== initialData.id) && b.status !== 'Completed')
     .map((b) => b.room);
 
   const availableRooms = roomsList.filter(r => !occupiedRooms.includes(r));
 
-  const [id, setId] = useState(initialData?.id || generateId('OYO'));
+  const [id, setId] = useState(initialData?.id || generateSystemBookingId(bookings));
+  const [manualId, setManualId] = useState(initialData?.manualId || '');
   const [guestName, setGuestName] = useState(initialData?.guestName || '');
   const [phone, setPhone] = useState(initialData?.phone || '');
   const [room, setRoom] = useState(initialData?.room || availableRooms[0] || roomsList[0] || '');
@@ -21,6 +22,7 @@ export const BookingModal = ({ isOpen, onClose, initialData = null }) => {
   const [checkOut, setCheckOut] = useState(initialData?.checkOut || '');
   const [amountPaid, setAmountPaid] = useState(initialData?.amountPaid || 0);
   const [paidVia, setPaidVia] = useState(initialData?.paidVia || 'Cash');
+  const [status, setStatus] = useState(initialData?.status || 'Upcoming');
   const [notes, setNotes] = useState(initialData?.notes || '');
   
   // ID Card document upload state (Photo or PDF)
@@ -45,6 +47,10 @@ export const BookingModal = ({ isOpen, onClose, initialData = null }) => {
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    if (!manualId.trim()) {
+      alert('Please enter mandatory Manual Booking ID.');
+      return;
+    }
     if (!guestName.trim()) {
       alert('Please enter guest name.');
       return;
@@ -55,7 +61,8 @@ export const BookingModal = ({ isOpen, onClose, initialData = null }) => {
     }
 
     const bookingPayload = {
-      id: id.trim() || generateId('OYO'),
+      id: id.trim(),
+      manualId: manualId.trim(),
       guestName: guestName.trim(),
       phone: phone.trim(),
       room: room.trim(),
@@ -63,6 +70,7 @@ export const BookingModal = ({ isOpen, onClose, initialData = null }) => {
       checkOut,
       amountPaid: parseFloat(amountPaid) || 0,
       paidVia,
+      status,
       notes: notes.trim(),
       idCard: idCardDataUrl,
       idCardName: idCardFileName,
@@ -92,19 +100,35 @@ export const BookingModal = ({ isOpen, onClose, initialData = null }) => {
         <form onSubmit={handleSubmit}>
           <div className="form-grid-2">
             <div className="form-group">
-              <label className="form-label">Booking ID</label>
+              <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>System Booking ID</span>
+                <span style={{ fontSize: '11px', color: '#0284c7', fontWeight: 600 }}>System Generated (ASZ-XXX)</span>
+              </label>
               <input
                 type="text"
                 className="form-input mono"
-                placeholder="e.g. OYO-10234"
                 value={id}
-                onChange={(e) => setId(e.target.value)}
+                readOnly
+                style={{ background: '#f8fafc', color: '#0369a1', fontWeight: 700, cursor: 'not-allowed' }}
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">
+                Manual Booking / Reference ID <span style={{ color: '#dc2626' }}>*</span>
+              </label>
+              <input
+                type="text"
+                className="form-input mono"
+                placeholder="e.g. OYO-10234 or Ref #9921"
+                value={manualId}
+                onChange={(e) => setManualId(e.target.value)}
                 required
               />
             </div>
 
             <div className="form-group">
-              <label className="form-label">Guest Full Name</label>
+              <label className="form-label">Guest Full Name <span style={{ color: '#dc2626' }}>*</span></label>
               <input
                 type="text"
                 className="form-input"
@@ -113,6 +137,19 @@ export const BookingModal = ({ isOpen, onClose, initialData = null }) => {
                 onChange={(e) => setGuestName(e.target.value)}
                 required
               />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Stay Status</label>
+              <select
+                className="form-select"
+                value={status}
+                onChange={(e) => setStatus(e.target.value)}
+              >
+                <option value="Upcoming">Upcoming (Reserved)</option>
+                <option value="In-House">In-House (Checked-In)</option>
+                <option value="Completed">Completed (Checked-Out)</option>
+              </select>
             </div>
 
             <div className="form-group">
@@ -127,7 +164,7 @@ export const BookingModal = ({ isOpen, onClose, initialData = null }) => {
             </div>
 
             <div className="form-group">
-              <label className="form-label">Select Available Room Suite</label>
+              <label className="form-label">Select Available Room Suite <span style={{ color: '#dc2626' }}>*</span></label>
               <select
                 className="form-select mono"
                 value={room}

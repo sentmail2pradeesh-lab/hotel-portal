@@ -5,6 +5,7 @@ from typing import List, Optional
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI, Depends, HTTPException, status, Header
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 import jwt
 import bcrypt
@@ -12,10 +13,12 @@ from passlib.context import CryptContext
 
 from backend.database import engine, Base, get_db
 from backend.models import (
-    PropertyAccount, RoomModel, BookingModel,
+    ManagerAccount, PropertyAccount, RoomModel, BookingModel,
     ExpenseModel, BillModel, RegisterStateModel
 )
 from backend.schemas import (
+    ManagerRegisterRequest, ManagerLoginRequest, ManagerResponse,
+    PropertyCreateRequest, PropertyResponse,
     RegisterRequest, LoginRequest, UserProfileResponse, ProfileUpdateRequest,
     BookingCreate, BookingUpdate, BookingResponse,
     ExpenseCreate, ExpenseResponse,
@@ -26,6 +29,26 @@ from backend.schemas import (
 # Initialize database tables
 Base.metadata.create_all(bind=engine)
 
+# Auto-migrate missing SQLite columns on existing tables
+try:
+    with engine.connect() as conn:
+        res = conn.execute(text("PRAGMA table_info(property_accounts)")).fetchall()
+        cols = [r[1] for r in res]
+        if "manager_id" not in cols:
+            conn.execute(text("ALTER TABLE property_accounts ADD COLUMN manager_id VARCHAR"))
+            conn.commit()
+
+        b_res = conn.execute(text("PRAGMA table_info(bookings)")).fetchall()
+        b_cols = [r[1] for r in b_res]
+        if "status" not in b_cols:
+            conn.execute(text("ALTER TABLE bookings ADD COLUMN status VARCHAR DEFAULT 'Upcoming'"))
+            conn.commit()
+        if "manual_id" not in b_cols:
+            conn.execute(text("ALTER TABLE bookings ADD COLUMN manual_id VARCHAR"))
+            conn.commit()
+except Exception as e:
+    print("Database auto-migration info:", e)
+
 app = FastAPI(
     title="Hotel Booking & Property Management API",
     description="Multi-tenant Python backend for real-time simultaneous multi-device property management.",
@@ -35,7 +58,7 @@ app = FastAPI(
 # Enable CORS for all origins (allowing Vite dev server and mobile devices on local network)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -74,6 +97,7 @@ def create_access_token(data: dict) -> str:
 
 def get_current_property(
     authorization: Optional[str] = Header(None),
+    x_property_id: Optional[str] = Header(None),
     db: Session = Depends(get_db)
 ) -> PropertyAccount:
     if not authorization or not authorization.startswith("Bearer "):
@@ -84,16 +108,319 @@ def get_current_property(
     token = authorization.split(" ")[1]
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        firm_id: str = payload.get("firm_id")
-        if firm_id is None:
-            raise HTTPException(status_code=401, detail="Invalid token payload.")
+        manager_id: Optional[str] = payload.get("manager_id")
+        firm_id: Optional[str] = payload.get("firm_id")
     except Exception:
         raise HTTPException(status_code=401, detail="Could not validate credentials.")
 
-    property_account = db.query(PropertyAccount).filter(PropertyAccount.firm_id == firm_id).first()
-    if not property_account:
+    if manager_id:
+        if x_property_id:
+            prop = db.query(PropertyAccount).filter(
+                PropertyAccount.firm_id == x_property_id,
+                PropertyAccount.manager_id == manager_id
+            ).first()
+            if prop:
+                return prop
+        # Fallback to first property owned by manager
+        prop = db.query(PropertyAccount).filter(PropertyAccount.manager_id == manager_id).first()
+        if prop:
+            return prop
+        raise HTTPException(status_code=404, detail="No properties found under this manager account.")
+    elif firm_id:
+        prop = db.query(PropertyAccount).filter(PropertyAccount.firm_id == firm_id).first()
+        if prop:
+            return prop
         raise HTTPException(status_code=404, detail="Property account not found.")
-    return property_account
+
+    raise HTTPException(status_code=401, detail="Invalid token payload.")
+
+
+# --- MANAGER AUTH & MULTI-PROPERTY ENDPOINTS ---
+
+@app.post("/api/auth/manager/register")
+def register_manager(req: ManagerRegisterRequest, db: Session = Depends(get_db)):
+    clean_name = req.name.strip()
+    clean_email = req.email.strip().lower()
+    clean_pass = req.password.strip()
+
+    if not clean_name or not clean_email or not clean_pass:
+        raise HTTPException(status_code=400, detail="Please fill out all manager registration fields.")
+
+    existing = db.query(ManagerAccount).filter(ManagerAccount.email.ilike(clean_email)).first()
+    if existing:
+        raise HTTPException(status_code=400, detail=f'Super Admin manager "{clean_email}" is already registered.')
+
+    mgr_id = f"mgr_{int(datetime.utcnow().timestamp())}_{uuid.uuid4().hex[:4]}"
+    new_mgr = ManagerAccount(
+        id=mgr_id,
+        name=clean_name,
+        email=clean_email,
+        password_hash=hash_password(clean_pass)
+    )
+    db.add(new_mgr)
+    db.commit()
+    db.refresh(new_mgr)
+
+    token = create_access_token({"manager_id": mgr_id})
+    return {
+        "token": token,
+        "manager": {
+            "id": new_mgr.id,
+            "name": new_mgr.name,
+            "email": new_mgr.email,
+            "role": new_mgr.role,
+            "properties": [],
+            "activeProperty": None
+        }
+    }
+
+
+@app.post("/api/auth/manager/login")
+def login_manager(req: ManagerLoginRequest, db: Session = Depends(get_db)):
+    clean_id = req.identity.strip().lower()
+    clean_pass = req.password.strip()
+
+    if not clean_id or not clean_pass:
+        raise HTTPException(status_code=400, detail="Please enter manager identity and password.")
+
+    matched = db.query(ManagerAccount).filter(
+        (ManagerAccount.email.ilike(clean_id)) | (ManagerAccount.name.ilike(clean_id))
+    ).first()
+
+    # Fallback check for property account if user typed property login credentials
+    if not matched:
+        prop_account = db.query(PropertyAccount).filter(
+            (PropertyAccount.firm_name.ilike(clean_id)) |
+            (PropertyAccount.name.ilike(clean_id)) |
+            (PropertyAccount.email.ilike(clean_id))
+        ).first()
+        if prop_account and verify_password(clean_pass, prop_account.password_hash):
+            # Auto-create or link manager account if none exists
+            if not prop_account.manager_id:
+                mgr_id = f"mgr_{int(datetime.utcnow().timestamp())}_{uuid.uuid4().hex[:4]}"
+                new_mgr = ManagerAccount(
+                    id=mgr_id,
+                    name=prop_account.name,
+                    email=prop_account.email,
+                    password_hash=prop_account.password_hash
+                )
+                db.add(new_mgr)
+                prop_account.manager_id = mgr_id
+                db.commit()
+                matched = new_mgr
+            else:
+                matched = db.query(ManagerAccount).filter(ManagerAccount.id == prop_account.manager_id).first()
+
+    if not matched or not verify_password(clean_pass, matched.password_hash):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid Super Admin credentials or incorrect password."
+        )
+
+    props = db.query(PropertyAccount).filter(PropertyAccount.manager_id == matched.id).all()
+    prop_responses = [
+        PropertyResponse(
+            firmId=p.firm_id,
+            firmName=p.firm_name,
+            name=p.name,
+            email=p.email,
+            firmLogo=p.firm_logo,
+            eSignature=p.e_signature,
+            sessionTimeoutMinutes=p.session_timeout_minutes or 15,
+            role=p.role or "Property Manager",
+            initials=p.initials or "PM"
+        )
+        for p in props
+    ]
+
+    token = create_access_token({"manager_id": matched.id})
+    return {
+        "token": token,
+        "manager": {
+            "id": matched.id,
+            "name": matched.name,
+            "email": matched.email,
+            "role": matched.role or "Super Admin",
+            "properties": prop_responses,
+            "activeProperty": prop_responses[0] if prop_responses else None
+        }
+    }
+
+
+@app.get("/api/auth/manager/me")
+def get_manager_me(
+    authorization: Optional[str] = Header(None),
+    x_property_id: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+):
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid authentication token.")
+    token = authorization.split(" ")[1]
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        manager_id = payload.get("manager_id")
+        firm_id = payload.get("firm_id")
+    except Exception:
+        raise HTTPException(status_code=401, detail="Could not validate credentials.")
+
+    if manager_id:
+        mgr = db.query(ManagerAccount).filter(ManagerAccount.id == manager_id).first()
+        if not mgr:
+            raise HTTPException(status_code=404, detail="Manager account not found.")
+
+        props = db.query(PropertyAccount).filter(PropertyAccount.manager_id == mgr.id).all()
+        prop_responses = [
+            PropertyResponse(
+                firmId=p.firm_id,
+                firmName=p.firm_name,
+                name=p.name,
+                email=p.email,
+                firmLogo=p.firm_logo,
+                eSignature=p.e_signature,
+                sessionTimeoutMinutes=p.session_timeout_minutes or 15,
+                role=p.role or "Property Manager",
+                initials=p.initials or "PM"
+            )
+            for p in props
+        ]
+
+        active_prop = None
+        if x_property_id:
+            active_prop = next((p for p in prop_responses if p.firmId == x_property_id), None)
+        if not active_prop and prop_responses:
+            active_prop = prop_responses[0]
+
+        return {
+            "id": mgr.id,
+            "name": mgr.name,
+            "email": mgr.email,
+            "role": mgr.role or "Super Admin",
+            "properties": prop_responses,
+            "activeProperty": active_prop
+        }
+    elif firm_id:
+        prop = db.query(PropertyAccount).filter(PropertyAccount.firm_id == firm_id).first()
+        if not prop:
+            raise HTTPException(status_code=404, detail="Property not found.")
+        prop_resp = PropertyResponse(
+            firmId=prop.firm_id,
+            firmName=prop.firm_name,
+            name=prop.name,
+            email=prop.email,
+            firmLogo=prop.firm_logo,
+            eSignature=prop.e_signature,
+            sessionTimeoutMinutes=prop.session_timeout_minutes or 15,
+            role=prop.role or "Property Manager",
+            initials=prop.initials or "PM"
+        )
+        return {
+            "id": f"mgr_{prop.firm_id}",
+            "name": prop.name,
+            "email": prop.email,
+            "role": "Super Admin",
+            "properties": [prop_resp],
+            "activeProperty": prop_resp
+        }
+    raise HTTPException(status_code=401, detail="Invalid token payload.")
+
+
+@app.get("/api/properties", response_model=List[PropertyResponse])
+def get_manager_properties(
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+):
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing authorization token.")
+    token = authorization.split(" ")[1]
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        manager_id = payload.get("manager_id")
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid token.")
+
+    if not manager_id:
+        raise HTTPException(status_code=401, detail="Manager authorization required.")
+
+    props = db.query(PropertyAccount).filter(PropertyAccount.manager_id == manager_id).all()
+    return [
+        PropertyResponse(
+            firmId=p.firm_id,
+            firmName=p.firm_name,
+            name=p.name,
+            email=p.email,
+            firmLogo=p.firm_logo,
+            eSignature=p.e_signature,
+            sessionTimeoutMinutes=p.session_timeout_minutes or 15,
+            role=p.role or "Property Manager",
+            initials=p.initials or "PM"
+        )
+        for p in props
+    ]
+
+
+@app.post("/api/properties", response_model=PropertyResponse)
+def create_property(
+    req: PropertyCreateRequest,
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+):
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing authorization token.")
+    token = authorization.split(" ")[1]
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        manager_id = payload.get("manager_id")
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid token.")
+
+    mgr = db.query(ManagerAccount).filter(ManagerAccount.id == manager_id).first() if manager_id else None
+    if not mgr:
+        raise HTTPException(status_code=401, detail="Manager account not found.")
+
+    clean_firm = req.firmName.strip()
+    if not clean_firm:
+        raise HTTPException(status_code=400, detail="Property name is required.")
+
+    firm_id = f"firm_{int(datetime.utcnow().timestamp())}_{uuid.uuid4().hex[:4]}"
+    parts = mgr.name.split(" ")
+    initials = (parts[0][0] + parts[1][0]).upper() if len(parts) >= 2 else mgr.name[:2].upper()
+    email_val = f"{clean_firm.lower().replace(' ', '')}_{uuid.uuid4().hex[:4]}@property.com"
+
+    new_prop = PropertyAccount(
+        manager_id=mgr.id,
+        firm_id=firm_id,
+        firm_name=clean_firm,
+        name=mgr.name,
+        email=email_val,
+        password_hash=mgr.password_hash,
+        firm_logo=req.firmLogo,
+        e_signature=req.eSignature,
+        initials=initials,
+        session_timeout_minutes=15
+    )
+    db.add(new_prop)
+
+    # Initialize default rooms for the new property
+    for rm in DEFAULT_ROOMS:
+        db.add(RoomModel(firm_id=firm_id, room_number=rm))
+
+    # Initialize register state
+    db.add(RegisterStateModel(firm_id=firm_id, is_open=True))
+
+    db.commit()
+    db.refresh(new_prop)
+
+    return PropertyResponse(
+        firmId=new_prop.firm_id,
+        firmName=new_prop.firm_name,
+        name=new_prop.name,
+        email=new_prop.email,
+        firmLogo=new_prop.firm_logo,
+        eSignature=new_prop.e_signature,
+        sessionTimeoutMinutes=new_prop.session_timeout_minutes or 15,
+        role=new_prop.role or "Property Manager",
+        initials=new_prop.initials or "PM"
+    )
 
 
 # --- AUTH ENDPOINTS ---
@@ -324,6 +651,7 @@ def get_bookings(
     for b in bookings:
         res.append(BookingResponse(
             id=b.id,
+            manualId=b.manual_id or b.id,
             guestName=b.guest_name,
             phone=b.phone or "",
             room=b.room,
@@ -334,6 +662,7 @@ def get_bookings(
             notes=b.notes or "",
             idCard=b.id_card,
             idCardName=b.id_card_name or "ID Photo",
+            status=b.status or "Upcoming",
             createdAt=b.created_at
         ))
     return res
@@ -345,11 +674,26 @@ def create_booking(
     current_user: PropertyAccount = Depends(get_current_property),
     db: Session = Depends(get_db)
 ):
-    booking_id = req.id if req.id else f"BK-{int(uuid.uuid4().int % 9000 + 1000)}"
+    if req.id and req.id.startswith("ASZ-"):
+        booking_id = req.id
+    else:
+        prop_bookings = db.query(BookingModel).filter(BookingModel.firm_id == current_user.firm_id).all()
+        max_num = 0
+        for pb in prop_bookings:
+            if pb.id and pb.id.startswith("ASZ-"):
+                try:
+                    num_part = int(pb.id.replace("ASZ-", ""))
+                    if num_part > max_num:
+                        max_num = num_part
+                except ValueError:
+                    pass
+        booking_id = f"ASZ-{(max_num + 1):03d}"
+
     now_iso = datetime.utcnow().isoformat() + "Z"
 
     new_b = BookingModel(
         id=booking_id,
+        manual_id=req.manualId.strip() if req.manualId else booking_id,
         firm_id=current_user.firm_id,
         guest_name=req.guestName.strip(),
         phone=req.phone,
@@ -361,6 +705,7 @@ def create_booking(
         notes=req.notes,
         id_card=req.idCard,
         id_card_name=req.idCardName or "ID Photo",
+        status=req.status or "Upcoming",
         created_at=now_iso
     )
     db.add(new_b)
@@ -369,6 +714,7 @@ def create_booking(
 
     return BookingResponse(
         id=new_b.id,
+        manualId=new_b.manual_id or new_b.id,
         guestName=new_b.guest_name,
         phone=new_b.phone or "",
         room=new_b.room,
@@ -379,7 +725,116 @@ def create_booking(
         notes=new_b.notes or "",
         idCard=new_b.id_card,
         idCardName=new_b.id_card_name or "ID Photo",
+        status=new_b.status or "Upcoming",
         createdAt=new_b.created_at
+    )
+
+
+@app.post("/api/bookings/{booking_id}/checkin", response_model=BookingResponse)
+def checkin_booking(
+    booking_id: str,
+    current_user: PropertyAccount = Depends(get_current_property),
+    db: Session = Depends(get_db)
+):
+    b = db.query(BookingModel).filter(
+        BookingModel.id == booking_id,
+        BookingModel.firm_id == current_user.firm_id
+    ).first()
+
+    if not b:
+        raise HTTPException(status_code=404, detail="Booking not found.")
+
+    b.status = "In-House"
+    db.commit()
+    db.refresh(b)
+
+    return BookingResponse(
+        id=b.id,
+        manualId=b.manual_id or b.id,
+        guestName=b.guest_name,
+        phone=b.phone or "",
+        room=b.room,
+        checkIn=b.check_in,
+        checkOut=b.check_out,
+        amountPaid=b.amount_paid,
+        paidVia=b.paid_via or "Cash",
+        notes=b.notes or "",
+        idCard=b.id_card,
+        idCardName=b.id_card_name or "ID Photo",
+        status=b.status,
+        createdAt=b.created_at
+    )
+
+
+@app.post("/api/bookings/{booking_id}/checkout", response_model=BookingResponse)
+def checkout_booking(
+    booking_id: str,
+    current_user: PropertyAccount = Depends(get_current_property),
+    db: Session = Depends(get_db)
+):
+    b = db.query(BookingModel).filter(
+        BookingModel.id == booking_id,
+        BookingModel.firm_id == current_user.firm_id
+    ).first()
+
+    if not b:
+        raise HTTPException(status_code=404, detail="Booking not found.")
+
+    b.status = "Completed"
+    db.commit()
+    db.refresh(b)
+
+    return BookingResponse(
+        id=b.id,
+        manualId=b.manual_id or b.id,
+        guestName=b.guest_name,
+        phone=b.phone or "",
+        room=b.room,
+        checkIn=b.check_in,
+        checkOut=b.check_out,
+        amountPaid=b.amount_paid,
+        paidVia=b.paid_via or "Cash",
+        notes=b.notes or "",
+        idCard=b.id_card,
+        idCardName=b.id_card_name or "ID Photo",
+        status=b.status,
+        createdAt=b.created_at
+    )
+
+
+@app.post("/api/bookings/{booking_id}/confirm", response_model=BookingResponse)
+def confirm_booking(
+    booking_id: str,
+    current_user: PropertyAccount = Depends(get_current_property),
+    db: Session = Depends(get_db)
+):
+    b = db.query(BookingModel).filter(
+        BookingModel.id == booking_id,
+        BookingModel.firm_id == current_user.firm_id
+    ).first()
+
+    if not b:
+        raise HTTPException(status_code=404, detail="Booking not found.")
+
+    b.status = "Upcoming"
+    db.commit()
+    db.refresh(b)
+
+    return BookingResponse(
+        id=b.id,
+        manualId=b.manual_id or b.id,
+        guestName=b.guest_name,
+        phone=b.phone or "",
+        room=b.room,
+        checkIn=b.check_in,
+        checkOut=b.check_out,
+        amountPaid=b.amount_paid,
+        paidVia=b.paid_via or "Cash",
+        notes=b.notes or "",
+        idCard=b.id_card,
+        idCardName=b.id_card_name or "ID Photo",
+        status=b.status,
+        createdAt=b.created_at
     )
 
 
@@ -398,6 +853,8 @@ def update_booking(
     if not b:
         raise HTTPException(status_code=404, detail="Booking not found.")
 
+    if req.manualId is not None:
+        b.manual_id = req.manualId.strip()
     if req.guestName is not None:
         b.guest_name = req.guestName
     if req.phone is not None:
@@ -418,12 +875,15 @@ def update_booking(
         b.id_card = req.idCard
     if req.idCardName is not None:
         b.id_card_name = req.idCardName
+    if req.status is not None:
+        b.status = req.status
 
     db.commit()
     db.refresh(b)
 
     return BookingResponse(
         id=b.id,
+        manualId=b.manual_id or b.id,
         guestName=b.guest_name,
         phone=b.phone or "",
         room=b.room,
@@ -434,6 +894,7 @@ def update_booking(
         notes=b.notes or "",
         idCard=b.id_card,
         idCardName=b.id_card_name or "ID Photo",
+        status=b.status or "Upcoming",
         createdAt=b.created_at
     )
 

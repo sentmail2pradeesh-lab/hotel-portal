@@ -31,9 +31,23 @@ export const formatDate = (dateStr) => {
   }
 };
 
-export const generateId = (prefix = 'BK') => {
-  const num = Math.floor(1000 + Math.random() * 9000);
+export const generateId = (prefix = 'ASZ') => {
+  const num = Math.floor(100 + Math.random() * 900);
   return `${prefix}-${num}`;
+};
+
+export const generateSystemBookingId = (existingBookings = []) => {
+  let maxNum = 0;
+  existingBookings.forEach((b) => {
+    if (b.id && b.id.startsWith('ASZ-')) {
+      const parsed = parseInt(b.id.replace('ASZ-', ''), 10);
+      if (!isNaN(parsed) && parsed > maxNum) {
+        maxNum = parsed;
+      }
+    }
+  });
+  const nextNum = maxNum + 1;
+  return `ASZ-${String(nextNum).padStart(3, '0')}`;
 };
 
 /**

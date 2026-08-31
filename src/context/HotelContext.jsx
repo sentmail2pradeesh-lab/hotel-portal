@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { ALL_PROPERTY_ROOMS } from '../utils/formatters';
 import { api } from '../services/api';
 
@@ -6,7 +6,11 @@ const HotelContext = createContext();
 
 export const HotelProvider = ({ children }) => {
   const [activeTab, setActiveTabState] = useState('overview');
-  const [currentUser, setCurrentUser] = useState(null);
+  const [manager, setManager] = useState(null);
+  const [propertiesList, setPropertiesList] = useState([]);
+  const [activePropertyId, setActivePropertyIdState] = useState(
+    localStorage.getItem('frontdesk_active_firm_id') || ''
+  );
   const [authNotice, setAuthNotice] = useState('');
   const [isServerConnected, setIsServerConnected] = useState(true);
 
@@ -17,7 +21,35 @@ export const HotelProvider = ({ children }) => {
   const [bills, setBills] = useState([]);
   const [isRegisterOpen, setIsRegisterOpen] = useState(true);
 
-  // Sync active tab with browser history (popstate listener for back button)
+  // Derived current active property
+  const activeProperty = useMemo(() => {
+    return propertiesList.find((p) => p.firmId === activePropertyId) || propertiesList[0] || null;
+  }, [propertiesList, activePropertyId]);
+
+  // Derived currentUser context object for views (memoized to prevent infinite re-renders)
+  const currentUser = useMemo(() => {
+    if (!manager) return null;
+    return {
+      id: manager.id,
+      name: manager.name,
+      email: manager.email,
+      role: manager.role || 'Super Admin',
+      firmId: activeProperty?.firmId || '',
+      firmName: activeProperty?.firmName || (propertiesList.length === 0 ? 'Initial Setup Required' : 'Select Property'),
+      firmLogo: activeProperty?.firmLogo || null,
+      eSignature: activeProperty?.eSignature || null,
+      sessionTimeoutMinutes: activeProperty?.sessionTimeoutMinutes || 15,
+      initials: activeProperty?.initials || (manager.name ? manager.name.substring(0, 2).toUpperCase() : 'SA')
+    };
+  }, [manager, activeProperty, propertiesList.length]);
+
+  // Property Switcher Handler
+  const switchProperty = (firmId) => {
+    setActivePropertyIdState(firmId);
+    localStorage.setItem('frontdesk_active_firm_id', firmId);
+  };
+
+  // Sync active tab with browser history (popstate listener)
   const setActiveTab = (tabName, replaceHistory = false) => {
     setActiveTabState(tabName);
     const hash = '#' + tabName;
@@ -50,9 +82,9 @@ export const HotelProvider = ({ children }) => {
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  // Fetch all property data from Python API
+  // Fetch all operational property data from API for current active property
   const refreshPropertyData = useCallback(async () => {
-    if (!currentUser) return;
+    if (!activePropertyId) return;
     try {
       const [fetchedRooms, fetchedBookings, fetchedExpenses, fetchedBills, fetchedRegStatus] = await Promise.all([
         api.getRooms().catch(() => ALL_PROPERTY_ROOMS),
@@ -72,15 +104,29 @@ export const HotelProvider = ({ children }) => {
       console.warn('Backend server disconnected or fetching error:', err);
       setIsServerConnected(false);
     }
-  }, [currentUser]);
+  }, [activePropertyId]);
 
   // Initial user session check on app start
   useEffect(() => {
     const checkMe = async () => {
       try {
-        const me = await api.getMe();
-        if (me) {
-          setCurrentUser(me);
+        const mgrMe = await api.getManagerMe();
+        if (mgrMe) {
+          setManager({
+            id: mgrMe.id,
+            name: mgrMe.name,
+            email: mgrMe.email,
+            role: mgrMe.role
+          });
+          setPropertiesList(mgrMe.properties || []);
+          if (mgrMe.activeProperty) {
+            const savedPropId = localStorage.getItem('frontdesk_active_firm_id');
+            const targetPropId = savedPropId && mgrMe.properties.some(p => p.firmId === savedPropId)
+              ? savedPropId
+              : mgrMe.activeProperty.firmId;
+            setActivePropertyIdState(targetPropId);
+            localStorage.setItem('frontdesk_active_firm_id', targetPropId);
+          }
         }
       } catch (e) {
         console.warn('Authentication check failed:', e);
@@ -89,14 +135,15 @@ export const HotelProvider = ({ children }) => {
     checkMe();
   }, []);
 
-  // Whenever currentUser logs in or changes, fetch property data and set up live polling (simultaneous multi-device sync)
+  // Whenever manager or activePropertyId changes, fetch property data and poll
   useEffect(() => {
-    if (currentUser) {
+    if (manager && activePropertyId) {
       refreshPropertyData();
-      // Poll Python backend every 5 seconds for live multi-user/multi-device synchronization
       const intervalId = setInterval(() => {
-        refreshPropertyData();
-      }, 5000);
+        if (document.visibilityState === 'visible') {
+          refreshPropertyData();
+        }
+      }, 10000);
       return () => clearInterval(intervalId);
     } else {
       setRoomsList(ALL_PROPERTY_ROOMS);
@@ -105,9 +152,9 @@ export const HotelProvider = ({ children }) => {
       setBills([]);
       setIsRegisterOpen(true);
     }
-  }, [currentUser, refreshPropertyData]);
+  }, [manager?.id, activePropertyId, refreshPropertyData]);
 
-  // Session Inactivity Timeout Tracker for active property
+  // Inactivity timeout
   const [lastActivity, setLastActivity] = useState(Date.now());
 
   useEffect(() => {
@@ -137,14 +184,17 @@ export const HotelProvider = ({ children }) => {
     };
   }, [currentUser, lastActivity]);
 
-  const isAuthenticated = Boolean(currentUser);
+  const isAuthenticated = Boolean(manager);
 
-  // Authentication Action: Register New Property
-  const register = async (firmName, name, email, password) => {
+  // Auth Action: Register Manager (Super Admin)
+  const managerRegister = async (name, email, password) => {
     try {
-      const res = await api.register(firmName, name, email, password);
-      if (res.user) {
-        setCurrentUser(res.user);
+      const res = await api.managerRegister(name, email, password);
+      if (res.manager) {
+        setManager(res.manager);
+        setPropertiesList([]);
+        setActivePropertyIdState('');
+        localStorage.removeItem('frontdesk_active_firm_id');
         setActiveTab('overview', true);
         setAuthNotice('');
         return { success: true };
@@ -155,20 +205,47 @@ export const HotelProvider = ({ children }) => {
     return { success: false, message: 'Registration failed.' };
   };
 
-  // Authentication Action: Sign In to Existing Property Account
-  const login = async (identity, password) => {
+  // Auth Action: Login Manager
+  const managerLogin = async (identity, password) => {
     try {
-      const res = await api.login(identity, password);
-      if (res.user) {
-        setCurrentUser(res.user);
+      const res = await api.managerLogin(identity, password);
+      if (res.manager) {
+        setManager({
+          id: res.manager.id,
+          name: res.manager.name,
+          email: res.manager.email,
+          role: res.manager.role
+        });
+        const props = res.manager.properties || [];
+        setPropertiesList(props);
+        if (props.length > 0) {
+          const firstPropId = props[0].firmId;
+          setActivePropertyIdState(firstPropId);
+          localStorage.setItem('frontdesk_active_firm_id', firstPropId);
+        }
         setActiveTab('overview', true);
         setAuthNotice('');
         return { success: true };
       }
     } catch (err) {
-      return { success: false, message: err.message || 'Invalid login credentials.' };
+      return { success: false, message: err.message || 'Invalid manager credentials.' };
     }
     return { success: false, message: 'Invalid credentials.' };
+  };
+
+  // Add New Property under Manager
+  const addProperty = async ({ firmName, firmLogo, eSignature }) => {
+    try {
+      const newProp = await api.createProperty(firmName, firmLogo, eSignature);
+      if (newProp && newProp.firmId) {
+        setPropertiesList((prev) => [...prev, newProp]);
+        switchProperty(newProp.firmId);
+        return { success: true, property: newProp };
+      }
+    } catch (err) {
+      return { success: false, message: err.message || 'Failed to create property.' };
+    }
+    return { success: false, message: 'Failed to create property.' };
   };
 
   const checkRegisterOpen = () => {
@@ -188,7 +265,9 @@ export const HotelProvider = ({ children }) => {
         name: newName,
         email: newEmail
       });
-      setCurrentUser(updated);
+      setPropertiesList((prev) =>
+        prev.map((p) => (p.firmId === updated.firmId ? { ...p, ...updated } : p))
+      );
     } catch (err) {
       console.error('Failed to update profile:', err);
     }
@@ -199,7 +278,9 @@ export const HotelProvider = ({ children }) => {
     if (!checkRegisterOpen()) return;
     try {
       const updated = await api.updateProfile({ firmLogo: logoDataUri });
-      setCurrentUser(updated);
+      setPropertiesList((prev) =>
+        prev.map((p) => (p.firmId === updated.firmId ? { ...p, firmLogo: updated.firmLogo } : p))
+      );
     } catch (err) {
       console.error('Failed to update logo:', err);
     }
@@ -210,7 +291,9 @@ export const HotelProvider = ({ children }) => {
     if (!checkRegisterOpen()) return;
     try {
       const updated = await api.updateProfile({ eSignature: eSignatureDataUri });
-      setCurrentUser(updated);
+      setPropertiesList((prev) =>
+        prev.map((p) => (p.firmId === updated.firmId ? { ...p, eSignature: updated.eSignature } : p))
+      );
     } catch (err) {
       console.error('Failed to update eSignature:', err);
     }
@@ -221,7 +304,9 @@ export const HotelProvider = ({ children }) => {
     const parsedMins = parseInt(minutes, 10) || 15;
     try {
       const updated = await api.updateProfile({ sessionTimeoutMinutes: parsedMins });
-      setCurrentUser(updated);
+      setPropertiesList((prev) =>
+        prev.map((p) => (p.firmId === updated.firmId ? { ...p, sessionTimeoutMinutes: updated.sessionTimeoutMinutes } : p))
+      );
     } catch (err) {
       console.error('Failed to update session timeout:', err);
     }
@@ -229,7 +314,10 @@ export const HotelProvider = ({ children }) => {
 
   const logout = () => {
     localStorage.removeItem('frontdesk_jwt_token');
-    setCurrentUser(null);
+    localStorage.removeItem('frontdesk_active_firm_id');
+    setManager(null);
+    setPropertiesList([]);
+    setActivePropertyIdState('');
     setActiveTab('overview', true);
     setAuthNotice('');
   };
@@ -272,6 +360,39 @@ export const HotelProvider = ({ children }) => {
     }
   };
 
+  const confirmBooking = async (bookingId) => {
+    if (!checkRegisterOpen()) return;
+    try {
+      const confirmed = await api.confirmBooking(bookingId);
+      setBookings((prev) => prev.map((b) => (b.id === bookingId ? confirmed : b)));
+    } catch (err) {
+      console.error('Failed to confirm booking:', err);
+      alert(err.message || 'Failed to confirm booking.');
+    }
+  };
+
+  const checkInBooking = async (bookingId) => {
+    if (!checkRegisterOpen()) return;
+    try {
+      const checkedIn = await api.checkInBooking(bookingId);
+      setBookings((prev) => prev.map((b) => (b.id === bookingId ? checkedIn : b)));
+    } catch (err) {
+      console.error('Failed to check in booking:', err);
+      alert(err.message || 'Failed to check in booking.');
+    }
+  };
+
+  const checkOutBooking = async (bookingId) => {
+    if (!checkRegisterOpen()) return;
+    try {
+      const checkedOut = await api.checkOutBooking(bookingId);
+      setBookings((prev) => prev.map((b) => (b.id === bookingId ? checkedOut : b)));
+    } catch (err) {
+      console.error('Failed to check out booking:', err);
+      alert(err.message || 'Failed to check out booking.');
+    }
+  };
+
   const updateBooking = async (id, updatedFields) => {
     if (!checkRegisterOpen()) return;
     try {
@@ -279,6 +400,7 @@ export const HotelProvider = ({ children }) => {
       setBookings((prev) => prev.map((b) => (b.id === id ? updated : b)));
     } catch (err) {
       console.error('Failed to update booking:', err);
+      alert(err.message || 'Failed to update booking.');
     }
   };
 
@@ -369,13 +491,12 @@ export const HotelProvider = ({ children }) => {
     setBills([]);
   };
 
-  // Aggregated Stats for current property
+  // Aggregated Stats
   const totalCollected = bookings.reduce((sum, b) => sum + (parseFloat(b.amountPaid) || 0), 0);
   const totalExpenses = expenses.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
   const netRevenue = totalCollected - totalExpenses;
   const totalBookingsCount = bookings.length;
 
-  // Filtered Guest ID cards list derived directly from current property Bookings
   const guestIDCards = bookings.map((b) => ({
     bookingId: b.id,
     guestName: b.guestName,
@@ -394,13 +515,20 @@ export const HotelProvider = ({ children }) => {
       value={{
         activeTab,
         setActiveTab,
+        manager,
+        propertiesList,
+        activePropertyId,
+        switchProperty,
+        addProperty,
         currentUser,
         isAuthenticated,
         authNotice,
         setAuthNotice,
         isServerConnected,
-        login,
-        register,
+        login: managerLogin,
+        register: managerRegister,
+        managerLogin,
+        managerRegister,
         updateUserProfile,
         updateFirmLogo,
         updateESignature,
@@ -414,6 +542,9 @@ export const HotelProvider = ({ children }) => {
         bills,
         isRegisterOpen,
         addBooking,
+        confirmBooking,
+        checkInBooking,
+        checkOutBooking,
         updateBooking,
         deleteBooking,
         addExpense,

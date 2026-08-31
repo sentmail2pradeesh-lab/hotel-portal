@@ -1,6 +1,39 @@
 from pydantic import BaseModel, EmailStr
 from typing import Optional, List, Any
 
+class ManagerRegisterRequest(BaseModel):
+    name: str
+    email: str
+    password: str
+
+class ManagerLoginRequest(BaseModel):
+    identity: str
+    password: str
+
+class PropertyCreateRequest(BaseModel):
+    firmName: str
+    firmLogo: Optional[str] = None
+    eSignature: Optional[str] = None
+
+class PropertyResponse(BaseModel):
+    firmId: str
+    firmName: str
+    name: str
+    email: Optional[str] = None
+    firmLogo: Optional[str] = None
+    eSignature: Optional[str] = None
+    sessionTimeoutMinutes: int = 15
+    role: str = "Property Manager"
+    initials: str
+
+class ManagerResponse(BaseModel):
+    id: str
+    name: str
+    email: str
+    role: str = "Super Admin"
+    properties: List[PropertyResponse] = []
+    activeProperty: Optional[PropertyResponse] = None
+
 class RegisterRequest(BaseModel):
     firmName: str
     name: str
@@ -33,6 +66,7 @@ class ProfileUpdateRequest(BaseModel):
 
 class BookingBase(BaseModel):
     id: Optional[str] = None
+    manualId: Optional[str] = None
     guestName: str
     phone: Optional[str] = ""
     room: str
@@ -43,11 +77,13 @@ class BookingBase(BaseModel):
     notes: Optional[str] = ""
     idCard: Optional[str] = None
     idCardName: Optional[str] = "ID Photo"
+    status: Optional[str] = "Upcoming"
 
 class BookingCreate(BookingBase):
-    pass
+    manualId: str
 
 class BookingUpdate(BaseModel):
+    manualId: Optional[str] = None
     guestName: Optional[str] = None
     phone: Optional[str] = None
     room: Optional[str] = None
@@ -58,6 +94,7 @@ class BookingUpdate(BaseModel):
     notes: Optional[str] = None
     idCard: Optional[str] = None
     idCardName: Optional[str] = None
+    status: Optional[str] = None
 
 class BookingResponse(BookingBase):
     id: str
