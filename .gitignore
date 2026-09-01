@@ -7,10 +7,32 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Node / Dependencies
 node_modules
+frontend/node_modules
 dist
+frontend/dist
 dist-ssr
 *.local
+
+# Environment variables
+.env
+.env.local
+frontend/.env
+backend/.env
+
+# Python / Virtual Environment
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+env/
+
+# Database (optional for local git)
+*.db
+*.sqlite3
 
 # Editor directories and files
 .vscode/*
@@ -22,3 +44,10 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Catch all nested .env and node_modules anywhere in the tree
+**/.env
+**/.env.*
+**/node_modules/
+**/__pycache__/
+**/dist/

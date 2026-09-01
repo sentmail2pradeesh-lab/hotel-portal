@@ -12,21 +12,44 @@ import jwt
 import bcrypt
 from passlib.context import CryptContext
 
-from backend.database import engine, Base, get_db
-from backend.models import (
-    ManagerAccount, PropertyAccount, RoomModel, BookingModel,
-    ExpenseModel, BillModel, RegisterStateModel, InvitationModel
-)
-from backend.schemas import (
-    ManagerRegisterRequest, ManagerLoginRequest, ManagerResponse,
-    PropertyCreateRequest, PropertyResponse,
-    RegisterRequest, LoginRequest, UserProfileResponse, ProfileUpdateRequest,
-    BookingCreate, BookingUpdate, BookingResponse, EarlyCheckoutRequest,
-    ExpenseCreate, ExpenseResponse,
-    BillCreate, BillUpdate, BillResponse,
-    RoomCreate, RegisterStateResponse,
-    InvitationCreateRequest, InvitationResponse, AcceptInvitationRequest
-)
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
+try:
+    from backend.database import engine, Base, get_db
+    from backend.models import (
+        ManagerAccount, PropertyAccount, RoomModel, BookingModel,
+        ExpenseModel, BillModel, RegisterStateModel, InvitationModel
+    )
+    from backend.schemas import (
+        ManagerRegisterRequest, ManagerLoginRequest, ManagerResponse,
+        PropertyCreateRequest, PropertyResponse,
+        RegisterRequest, LoginRequest, UserProfileResponse, ProfileUpdateRequest,
+        BookingCreate, BookingUpdate, BookingResponse, EarlyCheckoutRequest,
+        ExpenseCreate, ExpenseResponse,
+        BillCreate, BillUpdate, BillResponse,
+        RoomCreate, RegisterStateResponse,
+        InvitationCreateRequest, InvitationResponse, AcceptInvitationRequest
+    )
+except ModuleNotFoundError:
+    from database import engine, Base, get_db
+    from models import (
+        ManagerAccount, PropertyAccount, RoomModel, BookingModel,
+        ExpenseModel, BillModel, RegisterStateModel, InvitationModel
+    )
+    from schemas import (
+        ManagerRegisterRequest, ManagerLoginRequest, ManagerResponse,
+        PropertyCreateRequest, PropertyResponse,
+        RegisterRequest, LoginRequest, UserProfileResponse, ProfileUpdateRequest,
+        BookingCreate, BookingUpdate, BookingResponse, EarlyCheckoutRequest,
+        ExpenseCreate, ExpenseResponse,
+        BillCreate, BillUpdate, BillResponse,
+        RoomCreate, RegisterStateResponse,
+        InvitationCreateRequest, InvitationResponse, AcceptInvitationRequest
+    )
 
 # Initialize database tables
 Base.metadata.create_all(bind=engine)
@@ -63,16 +86,19 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Enable CORS for all origins (allowing Vite dev server and mobile devices on local network)
+# Enable CORS (configurable via environment variables)
+cors_origins_env = os.getenv("CORS_ORIGINS", "*")
+allowed_origins = [o.strip() for o in cors_origins_env.split(",")] if cors_origins_env != "*" else ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-SECRET_KEY = "hotel_frontdesk_secret_key_change_in_production"
+SECRET_KEY = os.getenv("SECRET_KEY", "hotel_frontdesk_secret_key_change_in_production")
 ALGORITHM = "HS256"
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
