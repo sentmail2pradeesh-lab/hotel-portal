@@ -4,8 +4,8 @@ import { api } from '../services/api';
 import { Building2, KeyRound, User, Mail, ShieldCheck, ArrowRight, Clock, Upload, FileSignature, Plus, CheckCircle2, Lock } from 'lucide-react';
 
 export const AuthView = () => {
-  const { manager, propertiesList, managerLogin, managerRegister, addProperty, authNotice } = useHotel();
-  const [authMode, setAuthMode] = useState('login'); // 'login' | 'register' | 'invite'
+  const { manager, propertiesList, managerLogin, adminRegister, addProperty, authNotice, isAdminRegistered } = useHotel();
+  const [authMode, setAuthMode] = useState('login'); // 'login' | 'invite'
 
   // Invitation Activation State
   const [inviteToken, setInviteToken] = useState('');
@@ -15,7 +15,7 @@ export const AuthView = () => {
   const [loginIdentity, setLoginIdentity] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
 
-  // Manager Register State
+  // Admin / Manager Register State
   const [regName, setRegName] = useState('');
   const [regEmail, setRegEmail] = useState('');
   const [regPassword, setRegPassword] = useState('');
@@ -59,6 +59,27 @@ export const AuthView = () => {
     }
   }, []);
 
+  // Handle Overall Admin Registration (One-Time Setup)
+  const handleAdminRegisterSubmit = async (e) => {
+    e.preventDefault();
+    if (!regName.trim() || !regEmail.trim() || !regPassword) {
+      setError('Please fill out all admin setup fields.');
+      return;
+    }
+    setError('');
+    setLoading(true);
+    try {
+      const res = await adminRegister(regName.trim(), regEmail.trim(), regPassword);
+      if (res && !res.success) {
+        setError(res.message || 'Admin registration failed.');
+      }
+    } catch (err) {
+      setError(err.message || 'Failed to connect to backend server. Make sure server is running.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Handle Manager Login
   const handleLoginSubmit = async (e) => {
     e.preventDefault();
@@ -72,27 +93,6 @@ export const AuthView = () => {
       const res = await managerLogin(loginIdentity.trim(), loginPassword);
       if (res && !res.success) {
         setError(res.message || 'Sign in failed.');
-      }
-    } catch (err) {
-      setError(err.message || 'Failed to connect to backend server. Make sure server is running.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Handle Manager Registration
-  const handleRegisterSubmit = async (e) => {
-    e.preventDefault();
-    if (!regName.trim() || !regEmail.trim() || !regPassword) {
-      setError('Please fill out all manager registration fields.');
-      return;
-    }
-    setError('');
-    setLoading(true);
-    try {
-      const res = await managerRegister(regName.trim(), regEmail.trim(), regPassword);
-      if (res && !res.success) {
-        setError(res.message || 'Registration failed.');
       }
     } catch (err) {
       setError(err.message || 'Failed to connect to backend server. Make sure server is running.');
@@ -226,7 +226,7 @@ export const AuthView = () => {
                 <input
                   type="text"
                   className="form-input icon-padded"
-                  placeholder="e.g. Grand Horizon Hotel & Suites"
+                  placeholder="Enter property name"
                   value={firmName}
                   onChange={(e) => setFirmName(e.target.value)}
                   required
@@ -427,8 +427,14 @@ export const AuthView = () => {
           <div className="auth-logo">
             <Building2 size={28} color="#000000" />
           </div>
-          <h1 className="auth-title">Hotel Operations Portal</h1>
-          <p className="auth-subtitle">Sign in as Overall Admin or Property Manager</p>
+          <h1 className="auth-title">
+            {!isAdminRegistered && authMode !== 'invite' ? 'System Initial Setup' : 'Hotel Operations Portal'}
+          </h1>
+          <p className="auth-subtitle">
+            {!isAdminRegistered && authMode !== 'invite'
+              ? 'Register master Overall Admin account to launch system'
+              : 'Sign in as Overall Admin or Property Manager'}
+          </p>
         </div>
 
         {authNotice && (
@@ -447,24 +453,6 @@ export const AuthView = () => {
           }}>
             <Clock size={18} color="#d97706" style={{ flexShrink: 0 }} />
             <span>{authNotice}</span>
-          </div>
-        )}
-
-        {/* Auth Tabs */}
-        {authMode !== 'invite' && (
-          <div className="auth-tabs">
-            <button
-              className={`auth-tab-btn ${authMode === 'login' ? 'active' : ''}`}
-              onClick={() => { setAuthMode('login'); setError(''); }}
-            >
-              Portal Sign In
-            </button>
-            <button
-              className={`auth-tab-btn ${authMode === 'register' ? 'active' : ''}`}
-              onClick={() => { setAuthMode('register'); setError(''); }}
-            >
-              Manager Registration
-            </button>
           </div>
         )}
 
@@ -491,7 +479,7 @@ export const AuthView = () => {
               gap: '8px'
             }}>
               <CheckCircle2 size={18} color="#047857" style={{ flexShrink: 0 }} />
-              <span>You are invited by Admin ({inviteDetails?.senderEmail || 'mail2pradeesh1621@gmail.com'}) to manage this property.</span>
+              <span>You are invited by Admin ({inviteDetails?.senderEmail || 'Admin'}) to manage this property.</span>
             </div>
 
             <div className="form-group">
@@ -531,7 +519,7 @@ export const AuthView = () => {
                 <input
                   type="text"
                   className="form-input icon-padded"
-                  placeholder="Enter your full name"
+                  placeholder="Enter full name"
                   value={regName}
                   onChange={(e) => setRegName(e.target.value)}
                   required
@@ -546,7 +534,7 @@ export const AuthView = () => {
                 <input
                   type="password"
                   className="form-input icon-padded"
-                  placeholder="••••••••"
+                  placeholder="Enter password"
                   value={regPassword}
                   onChange={(e) => setRegPassword(e.target.value)}
                   required
@@ -558,7 +546,77 @@ export const AuthView = () => {
               {loading ? 'Activating Account...' : <><ArrowRight size={16} /> Activate Account & Sign In</>}
             </button>
           </form>
-        ) : authMode === 'login' ? (
+        ) : !isAdminRegistered ? (
+          /* ONE-TIME INITIAL OVERALL ADMIN REGISTRATION FORM */
+          <form onSubmit={handleAdminRegisterSubmit} className="auth-form">
+            <div style={{
+              background: '#eff6ff',
+              border: '1px solid #bfdbfe',
+              color: '#1e40af',
+              padding: '12px 14px',
+              borderRadius: 'var(--radius-md)',
+              fontSize: '13px',
+              fontWeight: 600,
+              marginBottom: '16px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}>
+              <ShieldCheck size={18} color="#1d4ed8" style={{ flexShrink: 0 }} />
+              <span>Initial Setup: Register master Overall Admin credentials.</span>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Admin Full Name <span style={{ color: '#e11d48' }}>*</span></label>
+              <div className="input-icon-wrapper">
+                <User size={16} className="input-icon" />
+                <input
+                  type="text"
+                  className="form-input icon-padded"
+                  placeholder="Enter admin full name"
+                  value={regName}
+                  onChange={(e) => setRegName(e.target.value)}
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Admin Master Email <span style={{ color: '#e11d48' }}>*</span></label>
+              <div className="input-icon-wrapper">
+                <Mail size={16} className="input-icon" />
+                <input
+                  type="email"
+                  className="form-input icon-padded"
+                  placeholder="Enter admin email address"
+                  value={regEmail}
+                  onChange={(e) => setRegEmail(e.target.value)}
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Admin Master Password <span style={{ color: '#e11d48' }}>*</span></label>
+              <div className="input-icon-wrapper">
+                <KeyRound size={16} className="input-icon" />
+                <input
+                  type="password"
+                  className="form-input icon-padded"
+                  placeholder="Enter password"
+                  value={regPassword}
+                  onChange={(e) => setRegPassword(e.target.value)}
+                  required
+                />
+              </div>
+            </div>
+
+            <button type="submit" className="btn-main" disabled={loading} style={{ width: '100%', padding: '12px', fontSize: '15px', marginTop: '6px' }}>
+              {loading ? 'Creating Master Admin...' : <><ShieldCheck size={16} /> Register Overall Admin & Launch System</>}
+            </button>
+          </form>
+        ) : (
+          /* STANDARD LOGIN FORM */
           <form onSubmit={handleLoginSubmit} className="auth-form">
             <div className="form-group">
               <label className="form-label">Email ID or Username</label>
@@ -567,7 +625,7 @@ export const AuthView = () => {
                 <input
                   type="text"
                   className="form-input icon-padded"
-                  placeholder="e.g. mail2pradeesh1621@gmail.com or manager@hotel.com"
+                  placeholder="Enter email address or username"
                   value={loginIdentity}
                   onChange={(e) => setLoginIdentity(e.target.value)}
                   required
@@ -582,7 +640,7 @@ export const AuthView = () => {
                 <input
                   type="password"
                   className="form-input icon-padded"
-                  placeholder="••••••••"
+                  placeholder="Enter password"
                   value={loginPassword}
                   onChange={(e) => setLoginPassword(e.target.value)}
                   required
@@ -592,58 +650,6 @@ export const AuthView = () => {
 
             <button type="submit" className="btn-main" disabled={loading} style={{ width: '100%', padding: '12px', fontSize: '15px', marginTop: '6px' }}>
               {loading ? 'Signing In...' : <><ArrowRight size={16} /> Sign In to Portal</>}
-            </button>
-          </form>
-        ) : (
-          /* REGISTER FORM */
-          <form onSubmit={handleRegisterSubmit} className="auth-form">
-            <div className="form-group">
-              <label className="form-label">Super Admin Manager Name</label>
-              <div className="input-icon-wrapper">
-                <User size={16} className="input-icon" />
-                <input
-                  type="text"
-                  className="form-input icon-padded"
-                  placeholder="e.g. Alex Morgan"
-                  value={regName}
-                  onChange={(e) => setRegName(e.target.value)}
-                  required
-                />
-              </div>
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">Manager Master Email</label>
-              <div className="input-icon-wrapper">
-                <Mail size={16} className="input-icon" />
-                <input
-                  type="email"
-                  className="form-input icon-padded"
-                  placeholder="e.g. manager@hotelgroup.com"
-                  value={regEmail}
-                  onChange={(e) => setRegEmail(e.target.value)}
-                  required
-                />
-              </div>
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">Account Password</label>
-              <div className="input-icon-wrapper">
-                <KeyRound size={16} className="input-icon" />
-                <input
-                  type="password"
-                  className="form-input icon-padded"
-                  placeholder="Create master account password"
-                  value={regPassword}
-                  onChange={(e) => setRegPassword(e.target.value)}
-                  required
-                />
-              </div>
-            </div>
-
-            <button type="submit" className="btn-main" disabled={loading} style={{ width: '100%', padding: '12px', fontSize: '15px', marginTop: '6px' }}>
-              {loading ? 'Creating Account...' : <><ShieldCheck size={16} /> Register Manager & Create Properties</>}
             </button>
           </form>
         )}

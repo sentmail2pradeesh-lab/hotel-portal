@@ -194,7 +194,7 @@ export const InviteManagerModal = ({ isOpen, onClose }) => {
               <input
                 type="email"
                 className="form-input icon-padded"
-                placeholder="e.g. manager@hotel.com"
+                placeholder="Enter manager email address"
                 value={managerEmail}
                 onChange={(e) => setManagerEmail(e.target.value)}
                 required

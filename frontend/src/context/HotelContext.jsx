@@ -13,6 +13,7 @@ export const HotelProvider = ({ children }) => {
   );
   const [authNotice, setAuthNotice] = useState('');
   const [isServerConnected, setIsServerConnected] = useState(true);
+  const [isAdminRegistered, setIsAdminRegistered] = useState(true);
 
   // Property Operational Data States
   const [roomsList, setRoomsList] = useState(ALL_PROPERTY_ROOMS);
@@ -110,6 +111,9 @@ export const HotelProvider = ({ children }) => {
   useEffect(() => {
     const checkMe = async () => {
       try {
+        const sysStatus = await api.getSystemStatus().catch(() => ({ isAdminRegistered: true }));
+        setIsAdminRegistered(sysStatus?.isAdminRegistered ?? true);
+
         const mgrMe = await api.getManagerMe();
         if (mgrMe) {
           setManager({
@@ -185,6 +189,26 @@ export const HotelProvider = ({ children }) => {
   }, [currentUser, lastActivity]);
 
   const isAuthenticated = Boolean(manager);
+
+  // Auth Action: Register Overall Admin (One-Time Setup)
+  const adminRegister = async (name, email, password) => {
+    try {
+      const res = await api.adminRegister(name, email, password);
+      if (res.manager) {
+        setManager(res.manager);
+        setPropertiesList([]);
+        setActivePropertyIdState('');
+        localStorage.removeItem('frontdesk_active_firm_id');
+        setIsAdminRegistered(true);
+        setActiveTab('overview', true);
+        setAuthNotice('');
+        return { success: true };
+      }
+    } catch (err) {
+      return { success: false, message: err.message || 'Admin registration failed.' };
+    }
+    return { success: false, message: 'Admin registration failed.' };
+  };
 
   // Auth Action: Register Manager (Super Admin)
   const managerRegister = async (name, email, password) => {
@@ -558,6 +582,8 @@ export const HotelProvider = ({ children }) => {
         authNotice,
         setAuthNotice,
         isServerConnected,
+        isAdminRegistered,
+        adminRegister,
         login: managerLogin,
         register: managerRegister,
         managerLogin,

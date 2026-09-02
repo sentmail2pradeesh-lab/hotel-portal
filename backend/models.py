@@ -94,6 +94,6 @@ class InvitationModel(Base):
     property_id = Column(String, index=True, nullable=False)
     property_name = Column(String, nullable=False)
     email = Column(String, nullable=False)
-    sender_email = Column(String, default="mail2pradeesh1621@gmail.com")
+    sender_email = Column(String, default="admin@hotel.com")
     status = Column(String, default="pending")
     created_at = Column(DateTime, default=datetime.utcnow)

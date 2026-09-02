@@ -11,6 +11,24 @@ const getAuthHeaders = () => {
 };
 
 export const api = {
+  async getSystemStatus() {
+    const res = await fetch(`${API_BASE_URL}/auth/system-status`);
+    if (!res.ok) return { isAdminRegistered: true };
+    return await res.json();
+  },
+
+  async adminRegister(name, email, password) {
+    const res = await fetch(`${API_BASE_URL}/auth/admin/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, email, password })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Overall Admin registration failed.');
+    if (data.token) localStorage.setItem('frontdesk_jwt_token', data.token);
+    return data;
+  },
+
   async managerRegister(name, email, password) {
     const res = await fetch(`${API_BASE_URL}/auth/manager/register`, {
       method: 'POST',

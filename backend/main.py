@@ -149,7 +149,7 @@ def get_current_property(
 
     if manager_id:
         mgr = db.query(ManagerAccount).filter(ManagerAccount.id == manager_id).first()
-        is_overall_admin = mgr and (mgr.role == "Overall Admin" or mgr.email == "mail2pradeesh1621@gmail.com")
+        is_overall_admin = mgr and mgr.role == "Overall Admin"
         if x_property_id:
             if is_overall_admin:
                 prop = db.query(PropertyAccount).filter(PropertyAccount.firm_id == x_property_id).first()
@@ -177,7 +177,59 @@ def get_current_property(
     raise HTTPException(status_code=401, detail="Invalid token payload.")
 
 
-# --- MANAGER AUTH & MULTI-PROPERTY ENDPOINTS ---
+# --- SYSTEM SETUP & MANAGER AUTH ENDPOINTS ---
+
+@app.get("/api/auth/system-status")
+def get_system_status(db: Session = Depends(get_db)):
+    admin = db.query(ManagerAccount).filter(ManagerAccount.role == "Overall Admin").first()
+    return {
+        "isAdminRegistered": bool(admin),
+        "adminEmail": admin.email if admin else None
+    }
+
+
+@app.post("/api/auth/admin/register")
+def register_overall_admin(req: ManagerRegisterRequest, db: Session = Depends(get_db)):
+    existing_admin = db.query(ManagerAccount).filter(ManagerAccount.role == "Overall Admin").first()
+    if existing_admin:
+        raise HTTPException(status_code=400, detail="Overall Admin account has already been registered.")
+
+    clean_name = req.name.strip()
+    clean_email = req.email.strip().lower()
+    clean_pass = req.password.strip()
+
+    if not clean_name or not clean_email or not clean_pass:
+        raise HTTPException(status_code=400, detail="Please fill out all admin registration fields.")
+
+    existing_email = db.query(ManagerAccount).filter(ManagerAccount.email.ilike(clean_email)).first()
+    if existing_email:
+        raise HTTPException(status_code=400, detail=f'Email "{clean_email}" is already registered.')
+
+    mgr_id = f"admin_{int(datetime.utcnow().timestamp())}_{uuid.uuid4().hex[:4]}"
+    admin_mgr = ManagerAccount(
+        id=mgr_id,
+        name=clean_name,
+        email=clean_email,
+        password_hash=hash_password(clean_pass),
+        role="Overall Admin"
+    )
+    db.add(admin_mgr)
+    db.commit()
+    db.refresh(admin_mgr)
+
+    token = create_access_token({"manager_id": mgr_id})
+    return {
+        "token": token,
+        "manager": {
+            "id": admin_mgr.id,
+            "name": admin_mgr.name,
+            "email": admin_mgr.email,
+            "role": admin_mgr.role,
+            "properties": [],
+            "activeProperty": None
+        }
+    }
+
 
 @app.post("/api/auth/manager/register")
 def register_manager(req: ManagerRegisterRequest, db: Session = Depends(get_db)):
@@ -226,61 +278,41 @@ def login_manager(req: ManagerLoginRequest, db: Session = Depends(get_db)):
     if not clean_id or not clean_pass:
         raise HTTPException(status_code=400, detail="Please enter identity and password.")
 
-    # Direct login for Overall Admin
-    if clean_id == "mail2pradeesh1621@gmail.com" and clean_pass == "Prajan@1621":
-        admin_mgr = db.query(ManagerAccount).filter(ManagerAccount.email.ilike("mail2pradeesh1621@gmail.com")).first()
-        if not admin_mgr:
-            admin_mgr = ManagerAccount(
-                id="mgr_overall_admin",
-                name="Overall Admin",
-                email="mail2pradeesh1621@gmail.com",
-                password_hash=hash_password("Prajan@1621"),
-                role="Overall Admin"
-            )
-            db.add(admin_mgr)
-            db.commit()
-            db.refresh(admin_mgr)
-        else:
-            if admin_mgr.role != "Overall Admin":
-                admin_mgr.role = "Overall Admin"
-                db.commit()
-        matched = admin_mgr
-    else:
-        matched = db.query(ManagerAccount).filter(
-            (ManagerAccount.email.ilike(clean_id)) | (ManagerAccount.name.ilike(clean_id))
+    matched = db.query(ManagerAccount).filter(
+        (ManagerAccount.email.ilike(clean_id)) | (ManagerAccount.name.ilike(clean_id))
+    ).first()
+
+    # Fallback check for property account
+    if not matched:
+        prop_account = db.query(PropertyAccount).filter(
+            (PropertyAccount.firm_name.ilike(clean_id)) |
+            (PropertyAccount.name.ilike(clean_id)) |
+            (PropertyAccount.email.ilike(clean_id))
         ).first()
+        if prop_account and verify_password(clean_pass, prop_account.password_hash):
+            if not prop_account.manager_id:
+                mgr_id = f"mgr_{int(datetime.utcnow().timestamp())}_{uuid.uuid4().hex[:4]}"
+                new_mgr = ManagerAccount(
+                    id=mgr_id,
+                    name=prop_account.name,
+                    email=prop_account.email,
+                    password_hash=prop_account.password_hash,
+                    role="Property Manager"
+                )
+                db.add(new_mgr)
+                prop_account.manager_id = mgr_id
+                db.commit()
+                matched = new_mgr
+            else:
+                matched = db.query(ManagerAccount).filter(ManagerAccount.id == prop_account.manager_id).first()
 
-        # Fallback check for property account if user typed property login credentials
-        if not matched:
-            prop_account = db.query(PropertyAccount).filter(
-                (PropertyAccount.firm_name.ilike(clean_id)) |
-                (PropertyAccount.name.ilike(clean_id)) |
-                (PropertyAccount.email.ilike(clean_id))
-            ).first()
-            if prop_account and verify_password(clean_pass, prop_account.password_hash):
-                if not prop_account.manager_id:
-                    mgr_id = f"mgr_{int(datetime.utcnow().timestamp())}_{uuid.uuid4().hex[:4]}"
-                    new_mgr = ManagerAccount(
-                        id=mgr_id,
-                        name=prop_account.name,
-                        email=prop_account.email,
-                        password_hash=prop_account.password_hash,
-                        role="Property Manager"
-                    )
-                    db.add(new_mgr)
-                    prop_account.manager_id = mgr_id
-                    db.commit()
-                    matched = new_mgr
-                else:
-                    matched = db.query(ManagerAccount).filter(ManagerAccount.id == prop_account.manager_id).first()
+    if not matched or not verify_password(clean_pass, matched.password_hash):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid email/username or password."
+        )
 
-        if not matched or not verify_password(clean_pass, matched.password_hash):
-            raise HTTPException(
-                status_code=400,
-                detail="Invalid credentials or incorrect password."
-            )
-
-    is_admin = matched.role == "Overall Admin" or matched.email == "mail2pradeesh1621@gmail.com"
+    is_admin = matched.role == "Overall Admin"
     if is_admin:
         props = db.query(PropertyAccount).all()
     else:
@@ -336,7 +368,7 @@ def get_manager_me(
         if not mgr:
             raise HTTPException(status_code=404, detail="Manager account not found.")
 
-        is_admin = mgr.role == "Overall Admin" or mgr.email == "mail2pradeesh1621@gmail.com"
+        is_admin = mgr.role == "Overall Admin"
         if is_admin:
             props = db.query(PropertyAccount).all()
         else:
@@ -415,7 +447,7 @@ def get_manager_properties(
         raise HTTPException(status_code=401, detail="Manager authorization required.")
 
     mgr = db.query(ManagerAccount).filter(ManagerAccount.id == manager_id).first()
-    if mgr and (mgr.role == "Overall Admin" or mgr.email == "mail2pradeesh1621@gmail.com"):
+    if mgr and mgr.role == "Overall Admin":
         props = db.query(PropertyAccount).all()
     else:
         props = db.query(PropertyAccount).filter(PropertyAccount.manager_id == manager_id).all()
@@ -1321,12 +1353,12 @@ def toggle_register_status(
 
 # --- INVITATION SYSTEM ENDPOINTS ---
 
-def send_invitation_email(recipient_email: str, property_name: str, invite_url: str):
+def send_invitation_email(recipient_email: str, property_name: str, invite_url: str, admin_sender_email: str = ""):
     """
-    Sends an invitation email from admin email mail2pradeesh1621@gmail.com.
+    Sends an invitation email dynamically from the registered Overall Admin's email address.
     Logs email details and gracefully handles network SMTP delivery.
     """
-    admin_sender = os.environ.get("SMTP_EMAIL", "mail2pradeesh1621@gmail.com")
+    admin_sender = admin_sender_email or os.environ.get("SMTP_EMAIL", "admin@hotel.com")
     smtp_pass = os.environ.get("SMTP_PASSWORD", "")
     subject = f"Invitation to manage {property_name}"
     body = (
@@ -1364,6 +1396,8 @@ def send_invitation(
     if mgr_token_payload.get("role") != "Overall Admin":
         raise HTTPException(status_code=403, detail="Only Overall Admin can send manager invitations.")
 
+    admin_email = mgr_token_payload.get("email") or "admin@hotel.com"
+
     prop = db.query(PropertyAccount).filter(PropertyAccount.firm_id == req.propertyId).first()
     if not prop:
         raise HTTPException(status_code=404, detail="Property not found.")
@@ -1374,7 +1408,7 @@ def send_invitation(
         property_id=prop.firm_id,
         property_name=prop.firm_name,
         email=req.email.strip().lower(),
-        sender_email="mail2pradeesh1621@gmail.com",
+        sender_email=admin_email,
         status="pending"
     )
     db.add(invite)
@@ -1382,7 +1416,7 @@ def send_invitation(
     db.refresh(invite)
 
     invite_url = f"http://localhost:5173/#register?token={token}"
-    send_invitation_email(req.email.strip(), prop.firm_name, invite_url)
+    send_invitation_email(req.email.strip(), prop.firm_name, invite_url, admin_email)
 
     return {
         "id": invite.id,
