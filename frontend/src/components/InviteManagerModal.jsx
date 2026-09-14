@@ -238,7 +238,7 @@ export const InviteManagerModal = ({ isOpen, onClose }) => {
             marginTop: '12px',
             lineHeight: '1.4'
           }}>
-            💡 <strong>Direct Email Dispatch:</strong> To have Render automatically deliver emails to inboxes via Gmail, set <code>SMTP_EMAIL</code> and <code>SMTP_PASSWORD</code> in your Render Environment settings. Otherwise, click <em>Open Email App to Send</em> or <em>Copy Activation Link</em> to send directly.
+            💡 <strong>Automated Email Dispatch:</strong> The system automatically uses your registered Super Admin email ({currentUser?.email}) as the sender. To allow Render to send emails automatically through Gmail, just add your 16-character Google App Password as <code>SMTP_PASSWORD</code> in your Render Environment settings. Otherwise, click <em>Open Email App to Send</em> or <em>Copy Activation Link</em>.
           </div>
         </form>
 
