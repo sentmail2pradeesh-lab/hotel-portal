@@ -162,11 +162,11 @@ Hostinger VPS gives you full root access to run both React and FastAPI backend.
    VITE_API_URL=https://yourdomain.com/api npm run build
    ```
 
-5. **Configure Nginx Site (`/etc/nginx/sites-available/hotel-booking`)**:
+5. **Configure Nginx Site (`/etc/nginx/sites-available/aszenventures.com`)**:
    ```nginx
    server {
        listen 80;
-       server_name yourdomain.com www.yourdomain.com;
+       server_name aszenventures.com www.aszenventures.com;
 
        # Serve React Frontend Static Files
        root /var/www/Hotel-Booking/frontend/dist;
@@ -188,7 +188,7 @@ Hostinger VPS gives you full root access to run both React and FastAPI backend.
    ```
    Symlink and reload Nginx:
    ```bash
-   sudo ln -s /etc/nginx/sites-available/hotel-booking /etc/nginx/sites-enabled/
+   sudo ln -s /etc/nginx/sites-available/aszenventures.com /etc/nginx/sites-enabled/
    sudo nginx -t
    sudo systemctl reload nginx
    ```
@@ -196,7 +196,7 @@ Hostinger VPS gives you full root access to run both React and FastAPI backend.
 6. **Add Free SSL Certificate (Certbot)**:
    ```bash
    sudo apt install -y certbot python3-certbot-nginx
-   sudo certbot --nginx -d yourdomain.com -d www.yourdomain.com
+   sudo certbot --nginx -d aszenventures.com -d www.aszenventures.com
    ```
 
 ---
@@ -208,8 +208,8 @@ Hostinger VPS gives you full root access to run both React and FastAPI backend.
 
 #### **Step 1: Host Backend on Cloud Service (Render or Railway)**
 1. Deploy `backend/` to [Render](https://render.com) or [Railway](https://railway.app) (see Section 3 above).
-2. Note your live backend API URL (e.g. `https://hotel-api.onrender.com/api`).
-3. Set backend `CORS_ORIGINS` to `https://yourhostingerdomain.com`.
+2. Note your live backend API URL (e.g. `https://hotel-api.onrender.com/api` or `https://api.aszenventures.com/api`).
+3. Set backend `CORS_ORIGINS` to `https://aszenventures.com,https://www.aszenventures.com`.
 
 #### **Step 2: Build Frontend for Hostinger Shared Hosting**
 1. On your local machine, open `frontend/.env` and set the backend API URL:

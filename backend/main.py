@@ -87,8 +87,17 @@ app = FastAPI(
 )
 
 # Enable CORS (configurable via environment variables)
-cors_origins_env = os.getenv("CORS_ORIGINS", "*")
-allowed_origins = [o.strip() for o in cors_origins_env.split(",")] if cors_origins_env != "*" else ["*"]
+raw_origins = os.getenv("CORS_ORIGINS", "")
+
+if raw_origins:
+    allowed_origins = [origin.strip() for origin in raw_origins.split(",") if origin.strip()]
+else:
+    allowed_origins = [
+        "https://aszenventures.com",
+        "https://www.aszenventures.com",
+        "http://localhost:5173",
+        "http://localhost:3000",
+    ]
 
 app.add_middleware(
     CORSMiddleware,
