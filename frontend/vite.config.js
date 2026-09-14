@@ -6,6 +6,9 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 5173,
+    watch: {
+      ignored: ['**/dist/**', '**/*.zip', '**/.git/**']
+    },
     proxy: {
       '/api': {
         target: process.env.VITE_BACKEND_URL || 'http://localhost:8000',

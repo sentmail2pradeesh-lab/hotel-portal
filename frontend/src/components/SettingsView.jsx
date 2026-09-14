@@ -44,6 +44,8 @@ export const SettingsView = () => {
     isRegisterOpen
   } = useHotel();
 
+  const isSuperAdmin = currentUser?.role === 'Overall Admin' || currentUser?.role === 'Super Admin';
+
   // Active section tab inside Settings: 'analytics' | 'rooms' | 'profile'
   const [section, setSection] = useState('analytics');
   const [showAddPropertyModal, setShowAddPropertyModal] = useState(false);
