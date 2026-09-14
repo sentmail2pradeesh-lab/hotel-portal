@@ -86,22 +86,27 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Enable CORS (configurable via environment variables)
+# Enable CORS (permissive origin regex so requests from aszenventures.com and localhost are always accepted)
 raw_origins = os.getenv("CORS_ORIGINS", "")
+allowed_origins = [
+    "https://aszenventures.com",
+    "https://www.aszenventures.com",
+    "http://aszenventures.com",
+    "http://www.aszenventures.com",
+    "http://localhost:5173",
+    "http://localhost:3000",
+]
 
-if raw_origins:
-    allowed_origins = [origin.strip() for origin in raw_origins.split(",") if origin.strip()]
-else:
-    allowed_origins = [
-        "https://aszenventures.com",
-        "https://www.aszenventures.com",
-        "http://localhost:5173",
-        "http://localhost:3000",
-    ]
+if raw_origins and raw_origins != "*":
+    for origin_item in raw_origins.split(","):
+        cleaned = origin_item.strip().rstrip("/")
+        if cleaned and cleaned not in allowed_origins:
+            allowed_origins.append(cleaned)
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
+    allow_origin_regex=r"https?://.*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
