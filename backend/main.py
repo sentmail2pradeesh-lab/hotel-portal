@@ -54,37 +54,46 @@ except ModuleNotFoundError:
 # Initialize database tables
 Base.metadata.create_all(bind=engine)
 
-# Auto-migrate missing SQLite columns on existing tables
-try:
-    with engine.connect() as conn:
-        res = conn.execute(text("PRAGMA table_info(property_accounts)")).fetchall()
-        cols = [r[1] for r in res]
-        if "manager_id" not in cols:
-            conn.execute(text("ALTER TABLE property_accounts ADD COLUMN manager_id VARCHAR"))
-            conn.commit()
+# Auto-migrate missing SQLite columns on existing tables (SQLite only)
+if engine.name == "sqlite":
+    try:
+        with engine.connect() as conn:
+            res = conn.execute(text("PRAGMA table_info(property_accounts)")).fetchall()
+            cols = [r[1] for r in res]
+            if "manager_id" not in cols:
+                conn.execute(text("ALTER TABLE property_accounts ADD COLUMN manager_id VARCHAR"))
+                conn.commit()
 
-        b_res = conn.execute(text("PRAGMA table_info(bookings)")).fetchall()
-        b_cols = [r[1] for r in b_res]
-        if "status" not in b_cols:
-            conn.execute(text("ALTER TABLE bookings ADD COLUMN status VARCHAR DEFAULT 'Upcoming'"))
-            conn.commit()
-        if "manual_id" not in b_cols:
-            conn.execute(text("ALTER TABLE bookings ADD COLUMN manual_id VARCHAR"))
-            conn.commit()
-        if "email" not in b_cols:
-            conn.execute(text("ALTER TABLE bookings ADD COLUMN email VARCHAR"))
-            conn.commit()
-        if "is_hidden" not in b_cols:
-            conn.execute(text("ALTER TABLE bookings ADD COLUMN is_hidden BOOLEAN DEFAULT 0"))
-            conn.commit()
-except Exception as e:
-    print("Database auto-migration info:", e)
+            b_res = conn.execute(text("PRAGMA table_info(bookings)")).fetchall()
+            b_cols = [r[1] for r in b_res]
+            if "status" not in b_cols:
+                conn.execute(text("ALTER TABLE bookings ADD COLUMN status VARCHAR DEFAULT 'Upcoming'"))
+                conn.commit()
+            if "manual_id" not in b_cols:
+                conn.execute(text("ALTER TABLE bookings ADD COLUMN manual_id VARCHAR"))
+                conn.commit()
+            if "email" not in b_cols:
+                conn.execute(text("ALTER TABLE bookings ADD COLUMN email VARCHAR"))
+                conn.commit()
+            if "is_hidden" not in b_cols:
+                conn.execute(text("ALTER TABLE bookings ADD COLUMN is_hidden BOOLEAN DEFAULT 0"))
+                conn.commit()
+    except Exception as e:
+        print("Database auto-migration info:", e)
 
 app = FastAPI(
     title="Hotel Booking & Property Management API",
     description="Multi-tenant Python backend for real-time simultaneous multi-device property management.",
     version="1.0.0"
 )
+
+@app.get("/")
+def root():
+    return {
+        "status": "online",
+        "service": "Hotel Operations API",
+        "docs": "/docs"
+    }
 
 # Enable CORS (permissive origin regex so requests from aszenventures.com and localhost are always accepted)
 raw_origins = os.getenv("CORS_ORIGINS", "")
