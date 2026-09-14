@@ -351,30 +351,17 @@ export const SettingsView = () => {
                 Intake minus operational outflow
               </div>
             </div>
-
-            <div className="metric-card amber">
-              <div className="metric-title">
-                <span>ISSUED ROOM BILLS</span>
-                <FileText size={18} color="#ffffff" />
-              </div>
-              <div className="metric-number">
-                {filteredBills.length}
-              </div>
-              <div style={{ fontSize: '12px', marginTop: '6px', opacity: 0.9 }}>
-                Total billing statements issued
-              </div>
-            </div>
           </div>
 
-          {/* Unified Financial Logs Table */}
+          {/* Unified Ledger Log Table */}
           <div className="card-container" style={{ padding: '24px' }}>
             <h2 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text-main)', marginBottom: '16px', fontFamily: 'var(--font-serif)' }}>
-              Property Log Audit Trail ({filterMode.toUpperCase()})
+              Consolidated Activity Ledger ({unifiedLogs.length} Records)
             </h2>
 
             {unifiedLogs.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
-                No log entries found for the selected filter range.
+              <div className="empty-state" style={{ padding: '40px 0' }}>
+                <p>No transactions match the selected filter period.</p>
               </div>
             ) : (
               <table className="modern-table">
@@ -478,33 +465,29 @@ export const SettingsView = () => {
                     borderRadius: 'var(--radius-md)',
                     padding: '14px',
                     display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: 'space-between',
-                    gap: '8px'
+                    alignItems: 'center',
+                    justifyContent: 'space-between'
                   }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span className="mono" style={{ fontWeight: 800, fontSize: '16px', color: '#0f172a' }}>Suite {r}</span>
+                    <div>
+                      <div className="mono" style={{ fontSize: '16px', fontWeight: 800, color: isOccupied ? '#be123c' : '#0f172a' }}>
+                        {r}
+                      </div>
+                      <div style={{ fontSize: '11px', color: isOccupied ? '#be123c' : '#047857', fontWeight: 700 }}>
+                        {isOccupied ? 'Occupied' : 'Vacant'}
+                      </div>
+                    </div>
+
+                    {!isOccupied && (
                       <button 
                         className="icon-btn" 
-                        style={{ color: '#be123c' }} 
                         disabled={!isRegisterOpen}
-                        onClick={() => handleDeleteRoom(r)}
-                        title={isRegisterOpen ? "Remove room" : "Shift Register is Closed (View-Only Mode)"}
+                        onClick={() => handleRemoveRoom(r)}
+                        style={{ color: '#94a3b8', padding: '4px' }}
+                        title={isRegisterOpen ? "Remove Room" : "Shift Register is Closed (View-Only Mode)"}
                       >
                         <Trash2 size={14} />
                       </button>
-                    </div>
-                    <span style={{ 
-                      fontSize: '11px', 
-                      fontWeight: 700, 
-                      color: isOccupied ? '#be123c' : '#047857',
-                      background: isOccupied ? '#fef2f2' : '#ecfdf5',
-                      padding: '2px 6px',
-                      borderRadius: '4px',
-                      width: 'fit-content'
-                    }}>
-                      {isOccupied ? 'Occupied' : 'Available'}
-                    </span>
+                    )}
                   </div>
                 );
               })}
@@ -526,11 +509,11 @@ export const SettingsView = () => {
                   <Building2 size={20} color="#d97706" /> Properties Portfolio ({propertiesList.length})
                 </h2>
                 <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
-                  Properties owned & managed under your Super Admin manager account.
+                  Properties owned & created under your Super Admin account.
                 </p>
               </div>
               <div style={{ display: 'flex', gap: '8px' }}>
-                {currentUser?.role === 'Overall Admin' && (
+                {isSuperAdmin && (
                   <button className="btn-sub" onClick={() => setShowInviteModal(true)} style={{ padding: '8px 14px', fontSize: '13px', background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0' }}>
                     <Mail size={15} /> Invite Manager
                   </button>
@@ -704,93 +687,136 @@ export const SettingsView = () => {
             <h2 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text-main)', marginBottom: '4px', fontFamily: 'var(--font-serif)', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <FileSignature size={20} color="#047857" /> Manager E-Signature
             </h2>
-            <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '20px' }}>
-              Upload your official digital signature image. This signature will be attached to room bill receipts and statements.
-            </p>
+            {isSuperAdmin ? (
+              <div>
+                <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '16px' }}>
+                  As Super Admin, you oversee properties and invite managers. Individual property managers upload their own digital signature when operating their assigned property dashboard.
+                </p>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '20px', padding: '16px', background: '#f8fafc', borderRadius: 'var(--radius-md)', border: '1px dashed #cbd5e1' }}>
-              <div style={{
-                width: '120px',
-                height: '54px',
-                borderRadius: 'var(--radius-md)',
-                background: '#ffffff',
-                border: '1px solid #cbd5e1',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                overflow: 'hidden',
-                padding: '4px',
-                flexShrink: 0
-              }}>
-                {currentUser?.eSignature ? (
-                  <img src={currentUser.eSignature} alt="E-Signature" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
-                ) : (
-                  <span style={{ fontSize: '11px', color: '#94a3b8', fontStyle: 'italic' }}>No Signature</span>
-                )}
-              </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '20px', padding: '16px', background: '#f8fafc', borderRadius: 'var(--radius-md)', border: '1px dashed #cbd5e1' }}>
+                  <div style={{
+                    width: '120px',
+                    height: '54px',
+                    borderRadius: 'var(--radius-md)',
+                    background: '#ffffff',
+                    border: '1px solid #cbd5e1',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    overflow: 'hidden',
+                    padding: '4px',
+                    flexShrink: 0
+                  }}>
+                    {currentUser?.eSignature ? (
+                      <img src={currentUser.eSignature} alt="E-Signature" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+                    ) : (
+                      <span style={{ fontSize: '11px', color: '#94a3b8', fontStyle: 'italic' }}>No Manager Signature</span>
+                    )}
+                  </div>
 
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-main)' }}>
-                  {currentUser?.eSignature ? 'Digital Signature Uploaded' : 'No Digital Signature Uploaded'}
-                </div>
-                <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px', marginBottom: '10px' }}>
-                  Recommended: Transparent PNG or dark ink signature scan
-                </div>
-
-                <div style={{ display: 'flex', gap: '10px' }}>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    id="manager-esignature-upload-input"
-                    disabled={!isRegisterOpen}
-                    style={{ display: 'none' }}
-                    onChange={(e) => {
-                      if (!isRegisterOpen) return;
-                      const file = e.target.files[0];
-                      if (file) {
-                        const reader = new FileReader();
-                        reader.onloadend = () => {
-                          updateESignature(reader.result);
-                        };
-                        reader.readAsDataURL(file);
-                      }
-                    }}
-                  />
-                  <label 
-                    htmlFor="manager-esignature-upload-input" 
-                    className="btn-main" 
-                    style={{ 
-                      padding: '6px 14px', 
-                      fontSize: '12px', 
-                      cursor: isRegisterOpen ? 'pointer' : 'not-allowed', 
-                      margin: 0, 
-                      background: '#047857', 
-                      borderColor: '#047857',
-                      opacity: isRegisterOpen ? 1 : 0.55
-                    }}
-                    title={isRegisterOpen ? "Upload E-Signature" : "Shift Register is Closed (View-Only Mode)"}
-                  >
-                    <Upload size={14} /> Upload E-Signature
-                  </label>
-
-                  {currentUser?.eSignature && (
-                    <button 
-                      className="btn-sub" 
-                      style={{ padding: '6px 12px', fontSize: '12px', color: '#be123c' }}
-                      disabled={!isRegisterOpen}
-                      onClick={() => updateESignature(null)}
-                      title={isRegisterOpen ? "Remove Signature" : "Shift Register is Closed (View-Only Mode)"}
-                    >
-                      Remove Signature
-                    </button>
-                  )}
+                  <div>
+                    <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-main)' }}>
+                      {currentUser?.eSignature ? 'Property Manager Signature on File' : 'No Manager Signature Uploaded Yet'}
+                    </div>
+                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                      {currentUser?.eSignature 
+                        ? 'This signature is automatically attached to guest room receipts by the assigned on-duty manager.' 
+                        : 'The invited manager for this property will upload their signature upon logging into their manager account.'}
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
+            ) : (
+              <div>
+                <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '20px' }}>
+                  Upload your official digital signature image. This signature will be attached to room bill receipts and statements.
+                </p>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '20px', padding: '16px', background: '#f8fafc', borderRadius: 'var(--radius-md)', border: '1px dashed #cbd5e1' }}>
+                  <div style={{
+                    width: '120px',
+                    height: '54px',
+                    borderRadius: 'var(--radius-md)',
+                    background: '#ffffff',
+                    border: '1px solid #cbd5e1',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    overflow: 'hidden',
+                    padding: '4px',
+                    flexShrink: 0
+                  }}>
+                    {currentUser?.eSignature ? (
+                      <img src={currentUser.eSignature} alt="E-Signature" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+                    ) : (
+                      <span style={{ fontSize: '11px', color: '#94a3b8', fontStyle: 'italic' }}>No Signature</span>
+                    )}
+                  </div>
+
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-main)' }}>
+                      {currentUser?.eSignature ? 'Digital Signature Uploaded' : 'No Digital Signature Uploaded'}
+                    </div>
+                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px', marginBottom: '10px' }}>
+                      Recommended: Transparent PNG or dark ink signature scan
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '10px' }}>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        id="manager-esignature-upload-input"
+                        disabled={!isRegisterOpen}
+                        style={{ display: 'none' }}
+                        onChange={(e) => {
+                          if (!isRegisterOpen) return;
+                          const file = e.target.files[0];
+                          if (file) {
+                            const reader = new FileReader();
+                            reader.onloadend = () => {
+                              updateESignature(reader.result);
+                            };
+                            reader.readAsDataURL(file);
+                          }
+                        }}
+                      />
+                      <label 
+                        htmlFor="manager-esignature-upload-input" 
+                        className="btn-main" 
+                        style={{ 
+                          padding: '6px 14px', 
+                          fontSize: '12px', 
+                          cursor: isRegisterOpen ? 'pointer' : 'not-allowed', 
+                          margin: 0, 
+                          background: '#047857', 
+                          borderColor: '#047857',
+                          opacity: isRegisterOpen ? 1 : 0.55
+                        }}
+                        title={isRegisterOpen ? "Upload E-Signature" : "Shift Register is Closed (View-Only Mode)"}
+                      >
+                        <Upload size={14} /> Upload E-Signature
+                      </label>
+
+                      {currentUser?.eSignature && (
+                        <button 
+                          className="btn-sub" 
+                          style={{ padding: '6px 12px', fontSize: '12px', color: '#be123c' }}
+                          disabled={!isRegisterOpen}
+                          onClick={() => updateESignature(null)}
+                          title={isRegisterOpen ? "Remove Signature" : "Shift Register is Closed (View-Only Mode)"}
+                        >
+                          Remove Signature
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Manager & Property Info Form Card (For Overall Admin Only) */}
-          {currentUser?.role === 'Overall Admin' && (
+          {isSuperAdmin && (
             <div className="card-container" style={{ padding: '28px' }}>
               <h2 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text-main)', marginBottom: '6px', fontFamily: 'var(--font-serif)' }}>
                 Property & Manager Profile

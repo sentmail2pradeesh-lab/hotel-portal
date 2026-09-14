@@ -63,6 +63,7 @@ export const Navbar = () => {
   }, []);
 
   const totalIDCards = guestIDCards.filter(item => item.hasID).length;
+  const isSuperAdmin = currentUser?.role === 'Overall Admin' || currentUser?.role === 'Super Admin';
 
   const navItems = [
     { id: 'overview', label: 'Overview', icon: LayoutDashboard },
@@ -97,7 +98,7 @@ export const Navbar = () => {
               <span>{currentUser?.firmName || 'Property Register'}</span>
               <ChevronDown size={14} className={`dropdown-chevron ${showPropertyMenu ? 'open' : ''}`} color="#d97706" />
             </div>
-            <div className="brand-subtitle">Super Admin Multi-Property Portal</div>
+            <div className="brand-subtitle">{isSuperAdmin ? 'Super Admin Multi-Property Portal' : 'Property Operations Portal'}</div>
           </div>
         </div>
 
@@ -239,13 +240,13 @@ export const Navbar = () => {
           <div 
             className={`user-profile-trigger ${showProfileMenu ? 'active' : ''}`}
             onClick={() => setShowProfileMenu((prev) => !prev)}
-            title="Super Admin Manager Account & Settings"
+            title={isSuperAdmin ? "Super Admin Account & Settings" : "Property Manager Account & Settings"}
           >
-            <div className="user-avatar">
-              {currentUser?.initials || 'SA'}
+            <div className="user-avatar" style={{ background: isSuperAdmin ? '#d97706' : '#0f172a' }}>
+              {currentUser?.initials || (isSuperAdmin ? 'SA' : 'PM')}
             </div>
             <div className="user-profile-text">
-              <span className="user-profile-name">{currentUser?.name || 'Manager'}</span>
+              <span className="user-profile-name">{currentUser?.name || (isSuperAdmin ? 'Super Admin' : 'Manager')}</span>
               <span className="user-profile-firm">{currentUser?.firmName || 'Firm Dashboard'}</span>
             </div>
             <ChevronDown size={14} className={`dropdown-chevron ${showProfileMenu ? 'open' : ''}`} />
@@ -254,29 +255,39 @@ export const Navbar = () => {
           {showProfileMenu && (
             <div className="profile-dropdown-menu">
               <div className="profile-dropdown-header">
-                <div className="dropdown-avatar">{currentUser?.initials || 'SA'}</div>
+                <div className="dropdown-avatar" style={{ background: isSuperAdmin ? '#d97706' : '#0f172a' }}>
+                  {currentUser?.initials || (isSuperAdmin ? 'SA' : 'PM')}
+                </div>
                 <div className="dropdown-user-details">
-                  <div className="dropdown-user-name">{currentUser?.name || 'Super Admin'}</div>
-                  <span className="dropdown-firm-tag">Manager (Super Admin)</span>
+                  <div className="dropdown-user-name">{currentUser?.name || (isSuperAdmin ? 'Super Admin' : 'Manager')}</div>
+                  <span className="dropdown-firm-tag" style={{
+                    background: isSuperAdmin ? '#fef3c7' : '#ecfdf5',
+                    color: isSuperAdmin ? '#b45309' : '#047857',
+                    fontWeight: 800
+                  }}>
+                    {isSuperAdmin ? 'Super Admin' : 'Property Manager'}
+                  </span>
                 </div>
               </div>
 
               <div className="dropdown-divider" />
 
               <div className="dropdown-items-group">
-                <button 
-                  className="dropdown-item"
-                  onClick={() => {
-                    setShowAddPropertyModal(true);
-                    setShowProfileMenu(false);
-                  }}
-                >
-                  <Plus size={16} color="#047857" />
-                  <div className="dropdown-item-text">
-                    <span className="item-title" style={{ fontWeight: 700, color: '#047857' }}>+ Add New Property</span>
-                    <span className="item-sub">Create & switch to new property</span>
-                  </div>
-                </button>
+                {isSuperAdmin && (
+                  <button 
+                    className="dropdown-item"
+                    onClick={() => {
+                      setShowAddPropertyModal(true);
+                      setShowProfileMenu(false);
+                    }}
+                  >
+                    <Plus size={16} color="#047857" />
+                    <div className="dropdown-item-text">
+                      <span className="item-title" style={{ fontWeight: 700, color: '#047857' }}>+ Add New Property</span>
+                      <span className="item-sub">Create & switch to new property</span>
+                    </div>
+                  </button>
+                )}
 
                 <button 
                   className="dropdown-item"

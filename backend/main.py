@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timedelta
 from typing import List, Optional
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi import FastAPI, Depends, HTTPException, status, Header
+from fastapi import FastAPI, Depends, HTTPException, status, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -1413,11 +1413,12 @@ def send_invitation_email(recipient_email: str, property_name: str, invite_url: 
 @app.post("/api/invitations/send")
 def send_invitation(
     req: InvitationCreateRequest,
+    request: Request,
     db: Session = Depends(get_db),
     mgr_token_payload: dict = Depends(get_manager_me)
 ):
-    if mgr_token_payload.get("role") != "Overall Admin":
-        raise HTTPException(status_code=403, detail="Only Overall Admin can send manager invitations.")
+    if mgr_token_payload.get("role") not in ["Overall Admin", "Super Admin"]:
+        raise HTTPException(status_code=403, detail="Only Super Admin can send manager invitations.")
 
     admin_email = mgr_token_payload.get("email") or "admin@hotel.com"
 
@@ -1438,7 +1439,8 @@ def send_invitation(
     db.commit()
     db.refresh(invite)
 
-    invite_url = f"http://localhost:5173/#register?token={token}"
+    origin = request.headers.get("origin") or "https://aszenventures.com"
+    invite_url = f"{origin.rstrip('/')}/#register?token={token}"
     send_invitation_email(req.email.strip(), prop.firm_name, invite_url, admin_email)
 
     return {
