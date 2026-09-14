@@ -32,7 +32,8 @@ try:
         ExpenseCreate, ExpenseResponse,
         BillCreate, BillUpdate, BillResponse,
         RoomCreate, RegisterStateResponse,
-        InvitationCreateRequest, InvitationResponse, AcceptInvitationRequest
+        InvitationCreateRequest, InvitationResponse, AcceptInvitationRequest,
+        ManagerCreateRequest, ChangePasswordRequest
     )
 except ModuleNotFoundError:
     from database import engine, Base, get_db
@@ -48,7 +49,8 @@ except ModuleNotFoundError:
         ExpenseCreate, ExpenseResponse,
         BillCreate, BillUpdate, BillResponse,
         RoomCreate, RegisterStateResponse,
-        InvitationCreateRequest, InvitationResponse, AcceptInvitationRequest
+        InvitationCreateRequest, InvitationResponse, AcceptInvitationRequest,
+        ManagerCreateRequest, ChangePasswordRequest
     )
 
 # Initialize database tables
@@ -172,7 +174,7 @@ def get_current_property(
 
     if manager_id:
         mgr = db.query(ManagerAccount).filter(ManagerAccount.id == manager_id).first()
-        is_overall_admin = mgr and mgr.role == "Overall Admin"
+        is_overall_admin = mgr and (mgr.role in ["Overall Admin", "Super Admin"])
         if x_property_id:
             if is_overall_admin:
                 prop = db.query(PropertyAccount).filter(PropertyAccount.firm_id == x_property_id).first()
@@ -204,7 +206,7 @@ def get_current_property(
 
 @app.get("/api/auth/system-status")
 def get_system_status(db: Session = Depends(get_db)):
-    admin = db.query(ManagerAccount).filter(ManagerAccount.role == "Overall Admin").first()
+    admin = db.query(ManagerAccount).filter(ManagerAccount.role.in_(["Overall Admin", "Super Admin"])).first()
     return {
         "isAdminRegistered": bool(admin),
         "adminEmail": admin.email if admin else None
@@ -213,9 +215,9 @@ def get_system_status(db: Session = Depends(get_db)):
 
 @app.post("/api/auth/admin/register")
 def register_overall_admin(req: ManagerRegisterRequest, db: Session = Depends(get_db)):
-    existing_admin = db.query(ManagerAccount).filter(ManagerAccount.role == "Overall Admin").first()
+    existing_admin = db.query(ManagerAccount).filter(ManagerAccount.role.in_(["Overall Admin", "Super Admin"])).first()
     if existing_admin:
-        raise HTTPException(status_code=400, detail="Overall Admin account has already been registered.")
+        raise HTTPException(status_code=400, detail="Super Admin account has already been registered.")
 
     clean_name = req.name.strip()
     clean_email = req.email.strip().lower()
@@ -234,13 +236,18 @@ def register_overall_admin(req: ManagerRegisterRequest, db: Session = Depends(ge
         name=clean_name,
         email=clean_email,
         password_hash=hash_password(clean_pass),
-        role="Overall Admin"
+        role="Super Admin"
     )
     db.add(admin_mgr)
     db.commit()
     db.refresh(admin_mgr)
 
-    token = create_access_token({"manager_id": mgr_id})
+    token = create_access_token({
+        "sub": mgr_id,
+        "manager_id": mgr_id,
+        "role": admin_mgr.role,
+        "email": admin_mgr.email
+    })
     return {
         "token": token,
         "manager": {
@@ -335,7 +342,7 @@ def login_manager(req: ManagerLoginRequest, db: Session = Depends(get_db)):
             detail="Invalid email/username or password."
         )
 
-    is_admin = matched.role == "Overall Admin"
+    is_admin = matched.role in ["Overall Admin", "Super Admin"]
     if is_admin:
         props = db.query(PropertyAccount).all()
     else:
@@ -356,14 +363,19 @@ def login_manager(req: ManagerLoginRequest, db: Session = Depends(get_db)):
         for p in props
     ]
 
-    token = create_access_token({"manager_id": matched.id})
+    token = create_access_token({
+        "sub": matched.id,
+        "manager_id": matched.id,
+        "role": "Super Admin" if is_admin else (matched.role or "Property Manager"),
+        "email": matched.email
+    })
     return {
         "token": token,
         "manager": {
             "id": matched.id,
             "name": matched.name,
             "email": matched.email,
-            "role": "Overall Admin" if is_admin else (matched.role or "Property Manager"),
+            "role": "Super Admin" if is_admin else (matched.role or "Property Manager"),
             "properties": prop_responses,
             "activeProperty": prop_responses[0] if prop_responses else None
         }
@@ -391,7 +403,7 @@ def get_manager_me(
         if not mgr:
             raise HTTPException(status_code=404, detail="Manager account not found.")
 
-        is_admin = mgr.role == "Overall Admin"
+        is_admin = mgr.role in ["Overall Admin", "Super Admin"]
         if is_admin:
             props = db.query(PropertyAccount).all()
         else:
@@ -422,7 +434,7 @@ def get_manager_me(
             "id": mgr.id,
             "name": mgr.name,
             "email": mgr.email,
-            "role": "Overall Admin" if is_admin else (mgr.role or "Property Manager"),
+            "role": "Super Admin" if is_admin else (mgr.role or "Property Manager"),
             "properties": prop_responses,
             "activeProperty": active_prop
         }
@@ -470,7 +482,7 @@ def get_manager_properties(
         raise HTTPException(status_code=401, detail="Manager authorization required.")
 
     mgr = db.query(ManagerAccount).filter(ManagerAccount.id == manager_id).first()
-    if mgr and mgr.role == "Overall Admin":
+    if mgr and (mgr.role in ["Overall Admin", "Super Admin"]):
         props = db.query(PropertyAccount).all()
     else:
         props = db.query(PropertyAccount).filter(PropertyAccount.manager_id == manager_id).all()
@@ -1588,3 +1600,155 @@ def list_invitations(
             "createdAt": inv.created_at.isoformat() if inv.created_at else ""
         })
     return res
+
+
+# --- DIRECT MANAGER CREATION & SECURITY ENDPOINTS ---
+
+@app.post("/api/managers/create")
+def create_manager_account(
+    req: ManagerCreateRequest,
+    db: Session = Depends(get_db),
+    mgr_token_payload: dict = Depends(get_manager_me)
+):
+    if mgr_token_payload.get("role") not in ["Overall Admin", "Super Admin"]:
+        raise HTTPException(status_code=403, detail="Only Super Admin can create manager accounts.")
+
+    clean_name = req.name.strip()
+    clean_email = req.email.strip().lower()
+    clean_pass = req.tempPassword.strip()
+    prop_id = req.propertyId.strip()
+
+    if not clean_name or not clean_email or not clean_pass or not prop_id:
+        raise HTTPException(status_code=400, detail="Please fill in all manager fields.")
+
+    if len(clean_pass) < 6:
+        raise HTTPException(status_code=400, detail="Temporary password must be at least 6 characters.")
+
+    prop = db.query(PropertyAccount).filter(PropertyAccount.firm_id == prop_id).first()
+    if not prop:
+        raise HTTPException(status_code=404, detail="Selected property was not found.")
+
+    existing_mgr = db.query(ManagerAccount).filter(ManagerAccount.email.ilike(clean_email)).first()
+    if existing_mgr:
+        if existing_mgr.role in ["Overall Admin", "Super Admin"]:
+            raise HTTPException(status_code=400, detail="Cannot assign a Super Admin account as a property manager.")
+        existing_mgr.name = clean_name
+        existing_mgr.password_hash = hash_password(clean_pass)
+        mgr_user = existing_mgr
+    else:
+        mgr_id = f"mgr_{int(datetime.utcnow().timestamp())}_{uuid.uuid4().hex[:4]}"
+        mgr_user = ManagerAccount(
+            id=mgr_id,
+            name=clean_name,
+            email=clean_email,
+            password_hash=hash_password(clean_pass),
+            role="Property Manager"
+        )
+        db.add(mgr_user)
+        db.flush()
+
+    prop.manager_id = mgr_user.id
+    prop.name = mgr_user.name
+    prop.email = clean_email
+    prop.password_hash = mgr_user.password_hash
+
+    db.commit()
+    db.refresh(mgr_user)
+    db.refresh(prop)
+
+    return {
+        "success": True,
+        "message": f"Manager '{clean_name}' created successfully for property '{prop.firm_name}'.",
+        "manager": {
+            "id": mgr_user.id,
+            "name": mgr_user.name,
+            "email": mgr_user.email,
+            "propertyId": prop.firm_id,
+            "propertyName": prop.firm_name,
+            "tempPassword": clean_pass
+        }
+    }
+
+
+@app.get("/api/managers")
+def list_managers(
+    db: Session = Depends(get_db),
+    mgr_token_payload: dict = Depends(get_manager_me)
+):
+    if mgr_token_payload.get("role") not in ["Overall Admin", "Super Admin"]:
+        raise HTTPException(status_code=403, detail="Only Super Admin can view managers.")
+
+    managers = db.query(ManagerAccount).filter(ManagerAccount.role == "Property Manager").all()
+    props = db.query(PropertyAccount).all()
+    prop_by_mgr = {p.manager_id: p for p in props if p.manager_id}
+
+    result = []
+    for m in managers:
+        assigned_prop = prop_by_mgr.get(m.id)
+        result.append({
+            "id": m.id,
+            "name": m.name,
+            "email": m.email,
+            "role": m.role,
+            "createdAt": m.created_at.isoformat() if m.created_at else None,
+            "propertyId": assigned_prop.firm_id if assigned_prop else None,
+            "propertyName": assigned_prop.firm_name if assigned_prop else None
+        })
+    return result
+
+
+@app.post("/api/auth/change-password")
+def change_password(
+    req: ChangePasswordRequest,
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+):
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Authentication token required.")
+    token = authorization.split(" ")[1]
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        manager_id = payload.get("manager_id") or payload.get("sub")
+        firm_id = payload.get("firm_id")
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid token session.")
+
+    clean_current = req.currentPassword.strip()
+    clean_new = req.newPassword.strip()
+
+    if not clean_current or not clean_new:
+        raise HTTPException(status_code=400, detail="Please provide both current and new passwords.")
+
+    if len(clean_new) < 6:
+        raise HTTPException(status_code=400, detail="New password must be at least 6 characters long.")
+
+    if manager_id:
+        mgr = db.query(ManagerAccount).filter(ManagerAccount.id == manager_id).first()
+        if not mgr:
+            raise HTTPException(status_code=404, detail="User account not found.")
+
+        if not verify_password(clean_current, mgr.password_hash):
+            raise HTTPException(status_code=400, detail="Current password does not match.")
+
+        mgr.password_hash = hash_password(clean_new)
+        props = db.query(PropertyAccount).filter(PropertyAccount.manager_id == mgr.id).all()
+        for p in props:
+            p.password_hash = mgr.password_hash
+
+        db.commit()
+        return {"success": True, "message": "Password changed successfully."}
+
+    elif firm_id:
+        prop = db.query(PropertyAccount).filter(PropertyAccount.firm_id == firm_id).first()
+        if not prop:
+            raise HTTPException(status_code=404, detail="Property account not found.")
+
+        if not verify_password(clean_current, prop.password_hash):
+            raise HTTPException(status_code=400, detail="Current password does not match.")
+
+        prop.password_hash = hash_password(clean_new)
+        db.commit()
+        return {"success": True, "message": "Password changed successfully."}
+
+    raise HTTPException(status_code=401, detail="Unauthorized.")
+

@@ -20,10 +20,14 @@ import {
   Clock,
   Edit2,
   X,
-  Mail
+  Mail,
+  UserPlus,
+  KeyRound,
+  ShieldCheck,
+  Lock
 } from 'lucide-react';
 import { AddPropertyModal } from './AddPropertyModal';
-import { InviteManagerModal } from './InviteManagerModal';
+import { CreateManagerModal } from './CreateManagerModal';
 
 export const SettingsView = () => {
   const { 
@@ -35,6 +39,7 @@ export const SettingsView = () => {
     updateFirmLogo,
     updateESignature,
     updateSessionTimeout,
+    changePassword,
     roomsList, 
     addCustomRoom, 
     removeCustomRoom,
@@ -49,8 +54,52 @@ export const SettingsView = () => {
   // Active section tab inside Settings: 'analytics' | 'rooms' | 'profile'
   const [section, setSection] = useState('analytics');
   const [showAddPropertyModal, setShowAddPropertyModal] = useState(false);
-  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [showCreateManagerModal, setShowCreateManagerModal] = useState(false);
   const [timeoutSuccess, setTimeoutSuccess] = useState('');
+
+  // Password Change State
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [pwdError, setPwdError] = useState('');
+  const [pwdSuccess, setPwdSuccess] = useState('');
+  const [pwdLoading, setPwdLoading] = useState(false);
+
+  const handlePasswordChangeSubmit = async (e) => {
+    e.preventDefault();
+    setPwdError('');
+    setPwdSuccess('');
+
+    if (!currentPassword) {
+      setPwdError('Please enter your current password.');
+      return;
+    }
+    if (!newPassword || newPassword.length < 6) {
+      setPwdError('New password must be at least 6 characters.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPwdError('New password and confirmation do not match.');
+      return;
+    }
+
+    setPwdLoading(true);
+    try {
+      const res = await changePassword(currentPassword, newPassword);
+      if (res.success) {
+        setPwdSuccess('Your password has been changed successfully!');
+        setCurrentPassword('');
+        setNewPassword('');
+        setConfirmPassword('');
+      } else {
+        setPwdError(res.message || 'Failed to change password.');
+      }
+    } catch (err) {
+      setPwdError(err.message || 'Error changing password.');
+    } finally {
+      setPwdLoading(false);
+    }
+  };
 
   // Rename Property State for Admin
   const [editingProp, setEditingProp] = useState(null);
@@ -516,8 +565,8 @@ export const SettingsView = () => {
               </div>
               <div style={{ display: 'flex', gap: '8px' }}>
                 {isSuperAdmin && (
-                  <button className="btn-sub" onClick={() => setShowInviteModal(true)} style={{ padding: '8px 14px', fontSize: '13px', background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0' }}>
-                    <Mail size={15} /> Invite Manager
+                  <button className="btn-sub" onClick={() => setShowCreateManagerModal(true)} style={{ padding: '8px 14px', fontSize: '13px', background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0' }}>
+                    <UserPlus size={15} /> Create Manager
                   </button>
                 )}
                 <button className="btn-main" onClick={() => setShowAddPropertyModal(true)} style={{ padding: '8px 14px', fontSize: '13px' }}>
@@ -562,6 +611,11 @@ export const SettingsView = () => {
                       <div>
                         <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-main)' }}>{p.firmName}</div>
                         <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Firm ID: {p.firmId}</div>
+                        {p.name && (
+                          <div style={{ fontSize: '11px', color: '#047857', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <User size={12} /> Manager: <strong>{p.name}</strong> ({p.email})
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -918,6 +972,84 @@ export const SettingsView = () => {
             </div>
           </div>
 
+          {/* Security & Change Password Card */}
+          <div className="card-container" style={{ padding: '28px' }}>
+            <h2 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text-main)', marginBottom: '6px', fontFamily: 'var(--font-serif)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <KeyRound size={20} color="#047857" /> Security & Password Management
+            </h2>
+            <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '20px' }}>
+              Update your account login password anytime.
+            </p>
+
+            {pwdSuccess && (
+              <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', color: '#047857', padding: '12px 16px', borderRadius: 'var(--radius-md)', fontSize: '13px', fontWeight: 700, marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <CheckCircle2 size={16} /> {pwdSuccess}
+              </div>
+            )}
+
+            {pwdError && (
+              <div className="auth-error-banner" style={{ marginBottom: '20px' }}>
+                {pwdError}
+              </div>
+            )}
+
+            <form onSubmit={handlePasswordChangeSubmit} className="auth-form" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div className="form-group">
+                <label className="form-label">Current Password <span style={{ color: '#e11d48' }}>*</span></label>
+                <div className="input-icon-wrapper">
+                  <Lock size={16} className="input-icon" />
+                  <input
+                    type="password"
+                    className="form-input icon-padded"
+                    placeholder="Enter your current password"
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">New Password <span style={{ color: '#e11d48' }}>*</span></label>
+                <div className="input-icon-wrapper">
+                  <KeyRound size={16} className="input-icon" />
+                  <input
+                    type="password"
+                    className="form-input icon-padded"
+                    placeholder="Enter new password (min. 6 characters)"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Confirm New Password <span style={{ color: '#e11d48' }}>*</span></label>
+                <div className="input-icon-wrapper">
+                  <ShieldCheck size={16} className="input-icon" />
+                  <input
+                    type="password"
+                    className="form-input icon-padded"
+                    placeholder="Re-enter new password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    required
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                className="btn-main"
+                disabled={pwdLoading}
+                style={{ padding: '10px 18px', fontSize: '13px', width: 'fit-content' }}
+              >
+                {pwdLoading ? 'Updating Password...' : 'Update Password'}
+              </button>
+            </form>
+          </div>
+
         </div>
       )}
 
@@ -971,10 +1103,10 @@ export const SettingsView = () => {
         </div>
       )}
 
-      {showInviteModal && (
-        <InviteManagerModal
-          isOpen={showInviteModal}
-          onClose={() => setShowInviteModal(false)}
+      {showCreateManagerModal && (
+        <CreateManagerModal
+          isOpen={showCreateManagerModal}
+          onClose={() => setShowCreateManagerModal(false)}
         />
       )}
     </div>

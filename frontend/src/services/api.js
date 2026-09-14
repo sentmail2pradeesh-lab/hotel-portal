@@ -341,5 +341,35 @@ export const api = {
     const res = await fetch(`${API_BASE_URL}/invitations`, { headers: getAuthHeaders() });
     if (!res.ok) throw new Error('Failed to fetch invitations list.');
     return await res.json();
+  },
+
+  async createManager(name, email, propertyId, tempPassword) {
+    const res = await fetch(`${API_BASE_URL}/managers/create`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ name, email, propertyId, tempPassword })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to create manager account.');
+    return data;
+  },
+
+  async getManagers() {
+    const res = await fetch(`${API_BASE_URL}/managers`, {
+      headers: getAuthHeaders()
+    });
+    if (!res.ok) throw new Error('Failed to fetch managers list.');
+    return await res.json();
+  },
+
+  async changePassword(currentPassword, newPassword) {
+    const res = await fetch(`${API_BASE_URL}/auth/change-password`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ currentPassword, newPassword })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to change password.');
+    return data;
   }
 };

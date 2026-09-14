@@ -272,6 +272,30 @@ export const HotelProvider = ({ children }) => {
     return { success: false, message: 'Failed to create property.' };
   };
 
+  // Direct Manager Creation by Super Admin
+  const createManager = async (name, email, propertyId, tempPassword) => {
+    try {
+      const res = await api.createManager(name, email, propertyId, tempPassword);
+      const mgrMe = await api.getManagerMe();
+      if (mgrMe?.properties) {
+        setPropertiesList(mgrMe.properties);
+      }
+      return { success: true, message: res.message, manager: res.manager };
+    } catch (err) {
+      return { success: false, message: err.message || 'Failed to create manager.' };
+    }
+  };
+
+  // Password Change for Super Admin or Manager
+  const changePassword = async (currentPassword, newPassword) => {
+    try {
+      const res = await api.changePassword(currentPassword, newPassword);
+      return { success: true, message: res.message || 'Password changed successfully.' };
+    } catch (err) {
+      return { success: false, message: err.message || 'Failed to change password.' };
+    }
+  };
+
   const checkRegisterOpen = () => {
     if (!isRegisterOpen) {
       alert('Shift Register is Closed. Please open the shift register to perform operations.');
@@ -584,6 +608,8 @@ export const HotelProvider = ({ children }) => {
         isServerConnected,
         isAdminRegistered,
         adminRegister,
+        createManager,
+        changePassword,
         login: managerLogin,
         register: managerRegister,
         managerLogin,

@@ -186,3 +186,13 @@ class AcceptInvitationRequest(BaseModel):
     token: str
     name: str
     password: str
+
+class ManagerCreateRequest(BaseModel):
+    name: str
+    email: str
+    propertyId: str
+    tempPassword: str
+
+class ChangePasswordRequest(BaseModel):
+    currentPassword: str
+    newPassword: str
