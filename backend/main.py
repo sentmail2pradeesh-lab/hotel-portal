@@ -1378,37 +1378,45 @@ def toggle_register_status(
 
 def send_invitation_email(recipient_email: str, property_name: str, invite_url: str, admin_sender_email: str = ""):
     """
-    Sends an invitation email dynamically from the registered Overall Admin's email address.
+    Sends an invitation email dynamically from the registered Super Admin's email address.
     Logs email details and gracefully handles network SMTP delivery.
     """
-    admin_sender = admin_sender_email or os.environ.get("SMTP_EMAIL", "admin@hotel.com")
-    smtp_pass = os.environ.get("SMTP_PASSWORD", "")
+    smtp_email = os.environ.get("SMTP_EMAIL", "").strip() or admin_sender_email
+    smtp_pass = os.environ.get("SMTP_PASSWORD", "").strip()
+    smtp_host = os.environ.get("SMTP_HOST", "smtp.gmail.com").strip()
+    smtp_port_raw = os.environ.get("SMTP_PORT", "587").strip()
+    smtp_port = int(smtp_port_raw) if smtp_port_raw.isdigit() else 587
+
     subject = f"Invitation to manage {property_name}"
     body = (
         f"Hello,\n\n"
-        f"You have been invited by the Overall Admin ({admin_sender}) to register as the Property Manager for '{property_name}'.\n\n"
-        f"Please click the secure activation link below to complete your setup:\n"
+        f"You have been invited by the Super Admin ({admin_sender_email or 'Admin'}) to register as the Property Manager for '{property_name}'.\n\n"
+        f"Please click the secure activation link below to complete your setup and set your password:\n"
         f"{invite_url}\n\n"
         f"Best regards,\n"
         f"Hotel Operations Team"
     )
-    if smtp_pass:
+
+    if smtp_email and smtp_pass:
         try:
             import smtplib
             from email.mime.text import MIMEText
             msg = MIMEText(body)
             msg['Subject'] = subject
-            msg['From'] = admin_sender
+            msg['From'] = smtp_email
             msg['To'] = recipient_email
-            with smtplib.SMTP('smtp.gmail.com', 587) as server:
+            with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as server:
                 server.starttls()
-                server.login(admin_sender, smtp_pass)
-                server.sendmail(admin_sender, [recipient_email], msg.as_string())
+                server.login(smtp_email, smtp_pass)
+                server.sendmail(smtp_email, [recipient_email], msg.as_string())
             print(f"[SMTP DISPATCH SUCCESS] Email sent to {recipient_email}")
+            return True, "Email sent successfully via SMTP."
         except Exception as e:
-            print(f"[SMTP DISPATCH NOTICE] Could not deliver live SMTP ({e}). Activation Link: {invite_url}")
+            print(f"[SMTP DISPATCH ERROR] Could not deliver live SMTP ({e}). Activation Link: {invite_url}")
+            return False, f"SMTP error: {e}"
     else:
-        print(f"[INVITATION DISPATCH LOG] From: {admin_sender} -> To: {recipient_email} | Link: {invite_url}")
+        print(f"[SMTP DISPATCH NOTICE] SMTP_PASSWORD not configured. Activation Link: {invite_url}")
+        return False, "SMTP_PASSWORD not configured on server."
 
 @app.post("/api/invitations/send")
 def send_invitation(
@@ -1441,7 +1449,7 @@ def send_invitation(
 
     origin = request.headers.get("origin") or "https://aszenventures.com"
     invite_url = f"{origin.rstrip('/')}/#register?token={token}"
-    send_invitation_email(req.email.strip(), prop.firm_name, invite_url, admin_email)
+    email_sent, email_msg = send_invitation_email(req.email.strip(), prop.firm_name, invite_url, admin_email)
 
     return {
         "id": invite.id,
@@ -1451,6 +1459,8 @@ def send_invitation(
         "senderEmail": invite.sender_email,
         "status": invite.status,
         "inviteUrl": invite_url,
+        "emailSent": email_sent,
+        "emailMessage": email_msg,
         "createdAt": invite.created_at.isoformat() if invite.created_at else ""
     }
 

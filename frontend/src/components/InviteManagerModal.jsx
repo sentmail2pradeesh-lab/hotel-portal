@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Mail, Building2, Send, X, Copy, Check, Clock, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Mail, Building2, Send, X, Copy, Check, Clock, CheckCircle2, AlertCircle, ExternalLink } from 'lucide-react';
 import { useHotel } from '../context/HotelContext';
 import { api } from '../services/api';
 
 export const InviteManagerModal = ({ isOpen, onClose }) => {
-  const { propertiesList } = useHotel();
+  const { propertiesList, currentUser } = useHotel();
   const [selectedPropertyId, setSelectedPropertyId] = useState(propertiesList[0]?.firmId || '');
   const [managerEmail, setManagerEmail] = useState('');
   const [loading, setLoading] = useState(false);
@@ -13,6 +13,14 @@ export const InviteManagerModal = ({ isOpen, onClose }) => {
   const [createdInviteUrl, setCreatedInviteUrl] = useState('');
   const [copiedToken, setCopiedToken] = useState('');
   const [invitationsList, setInvitationsList] = useState([]);
+
+  const formatInviteUrl = (rawUrl, token) => {
+    const base = window.location.origin;
+    if (!rawUrl && !token) return '';
+    const match = rawUrl ? rawUrl.match(/token=([a-zA-Z0-9_-]+)/) : null;
+    const tokenVal = match ? match[1] : token;
+    return `${base}/#register?token=${tokenVal}`;
+  };
 
   useEffect(() => {
     if (propertiesList.length > 0 && !selectedPropertyId) {
@@ -55,8 +63,13 @@ export const InviteManagerModal = ({ isOpen, onClose }) => {
 
     try {
       const res = await api.sendManagerInvitation(selectedPropertyId, managerEmail.trim());
-      setSuccessMsg(`Invitation sent successfully to ${managerEmail.trim()}!`);
-      setCreatedInviteUrl(res.inviteUrl || '');
+      const finalUrl = formatInviteUrl(res.inviteUrl, res.id);
+      setCreatedInviteUrl(finalUrl);
+      if (res.emailSent) {
+        setSuccessMsg(`Invitation email dispatched directly to ${managerEmail.trim()}!`);
+      } else {
+        setSuccessMsg(`Invitation link generated for ${managerEmail.trim()}!`);
+      }
       setManagerEmail('');
       loadInvitations();
     } catch (err) {
@@ -67,15 +80,18 @@ export const InviteManagerModal = ({ isOpen, onClose }) => {
   };
 
   const handleCopyLink = (url, id) => {
-    navigator.clipboard.writeText(url);
+    const finalUrl = formatInviteUrl(url, id);
+    navigator.clipboard.writeText(finalUrl);
     setCopiedToken(id);
     setTimeout(() => setCopiedToken(''), 3000);
   };
 
   const handleOpenMailClient = (email, propName, url) => {
+    const finalUrl = formatInviteUrl(url);
     const subject = encodeURIComponent(`Invitation to manage ${propName}`);
+    const adminEmail = currentUser?.email || 'Super Admin';
     const body = encodeURIComponent(
-      `Hello,\n\nYou have been invited by Admin (mail2pradeesh1621@gmail.com) to register as Property Manager for '${propName}'.\n\nPlease click the secure activation link below to set your password and activate your manager account:\n${url}\n\nBest regards,\nHotel Operations Team`
+      `Hello,\n\nYou have been invited by the Super Admin (${adminEmail}) to register as Property Manager for '${propName}'.\n\nPlease click the secure activation link below to set your password and activate your manager account:\n${finalUrl}\n\nBest regards,\nHotel Operations Team`
     );
     window.location.href = `mailto:${email}?subject=${subject}&body=${body}`;
   };
@@ -101,7 +117,7 @@ export const InviteManagerModal = ({ isOpen, onClose }) => {
             <div>
               <h3 className="modal-heading" style={{ fontSize: '18px' }}>Invite Property Manager</h3>
               <p style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                Email sent from Admin (mail2pradeesh1621@gmail.com)
+                Email sent from Super Admin ({currentUser?.email || 'Admin'})
               </p>
             </div>
           </div>
@@ -210,6 +226,20 @@ export const InviteManagerModal = ({ isOpen, onClose }) => {
           >
             {loading ? 'Sending Invitation...' : <><Send size={15} /> Send Email Invitation</>}
           </button>
+
+          {/* SMTP Helper Note */}
+          <div style={{
+            fontSize: '11px',
+            color: '#64748b',
+            background: '#f8fafc',
+            padding: '10px 12px',
+            borderRadius: '6px',
+            border: '1px solid #e2e8f0',
+            marginTop: '12px',
+            lineHeight: '1.4'
+          }}>
+            💡 <strong>Direct Email Dispatch:</strong> To have Render automatically deliver emails to inboxes via Gmail, set <code>SMTP_EMAIL</code> and <code>SMTP_PASSWORD</code> in your Render Environment settings. Otherwise, click <em>Open Email App to Send</em> or <em>Copy Activation Link</em> to send directly.
+          </div>
         </form>
 
         {/* Sent Invitations Audit History */}
@@ -226,6 +256,7 @@ export const InviteManagerModal = ({ isOpen, onClose }) => {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '180px', overflowY: 'auto' }}>
               {invitationsList.map((inv) => {
                 const isAccepted = inv.status === 'accepted';
+                const formattedLink = formatInviteUrl(inv.inviteUrl, inv.id);
                 return (
                   <div
                     key={inv.id}
@@ -258,7 +289,7 @@ export const InviteManagerModal = ({ isOpen, onClose }) => {
                           type="button"
                           className="icon-btn"
                           style={{ padding: '4px', color: '#0284c7' }}
-                          onClick={() => handleCopyLink(inv.inviteUrl, inv.id)}
+                          onClick={() => handleCopyLink(formattedLink, inv.id)}
                           title="Copy Invitation Link"
                         >
                           {copiedToken === inv.id ? <Check size={14} color="#047857" /> : <Copy size={14} />}
