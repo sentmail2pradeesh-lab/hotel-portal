@@ -106,16 +106,18 @@ export const Navbar = () => {
         {showPropertyMenu && (
           <div className="property-dropdown-menu">
             <div className="property-dropdown-header">
-              <span>MY PROPERTIES ({propertiesList.length})</span>
-              <button 
-                className="add-prop-btn-pill"
-                onClick={() => {
-                  setShowAddPropertyModal(true);
-                  setShowPropertyMenu(false);
-                }}
-              >
-                <Plus size={12} /> Add Property
-              </button>
+              <span>{isSuperAdmin ? `MY PROPERTIES (${propertiesList.length})` : 'ASSIGNED PROPERTY'}</span>
+              {isSuperAdmin && (
+                <button 
+                  className="add-prop-btn-pill"
+                  onClick={() => {
+                    setShowAddPropertyModal(true);
+                    setShowPropertyMenu(false);
+                  }}
+                >
+                  <Plus size={12} /> Add Property
+                </button>
+              )}
             </div>
             <div className="dropdown-divider" />
             <div className="property-list-group">
@@ -148,35 +150,41 @@ export const Navbar = () => {
                     </div>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <button
-                        className="icon-btn"
-                        style={{ padding: '4px', color: '#0284c7' }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setEditingProp(p);
-                          setRenameInput(p.firmName);
-                          setShowPropertyMenu(false);
-                        }}
-                        title="Rename Property"
-                      >
-                        <Edit2 size={13} />
-                      </button>
+                      {isSuperAdmin && (
+                        <button
+                          className="icon-btn"
+                          style={{ padding: '4px', color: '#0284c7' }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingProp(p);
+                            setRenameInput(p.firmName);
+                            setShowPropertyMenu(false);
+                          }}
+                          title="Rename Property"
+                        >
+                          <Edit2 size={13} />
+                        </button>
+                      )}
                       {isSelected && <Check size={16} color="#047857" />}
                     </div>
                   </div>
                 );
               })}
             </div>
-            <div className="dropdown-divider" />
-            <button
-              className="dropdown-item-btn primary-action"
-              onClick={() => {
-                setShowAddPropertyModal(true);
-                setShowPropertyMenu(false);
-              }}
-            >
-              <Plus size={15} /> Add Another Property
-            </button>
+            {isSuperAdmin && (
+              <>
+                <div className="dropdown-divider" />
+                <button
+                  className="dropdown-item-btn primary-action"
+                  onClick={() => {
+                    setShowAddPropertyModal(true);
+                    setShowPropertyMenu(false);
+                  }}
+                >
+                  <Plus size={15} /> Add Another Property
+                </button>
+              </>
+            )}
           </div>
         )}
       </div>
@@ -246,7 +254,14 @@ export const Navbar = () => {
               {currentUser?.initials || (isSuperAdmin ? 'SA' : 'PM')}
             </div>
             <div className="user-profile-text">
-              <span className="user-profile-name">{currentUser?.name || (isSuperAdmin ? 'Super Admin' : 'Manager')}</span>
+              <span className="user-profile-name" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <span>{currentUser?.name || (isSuperAdmin ? 'Super Admin' : 'Manager')}</span>
+                {isSuperAdmin && (
+                  <span style={{ fontSize: '9px', background: '#fef3c7', color: '#b45309', padding: '1px 5px', borderRadius: '4px', fontWeight: 800, textTransform: 'uppercase' }}>
+                    Super Admin
+                  </span>
+                )}
+              </span>
               <span className="user-profile-firm">{currentUser?.firmName || 'Firm Dashboard'}</span>
             </div>
             <ChevronDown size={14} className={`dropdown-chevron ${showProfileMenu ? 'open' : ''}`} />

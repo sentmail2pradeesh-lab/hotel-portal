@@ -2,10 +2,10 @@ import React, { useState } from 'react';
 import { LogOut, Calendar, Sparkles, X, ShieldAlert } from 'lucide-react';
 import { formatDate } from '../utils/formatters';
 
-export const EarlyCheckoutModal = ({ isOpen, onClose, booking, onConfirm }) => {
+export const EarlyCheckoutModal = ({ isOpen = true, onClose, booking, onConfirm }) => {
   const [createHiddenSlot, setCreateHiddenSlot] = useState(true);
 
-  if (!isOpen || !booking) return null;
+  if (!booking || isOpen === false) return null;
 
   const todayStr = new Date().toISOString().split('T')[0];
 

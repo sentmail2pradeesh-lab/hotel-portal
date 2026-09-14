@@ -12,7 +12,9 @@ import {
   Plus, 
   CheckCircle2, 
   Lock,
-  Hotel
+  Hotel,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 
 export const AuthView = () => {
@@ -21,12 +23,15 @@ export const AuthView = () => {
   // Manager Login State
   const [loginIdentity, setLoginIdentity] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
 
   // Super Admin Register State
   const [regName, setRegName] = useState('');
   const [regEmail, setRegEmail] = useState('');
   const [regPassword, setRegPassword] = useState('');
   const [regConfirmPassword, setRegConfirmPassword] = useState('');
+  const [showRegPassword, setShowRegPassword] = useState(false);
+  const [showRegConfirmPassword, setShowRegConfirmPassword] = useState(false);
 
   // Initial Onboarding 1st Property State
   const [firmName, setFirmName] = useState('');
@@ -327,31 +332,77 @@ export const AuthView = () => {
 
             <div className="form-group">
               <label className="form-label">Master Password <span style={{ color: '#e11d48' }}>*</span></label>
-              <div className="input-icon-wrapper">
+              <div className="input-icon-wrapper" style={{ position: 'relative' }}>
                 <KeyRound size={16} className="input-icon" />
                 <input
-                  type="password"
+                  type={showRegPassword ? 'text' : 'password'}
                   className="form-input icon-padded"
                   placeholder="Create master password (min. 6 characters)"
                   value={regPassword}
                   onChange={(e) => setRegPassword(e.target.value)}
+                  style={{ paddingRight: '40px' }}
                   required
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowRegPassword(prev => !prev)}
+                  style={{
+                    position: 'absolute',
+                    right: '12px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    background: 'none',
+                    border: 'none',
+                    padding: '4px',
+                    cursor: 'pointer',
+                    color: '#64748b',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
+                  tabIndex={-1}
+                  title={showRegPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showRegPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
               </div>
             </div>
 
             <div className="form-group">
               <label className="form-label">Confirm Master Password <span style={{ color: '#e11d48' }}>*</span></label>
-              <div className="input-icon-wrapper">
+              <div className="input-icon-wrapper" style={{ position: 'relative' }}>
                 <Lock size={16} className="input-icon" />
                 <input
-                  type="password"
+                  type={showRegConfirmPassword ? 'text' : 'password'}
                   className="form-input icon-padded"
                   placeholder="Confirm password"
                   value={regConfirmPassword}
                   onChange={(e) => setRegConfirmPassword(e.target.value)}
+                  style={{ paddingRight: '40px' }}
                   required
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowRegConfirmPassword(prev => !prev)}
+                  style={{
+                    position: 'absolute',
+                    right: '12px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    background: 'none',
+                    border: 'none',
+                    padding: '4px',
+                    cursor: 'pointer',
+                    color: '#64748b',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
+                  tabIndex={-1}
+                  title={showRegConfirmPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showRegConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
               </div>
             </div>
 
@@ -379,16 +430,39 @@ export const AuthView = () => {
 
             <div className="form-group">
               <label className="form-label">Password</label>
-              <div className="input-icon-wrapper">
+              <div className="input-icon-wrapper" style={{ position: 'relative' }}>
                 <KeyRound size={16} className="input-icon" />
                 <input
-                  type="password"
+                  type={showLoginPassword ? 'text' : 'password'}
                   className="form-input icon-padded"
                   placeholder="Enter password"
                   value={loginPassword}
                   onChange={(e) => setLoginPassword(e.target.value)}
+                  style={{ paddingRight: '40px' }}
                   required
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowLoginPassword(prev => !prev)}
+                  style={{
+                    position: 'absolute',
+                    right: '12px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    background: 'none',
+                    border: 'none',
+                    padding: '4px',
+                    cursor: 'pointer',
+                    color: '#64748b',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
+                  tabIndex={-1}
+                  title={showLoginPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showLoginPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
               </div>
             </div>
 

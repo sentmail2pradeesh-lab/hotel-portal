@@ -65,6 +65,12 @@ if engine.name == "sqlite":
             if "manager_id" not in cols:
                 conn.execute(text("ALTER TABLE property_accounts ADD COLUMN manager_id VARCHAR"))
                 conn.commit()
+            if "address" not in cols:
+                conn.execute(text("ALTER TABLE property_accounts ADD COLUMN address TEXT"))
+                conn.commit()
+            if "phone" not in cols:
+                conn.execute(text("ALTER TABLE property_accounts ADD COLUMN phone VARCHAR"))
+                conn.commit()
 
             b_res = conn.execute(text("PRAGMA table_info(bookings)")).fetchall()
             b_cols = [r[1] for r in b_res]
@@ -82,6 +88,19 @@ if engine.name == "sqlite":
                 conn.commit()
     except Exception as e:
         print("Database auto-migration info:", e)
+else:
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE property_accounts ADD COLUMN IF NOT EXISTS manager_id VARCHAR"))
+            conn.execute(text("ALTER TABLE property_accounts ADD COLUMN IF NOT EXISTS address TEXT"))
+            conn.execute(text("ALTER TABLE property_accounts ADD COLUMN IF NOT EXISTS phone VARCHAR"))
+            conn.execute(text("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS status VARCHAR DEFAULT 'Upcoming'"))
+            conn.execute(text("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS manual_id VARCHAR"))
+            conn.execute(text("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS email VARCHAR"))
+            conn.execute(text("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS is_hidden BOOLEAN DEFAULT FALSE"))
+            conn.commit()
+    except Exception as e:
+        print("PostgreSQL auto-migration info:", e)
 
 app = FastAPI(
     title="Hotel Booking & Property Management API",
@@ -356,6 +375,8 @@ def login_manager(req: ManagerLoginRequest, db: Session = Depends(get_db)):
             email=p.email,
             firmLogo=p.firm_logo,
             eSignature=p.e_signature,
+            address=p.address,
+            phone=p.phone,
             sessionTimeoutMinutes=p.session_timeout_minutes or 15,
             role=p.role or "Property Manager",
             initials=p.initials or "PM"
@@ -417,6 +438,8 @@ def get_manager_me(
                 email=p.email,
                 firmLogo=p.firm_logo,
                 eSignature=p.e_signature,
+                address=p.address,
+                phone=p.phone,
                 sessionTimeoutMinutes=p.session_timeout_minutes or 15,
                 role=p.role or "Property Manager",
                 initials=p.initials or "PM"
@@ -449,6 +472,8 @@ def get_manager_me(
             email=prop.email,
             firmLogo=prop.firm_logo,
             eSignature=prop.e_signature,
+            address=prop.address,
+            phone=prop.phone,
             sessionTimeoutMinutes=prop.session_timeout_minutes or 15,
             role=prop.role or "Property Manager",
             initials=prop.initials or "PM"
@@ -494,6 +519,8 @@ def get_manager_properties(
             email=p.email,
             firmLogo=p.firm_logo,
             eSignature=p.e_signature,
+            address=p.address,
+            phone=p.phone,
             sessionTimeoutMinutes=p.session_timeout_minutes or 15,
             role=p.role or "Property Manager",
             initials=p.initials or "PM"
@@ -521,6 +548,9 @@ def create_property(
     if not mgr:
         raise HTTPException(status_code=401, detail="Manager account not found.")
 
+    if mgr.role not in ["Overall Admin", "Super Admin"]:
+        raise HTTPException(status_code=403, detail="Only Super Admin is authorized to create properties.")
+
     clean_firm = req.firmName.strip()
     if not clean_firm:
         raise HTTPException(status_code=400, detail="Property name is required.")
@@ -528,7 +558,9 @@ def create_property(
     firm_id = f"firm_{int(datetime.utcnow().timestamp())}_{uuid.uuid4().hex[:4]}"
     parts = mgr.name.split(" ")
     initials = (parts[0][0] + parts[1][0]).upper() if len(parts) >= 2 else mgr.name[:2].upper()
-    email_val = f"{clean_firm.lower().replace(' ', '')}_{uuid.uuid4().hex[:4]}@property.com"
+    email_val = req.email.strip().lower() if req.email and req.email.strip() else f"{clean_firm.lower().replace(' ', '')}_{uuid.uuid4().hex[:4]}@property.com"
+    address_val = req.address.strip() if req.address and req.address.strip() else None
+    phone_val = req.phone.strip() if req.phone and req.phone.strip() else None
 
     new_prop = PropertyAccount(
         manager_id=mgr.id,
@@ -536,6 +568,8 @@ def create_property(
         firm_name=clean_firm,
         name=mgr.name,
         email=email_val,
+        address=address_val,
+        phone=phone_val,
         password_hash=mgr.password_hash,
         firm_logo=req.firmLogo,
         e_signature=req.eSignature,
@@ -561,6 +595,8 @@ def create_property(
         email=new_prop.email,
         firmLogo=new_prop.firm_logo,
         eSignature=new_prop.e_signature,
+        address=new_prop.address,
+        phone=new_prop.phone,
         sessionTimeoutMinutes=new_prop.session_timeout_minutes or 15,
         role=new_prop.role or "Property Manager",
         initials=new_prop.initials or "PM"
@@ -662,6 +698,8 @@ def login_property(req: LoginRequest, db: Session = Depends(get_db)):
         email=matched.email,
         firmLogo=matched.firm_logo,
         eSignature=matched.e_signature,
+        address=matched.address,
+        phone=matched.phone,
         sessionTimeoutMinutes=matched.session_timeout_minutes or 15,
         role=matched.role or "Property Manager",
         initials=matched.initials or "PM",
@@ -679,6 +717,8 @@ def get_me(current_user: PropertyAccount = Depends(get_current_property)):
         email=current_user.email,
         firmLogo=current_user.firm_logo,
         eSignature=current_user.e_signature,
+        address=current_user.address,
+        phone=current_user.phone,
         sessionTimeoutMinutes=current_user.session_timeout_minutes or 15,
         role=current_user.role or "Property Manager",
         initials=current_user.initials or "PM",
@@ -704,6 +744,10 @@ def update_profile(
         current_user.firm_logo = req.firmLogo
     if req.eSignature is not None:
         current_user.e_signature = req.eSignature
+    if req.address is not None:
+        current_user.address = req.address.strip()
+    if req.phone is not None:
+        current_user.phone = req.phone.strip()
     if req.sessionTimeoutMinutes is not None:
         current_user.session_timeout_minutes = req.sessionTimeoutMinutes
 
@@ -717,6 +761,8 @@ def update_profile(
         email=current_user.email,
         firmLogo=current_user.firm_logo,
         eSignature=current_user.e_signature,
+        address=current_user.address,
+        phone=current_user.phone,
         sessionTimeoutMinutes=current_user.session_timeout_minutes or 15,
         role=current_user.role or "Property Manager",
         initials=current_user.initials or "PM",
@@ -814,26 +860,39 @@ def get_bookings(
     return res
 
 
+def generate_next_booking_id(db: Session) -> str:
+    all_booking_ids = [b[0] for b in db.query(BookingModel.id).all() if b[0]]
+    max_num = 0
+    for bid in all_booking_ids:
+        if bid.startswith("ASZ-"):
+            try:
+                num_part = int(bid.replace("ASZ-", ""))
+                if num_part > max_num:
+                    max_num = num_part
+            except ValueError:
+                pass
+    candidate_num = max_num + 1
+    booking_id = f"ASZ-{candidate_num:03d}"
+    while db.query(BookingModel).filter(BookingModel.id == booking_id).first():
+        candidate_num += 1
+        booking_id = f"ASZ-{candidate_num:03d}"
+    return booking_id
+
+
 @app.post("/api/bookings", response_model=BookingResponse)
 def create_booking(
     req: BookingCreate,
     current_user: PropertyAccount = Depends(get_current_property),
     db: Session = Depends(get_db)
 ):
-    if req.id and req.id.startswith("ASZ-"):
-        booking_id = req.id
-    else:
-        prop_bookings = db.query(BookingModel).filter(BookingModel.firm_id == current_user.firm_id).all()
-        max_num = 0
-        for pb in prop_bookings:
-            if pb.id and pb.id.startswith("ASZ-"):
-                try:
-                    num_part = int(pb.id.replace("ASZ-", ""))
-                    if num_part > max_num:
-                        max_num = num_part
-                except ValueError:
-                    pass
-        booking_id = f"ASZ-{(max_num + 1):03d}"
+    booking_id = None
+    if req.id:
+        existing = db.query(BookingModel).filter(BookingModel.id == req.id).first()
+        if not existing:
+            booking_id = req.id
+
+    if not booking_id:
+        booking_id = generate_next_booking_id(db)
 
     now_iso = datetime.utcnow().isoformat() + "Z"
 
@@ -979,17 +1038,7 @@ def early_checkout_booking(
 
     hidden_booking = None
     if req.createHiddenSlot and orig_checkout > today_str:
-        prop_bookings = db.query(BookingModel).filter(BookingModel.firm_id == current_user.firm_id).all()
-        max_num = 0
-        for pb in prop_bookings:
-            if pb.id and pb.id.startswith("ASZ-"):
-                try:
-                    num_part = int(pb.id.replace("ASZ-", ""))
-                    if num_part > max_num:
-                        max_num = num_part
-                except ValueError:
-                    pass
-        new_id = f"ASZ-{(max_num + 1):03d}"
+        new_id = generate_next_booking_id(db)
         hidden_b = BookingModel(
             id=new_id,
             manual_id=f"HIDDEN-{b.manual_id or b.id}",
@@ -1184,7 +1233,9 @@ def create_expense(
     current_user: PropertyAccount = Depends(get_current_property),
     db: Session = Depends(get_db)
 ):
-    exp_id = req.id if req.id else f"EXP-{int(uuid.uuid4().int % 9000 + 100)}"
+    exp_id = req.id if req.id else f"EXP-{int(uuid.uuid4().int % 90000 + 1000)}"
+    while db.query(ExpenseModel).filter(ExpenseModel.id == exp_id).first():
+        exp_id = f"EXP-{int(uuid.uuid4().int % 90000 + 1000)}"
     now_iso = datetime.utcnow().isoformat() + "Z"
 
     new_e = ExpenseModel(
@@ -1260,7 +1311,9 @@ def create_bill(
     current_user: PropertyAccount = Depends(get_current_property),
     db: Session = Depends(get_db)
 ):
-    bill_id = req.id if req.id else f"BILL-{int(uuid.uuid4().int % 9000 + 400)}"
+    bill_id = req.id if req.id else f"BILL-{int(uuid.uuid4().int % 90000 + 1000)}"
+    while db.query(BillModel).filter(BillModel.id == bill_id).first():
+        bill_id = f"BILL-{int(uuid.uuid4().int % 90000 + 1000)}"
     add_ons_json = json.dumps(req.addOns) if req.addOns else "[]"
 
     new_b = BillModel(
@@ -1561,6 +1614,8 @@ def accept_invitation(req: AcceptInvitationRequest, db: Session = Depends(get_db
         email=prop.email,
         firmLogo=prop.firm_logo,
         eSignature=prop.e_signature,
+        address=prop.address,
+        phone=prop.phone,
         sessionTimeoutMinutes=prop.session_timeout_minutes or 15,
         role=prop.role or "Property Manager",
         initials=get_initials(prop.firm_name)

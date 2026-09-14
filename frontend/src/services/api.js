@@ -74,11 +74,15 @@ export const api = {
     return await res.json();
   },
 
-  async createProperty(firmName, firmLogo = null, eSignature = null) {
+  async createProperty(propertyData) {
+    const payload = typeof propertyData === 'object' && propertyData !== null
+      ? propertyData
+      : { firmName: arguments[0], firmLogo: arguments[1] || null, eSignature: arguments[2] || null };
+
     const res = await fetch(`${API_BASE_URL}/properties`, {
       method: 'POST',
       headers: getAuthHeaders(),
-      body: JSON.stringify({ firmName, firmLogo, eSignature })
+      body: JSON.stringify(payload)
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || 'Failed to create property.');

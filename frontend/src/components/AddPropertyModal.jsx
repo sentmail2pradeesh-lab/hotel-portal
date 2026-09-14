@@ -1,11 +1,14 @@
 import React, { useState } from 'react';
 import { useHotel } from '../context/HotelContext';
-import { Building2, Upload, X, Plus, Info } from 'lucide-react';
+import { Building2, Upload, X, Plus, Info, MapPin, Phone, Mail } from 'lucide-react';
 
 export const AddPropertyModal = ({ isOpen, onClose }) => {
   const { addProperty } = useHotel();
 
   const [firmName, setFirmName] = useState('');
+  const [address, setAddress] = useState('');
+  const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState('');
   const [firmLogo, setFirmLogo] = useState(null);
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -34,6 +37,9 @@ export const AddPropertyModal = ({ isOpen, onClose }) => {
     try {
       const res = await addProperty({
         firmName: firmName.trim(),
+        address: address.trim(),
+        phone: phone.trim(),
+        email: email.trim(),
         firmLogo,
         eSignature: null
       });
@@ -98,6 +104,58 @@ export const AddPropertyModal = ({ isOpen, onClose }) => {
                 onChange={(e) => setFirmName(e.target.value)}
                 required
               />
+            </div>
+          </div>
+
+          {/* Property Address */}
+          <div className="form-group">
+            <label className="form-label" style={{ fontWeight: 700 }}>
+              Property Location / Address
+            </label>
+            <div className="input-icon-wrapper">
+              <MapPin size={16} className="input-icon" />
+              <input
+                type="text"
+                className="form-input icon-padded"
+                placeholder="e.g. 12 Beach Boulevard, Goa"
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+              />
+            </div>
+          </div>
+
+          {/* Contact Phone & Email Grid */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <div className="form-group">
+              <label className="form-label" style={{ fontWeight: 700 }}>
+                Contact Phone
+              </label>
+              <div className="input-icon-wrapper">
+                <Phone size={16} className="input-icon" />
+                <input
+                  type="tel"
+                  className="form-input icon-padded"
+                  placeholder="e.g. +91 98765 43210"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label" style={{ fontWeight: 700 }}>
+                Contact Email
+              </label>
+              <div className="input-icon-wrapper">
+                <Mail size={16} className="input-icon" />
+                <input
+                  type="email"
+                  className="form-input icon-padded"
+                  placeholder="e.g. frontdesk@hotel.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+              </div>
             </div>
           </div>
 

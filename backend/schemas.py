@@ -14,6 +14,9 @@ class PropertyCreateRequest(BaseModel):
     firmName: str
     firmLogo: Optional[str] = None
     eSignature: Optional[str] = None
+    address: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
 
 class PropertyResponse(BaseModel):
     firmId: str
@@ -22,6 +25,8 @@ class PropertyResponse(BaseModel):
     email: Optional[str] = None
     firmLogo: Optional[str] = None
     eSignature: Optional[str] = None
+    address: Optional[str] = None
+    phone: Optional[str] = None
     sessionTimeoutMinutes: int = 15
     role: str = "Property Manager"
     initials: str
@@ -51,6 +56,8 @@ class UserProfileResponse(BaseModel):
     email: Optional[str] = None
     firmLogo: Optional[str] = None
     eSignature: Optional[str] = None
+    address: Optional[str] = None
+    phone: Optional[str] = None
     sessionTimeoutMinutes: int = 15
     role: str = "Property Manager"
     initials: str
@@ -62,6 +69,8 @@ class ProfileUpdateRequest(BaseModel):
     email: Optional[str] = None
     firmLogo: Optional[str] = None
     eSignature: Optional[str] = None
+    address: Optional[str] = None
+    phone: Optional[str] = None
     sessionTimeoutMinutes: Optional[int] = None
 
 class BookingBase(BaseModel):

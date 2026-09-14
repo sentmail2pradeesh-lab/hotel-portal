@@ -32,8 +32,9 @@ export const BookingModal = ({ isOpen, onClose, initialData = null }) => {
   const [idCardDataUrl, setIdCardDataUrl] = useState(initialData?.idCard || null);
   const [idCardFileName, setIdCardFileName] = useState(initialData?.idCardName || '');
 
-  // Compute status automatically based on dates
-  const computedStatus = getAutoStayStatus(checkIn, checkOut, initialData?.status);
+  // Stay Status (supports explicit In-House, Upcoming, Completed selection)
+  const autoStatus = getAutoStayStatus(checkIn, checkOut, initialData?.status);
+  const [stayStatus, setStayStatus] = useState(initialData?.status || autoStatus);
 
   if (!isOpen) return null;
 
@@ -85,7 +86,7 @@ export const BookingModal = ({ isOpen, onClose, initialData = null }) => {
       checkOut,
       amountPaid: parseFloat(amountPaid) || 0,
       paidVia,
-      status: computedStatus,
+      status: stayStatus || autoStatus,
       notes: notes.trim(),
       idCard: idCardDataUrl,
       idCardName: idCardFileName,
@@ -251,6 +252,20 @@ export const BookingModal = ({ isOpen, onClose, initialData = null }) => {
                 <option value="Debit Card">Debit Card</option>
                 <option value="Net Banking">Net Banking</option>
                 <option value="Pending">Pending / Unpaid</option>
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label" style={{ fontWeight: 700 }}>Stay Status</label>
+              <select
+                className="form-select"
+                value={stayStatus}
+                onChange={(e) => setStayStatus(e.target.value)}
+                style={{ fontWeight: 700, color: stayStatus === 'In-House' ? '#047857' : (stayStatus === 'Completed' ? '#64748b' : '#d97706') }}
+              >
+                <option value="In-House">In-House (Active Stay / Checked-In)</option>
+                <option value="Upcoming">Upcoming (Reserved / Expected Arrival)</option>
+                <option value="Completed">Completed (Checked-Out)</option>
               </select>
             </div>
           </div>

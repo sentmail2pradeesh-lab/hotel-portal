@@ -24,7 +24,11 @@ import {
   UserPlus,
   KeyRound,
   ShieldCheck,
-  Lock
+  Lock,
+  MapPin,
+  Phone,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { AddPropertyModal } from './AddPropertyModal';
 import { CreateManagerModal } from './CreateManagerModal';
@@ -61,6 +65,9 @@ export const SettingsView = () => {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showCurrentPwd, setShowCurrentPwd] = useState(false);
+  const [showNewPwd, setShowNewPwd] = useState(false);
+  const [showConfirmPwd, setShowConfirmPwd] = useState(false);
   const [pwdError, setPwdError] = useState('');
   const [pwdSuccess, setPwdSuccess] = useState('');
   const [pwdLoading, setPwdLoading] = useState(false);
@@ -112,8 +119,9 @@ export const SettingsView = () => {
 
   // Profile Update State
   const [firmName, setFirmName] = useState(currentUser?.firmName || '');
-  const [managerName, setManagerName] = useState(currentUser?.name || '');
-  const [workEmail, setWorkEmail] = useState(currentUser?.email || '');
+  const [firmAddress, setFirmAddress] = useState(currentUser?.firmAddress || '');
+  const [firmPhone, setFirmPhone] = useState(currentUser?.firmPhone || '');
+  const [workEmail, setWorkEmail] = useState(currentUser?.firmEmail || currentUser?.email || '');
   const [profileSuccess, setProfileSuccess] = useState('');
 
   // Analytics Date Filter State: 'all' | 'today' | 'month' | 'year' | 'custom'
@@ -160,8 +168,8 @@ export const SettingsView = () => {
       alert('Shift Register is Closed. Please open shift register to update profile.');
       return;
     }
-    updateUserProfile(firmName, managerName, workEmail);
-    setProfileSuccess('Property & manager profile updated successfully!');
+    updateUserProfile(firmName, currentUser?.assignedManagerName || currentUser?.name, workEmail, firmAddress, firmPhone);
+    setProfileSuccess('Property profile and contact details updated successfully!');
     setTimeout(() => setProfileSuccess(''), 4000);
   };
 
@@ -875,10 +883,10 @@ export const SettingsView = () => {
           {isSuperAdmin && (
             <div className="card-container" style={{ padding: '28px' }}>
               <h2 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text-main)', marginBottom: '6px', fontFamily: 'var(--font-serif)' }}>
-                Property & Manager Profile
+                Property Profile & Contact Info
               </h2>
               <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '20px' }}>
-                Update your property firm name and manager username.
+                Update property name, physical address, and front desk contact details.
               </p>
 
               {profileSuccess && (
@@ -903,27 +911,105 @@ export const SettingsView = () => {
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label">Property Manager Username / Name</label>
+                  <label className="form-label">Property Location / Address</label>
                   <div className="input-icon-wrapper">
-                    <User size={16} className="input-icon" />
+                    <MapPin size={16} className="input-icon" />
                     <input 
                       type="text" 
                       className="form-input icon-padded" 
-                      value={managerName} 
-                      onChange={(e) => setManagerName(e.target.value)} 
-                      required 
+                      placeholder="e.g. 12 Beach Boulevard, Goa"
+                      value={firmAddress} 
+                      onChange={(e) => setFirmAddress(e.target.value)} 
                     />
                   </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <div className="form-group">
+                    <label className="form-label">Front Desk Phone</label>
+                    <div className="input-icon-wrapper">
+                      <Phone size={16} className="input-icon" />
+                      <input 
+                        type="tel" 
+                        className="form-input icon-padded" 
+                        placeholder="e.g. +91 98765 43210"
+                        value={firmPhone} 
+                        onChange={(e) => setFirmPhone(e.target.value)} 
+                      />
+                    </div>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Front Desk Email</label>
+                    <div className="input-icon-wrapper">
+                      <Mail size={16} className="input-icon" />
+                      <input 
+                        type="email" 
+                        className="form-input icon-padded" 
+                        placeholder="e.g. frontdesk@hotel.com"
+                        value={workEmail} 
+                        onChange={(e) => setWorkEmail(e.target.value)} 
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Assigned Manager Status */}
+                <div style={{
+                  marginTop: '12px',
+                  padding: '14px 16px',
+                  background: '#f8fafc',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: 'var(--radius-md)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '12px',
+                  flexWrap: 'wrap'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div style={{
+                      width: '38px',
+                      height: '38px',
+                      borderRadius: '8px',
+                      background: currentUser?.assignedManagerName ? '#ecfdf5' : '#fef3c7',
+                      color: currentUser?.assignedManagerName ? '#047857' : '#b45309',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0
+                    }}>
+                      <User size={18} />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-main)' }}>
+                        Assigned Property Manager: {currentUser?.assignedManagerName || 'None Assigned Yet'}
+                      </div>
+                      <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                        {currentUser?.assignedManagerName
+                          ? `This manager is assigned to operate ${currentUser?.firmName || 'this property'}.`
+                          : 'You can delegate daily frontdesk operations by creating a manager account.'}
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn-sub"
+                    style={{ fontSize: '12px', padding: '6px 12px', whiteSpace: 'nowrap' }}
+                    onClick={() => setShowCreateManagerModal(true)}
+                  >
+                    <UserPlus size={13} /> {currentUser?.assignedManagerName ? 'Manage Staff' : 'Assign Manager'}
+                  </button>
                 </div>
 
                 <button 
                   type="submit" 
                   className="btn-main" 
                   disabled={!isRegisterOpen}
-                  style={{ width: '100%', padding: '12px', fontSize: '15px', marginTop: '10px' }}
+                  style={{ width: '100%', padding: '12px', fontSize: '15px', marginTop: '16px' }}
                   title={isRegisterOpen ? "Save Profile Settings" : "Shift Register is Closed (View-Only Mode)"}
                 >
-                  Save Profile Settings
+                  Save Property Settings
                 </button>
               </form>
             </div>
@@ -996,46 +1082,115 @@ export const SettingsView = () => {
             <form onSubmit={handlePasswordChangeSubmit} className="auth-form" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <div className="form-group">
                 <label className="form-label">Current Password <span style={{ color: '#e11d48' }}>*</span></label>
-                <div className="input-icon-wrapper">
+                <div className="input-icon-wrapper" style={{ position: 'relative' }}>
                   <Lock size={16} className="input-icon" />
                   <input
-                    type="password"
+                    type={showCurrentPwd ? 'text' : 'password'}
                     className="form-input icon-padded"
                     placeholder="Enter your current password"
                     value={currentPassword}
                     onChange={(e) => setCurrentPassword(e.target.value)}
+                    style={{ paddingRight: '40px' }}
                     required
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowCurrentPwd(prev => !prev)}
+                    style={{
+                      position: 'absolute',
+                      right: '12px',
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      background: 'none',
+                      border: 'none',
+                      padding: '4px',
+                      cursor: 'pointer',
+                      color: '#64748b',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}
+                    tabIndex={-1}
+                    title={showCurrentPwd ? 'Hide password' : 'Show password'}
+                  >
+                    {showCurrentPwd ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
                 </div>
               </div>
 
               <div className="form-group">
                 <label className="form-label">New Password <span style={{ color: '#e11d48' }}>*</span></label>
-                <div className="input-icon-wrapper">
+                <div className="input-icon-wrapper" style={{ position: 'relative' }}>
                   <KeyRound size={16} className="input-icon" />
                   <input
-                    type="password"
+                    type={showNewPwd ? 'text' : 'password'}
                     className="form-input icon-padded"
                     placeholder="Enter new password (min. 6 characters)"
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
+                    style={{ paddingRight: '40px' }}
                     required
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPwd(prev => !prev)}
+                    style={{
+                      position: 'absolute',
+                      right: '12px',
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      background: 'none',
+                      border: 'none',
+                      padding: '4px',
+                      cursor: 'pointer',
+                      color: '#64748b',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}
+                    tabIndex={-1}
+                    title={showNewPwd ? 'Hide password' : 'Show password'}
+                  >
+                    {showNewPwd ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
                 </div>
               </div>
 
               <div className="form-group">
                 <label className="form-label">Confirm New Password <span style={{ color: '#e11d48' }}>*</span></label>
-                <div className="input-icon-wrapper">
+                <div className="input-icon-wrapper" style={{ position: 'relative' }}>
                   <ShieldCheck size={16} className="input-icon" />
                   <input
-                    type="password"
+                    type={showConfirmPwd ? 'text' : 'password'}
                     className="form-input icon-padded"
                     placeholder="Re-enter new password"
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
+                    style={{ paddingRight: '40px' }}
                     required
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPwd(prev => !prev)}
+                    style={{
+                      position: 'absolute',
+                      right: '12px',
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      background: 'none',
+                      border: 'none',
+                      padding: '4px',
+                      cursor: 'pointer',
+                      color: '#64748b',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}
+                    tabIndex={-1}
+                    title={showConfirmPwd ? 'Hide password' : 'Show password'}
+                  >
+                    {showConfirmPwd ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
                 </div>
               </div>
 

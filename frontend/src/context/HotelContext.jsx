@@ -30,17 +30,26 @@ export const HotelProvider = ({ children }) => {
   // Derived currentUser context object for views (memoized to prevent infinite re-renders)
   const currentUser = useMemo(() => {
     if (!manager) return null;
+    const isSuper = manager.role === 'Overall Admin' || manager.role === 'Super Admin';
+    const computedInitials = manager.name
+      ? manager.name.trim().split(/\s+/).map(n => n[0]).join('').substring(0, 2).toUpperCase()
+      : (isSuper ? 'SA' : 'PM');
+
     return {
       id: manager.id,
       name: manager.name,
       email: manager.email,
-      role: manager.role || 'Super Admin',
+      role: manager.role || (isSuper ? 'Super Admin' : 'Property Manager'),
       firmId: activeProperty?.firmId || '',
       firmName: activeProperty?.firmName || (propertiesList.length === 0 ? 'Initial Setup Required' : 'Select Property'),
       firmLogo: activeProperty?.firmLogo || null,
+      firmAddress: activeProperty?.address || '',
+      firmPhone: activeProperty?.phone || '',
+      firmEmail: activeProperty?.email || '',
+      assignedManagerName: activeProperty?.name || '',
       eSignature: activeProperty?.eSignature || null,
       sessionTimeoutMinutes: activeProperty?.sessionTimeoutMinutes || 15,
-      initials: activeProperty?.initials || (manager.name ? manager.name.substring(0, 2).toUpperCase() : 'SA')
+      initials: computedInitials
     };
   }, [manager, activeProperty, propertiesList.length]);
 
@@ -258,9 +267,9 @@ export const HotelProvider = ({ children }) => {
   };
 
   // Add New Property under Manager
-  const addProperty = async ({ firmName, firmLogo, eSignature }) => {
+  const addProperty = async ({ firmName, firmLogo, eSignature, address, phone, email }) => {
     try {
-      const newProp = await api.createProperty(firmName, firmLogo, eSignature);
+      const newProp = await api.createProperty({ firmName, firmLogo, eSignature, address, phone, email });
       if (newProp && newProp.firmId) {
         setPropertiesList((prev) => [...prev, newProp]);
         switchProperty(newProp.firmId);
@@ -304,14 +313,16 @@ export const HotelProvider = ({ children }) => {
     return true;
   };
 
-  const updateUserProfile = async (newFirmName, newName, newEmail) => {
+  const updateUserProfile = async (newFirmName, newName, newEmail, newAddress, newPhone) => {
     if (!currentUser) return;
     if (!checkRegisterOpen()) return;
     try {
       const updated = await api.updateProfile({
         firmName: newFirmName,
         name: newName,
-        email: newEmail
+        email: newEmail,
+        address: newAddress,
+        phone: newPhone
       });
       setPropertiesList((prev) =>
         prev.map((p) => (p.firmId === updated.firmId ? { ...p, ...updated } : p))

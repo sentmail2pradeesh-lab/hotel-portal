@@ -24,6 +24,8 @@ class PropertyAccount(Base):
     password_hash = Column(String, nullable=False)
     firm_logo = Column(Text, nullable=True)
     e_signature = Column(Text, nullable=True)
+    address = Column(Text, nullable=True)
+    phone = Column(String, nullable=True)
     session_timeout_minutes = Column(Integer, default=15)
     role = Column(String, default="Property Manager")
     initials = Column(String, nullable=True)

@@ -7,7 +7,7 @@ import { EarlyCheckoutModal } from './EarlyCheckoutModal';
 import { BillInvoiceModal } from './BillInvoiceModal';
 import { 
   Plus, Search, Trash2, Edit2, CheckCircle2, BedDouble, PhoneCall, 
-  Clock, LogIn, LogOut, FileText, UserCheck, Mail, Sparkles, EyeOff, Calendar, Phone
+  Clock, LogIn, LogOut, FileText, UserCheck, Mail, Sparkles, EyeOff, Calendar, Phone, Filter
 } from 'lucide-react';
 
 import { GenerateBillModal } from './GenerateBillModal';
@@ -44,12 +44,9 @@ export const Bookings = () => {
     return { ...b, computedStatus: computed };
   });
 
-  // Section Groupings (Completed stays strictly excluded from in-house)
-  const arrivalsYesterday = bookingsWithAutoStatus.filter(
-    b => !b.isHidden && (b.checkIn === yesterdayStr || (b.checkIn < todayStr && b.computedStatus !== 'Completed'))
-  );
-  const arrivingTodayInHouse = bookingsWithAutoStatus.filter(
-    b => !b.isHidden && b.computedStatus !== 'Completed' && (b.checkIn === todayStr || b.computedStatus === 'In-House') && b.checkIn >= todayStr
+  // Section Groupings (Mutually exclusive: each non-hidden booking appears in exactly one category)
+  const inHouseStays = bookingsWithAutoStatus.filter(
+    b => !b.isHidden && b.computedStatus === 'In-House'
   );
   const upcomingStays = bookingsWithAutoStatus.filter(
     b => !b.isHidden && b.computedStatus === 'Upcoming'
@@ -76,7 +73,21 @@ export const Bookings = () => {
   };
 
   const handleCheckoutClick = (booking) => {
-    setEarlyCheckoutBooking(booking);
+    if (!isRegisterOpen) {
+      alert('Shift Register is Closed. Please open shift register to perform check-out.');
+      return;
+    }
+    const today = new Date().toISOString().split('T')[0];
+    if (booking.checkOut && booking.checkOut > today) {
+      setEarlyCheckoutBooking(booking);
+    } else {
+      if (confirmDouble(
+        `Check out guest "${booking.guestName}" from Room ${booking.room}?`,
+        `CONFIRM CHECK-OUT: Are you sure you want to complete check-out for Room ${booking.room}?`
+      )) {
+        checkOutBooking(booking.id);
+      }
+    }
   };
 
   const handleGenerateBillForBooking = (b) => {
@@ -101,8 +112,8 @@ export const Bookings = () => {
     );
   };
 
-  const allCount = bookings.length;
-  const inHouseCount = arrivingTodayInHouse.length + arrivalsYesterday.length;
+  const allCount = bookings.filter(b => !b.isHidden).length;
+  const inHouseCount = inHouseStays.length;
   const upcomingCount = upcomingStays.length;
   const completedCount = completedStays.length;
   const hiddenCount = hiddenBookings.length;
@@ -356,7 +367,7 @@ export const Bookings = () => {
             className={`booking-tab-btn in-house ${activeTab === 'in-house' ? 'active' : ''}`}
             onClick={() => setActiveTab('in-house')}
           >
-            <LogIn size={15} /> Arriving Today & In-House
+            <LogIn size={15} /> In-House Stays
             <span className="tab-badge-count">{inHouseCount}</span>
           </button>
           <button 
@@ -386,9 +397,9 @@ export const Bookings = () => {
         </div>
       </div>
 
-      {/* Search Toolbar */}
-      <div className="toolbar-row">
-        <div className="search-box">
+      {/* Search & Status Filter Toolbar */}
+      <div className="toolbar-row" style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '20px' }}>
+        <div className="search-box" style={{ flex: 1, minWidth: '260px' }}>
           <Search size={16} color="var(--text-muted)" />
           <input
             type="text"
@@ -396,6 +407,26 @@ export const Bookings = () => {
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <Filter size={14} color="#d97706" /> Filter by Status:
+          </span>
+          <select
+            className="form-select"
+            style={{ padding: '8px 12px', fontSize: '13px', minWidth: '170px', height: '40px' }}
+            value={activeTab}
+            onChange={(e) => setActiveTab(e.target.value)}
+          >
+            <option value="all">All Statuses ({allCount})</option>
+            <option value="in-house">In-House Stays ({inHouseCount})</option>
+            <option value="upcoming">Upcoming Reservations ({upcomingCount})</option>
+            <option value="completed">Completed History ({completedCount})</option>
+            {hiddenCount > 0 && currentUser?.role === 'Overall Admin' && (
+              <option value="hidden">Hidden Bookings ({hiddenCount})</option>
+            )}
+          </select>
         </div>
       </div>
 
@@ -408,10 +439,9 @@ export const Bookings = () => {
           </div>
         ) : (
           <>
-            {(activeTab === 'all' || activeTab === 'in-house') && renderBookingGroup('Arrivals from yesterday', arrivalsYesterday)}
-            {(activeTab === 'all' || activeTab === 'in-house') && renderBookingGroup('Arriving today / In-House', arrivingTodayInHouse)}
-            {(activeTab === 'all' || activeTab === 'upcoming') && renderBookingGroup('Upcoming Stays', upcomingStays)}
-            {(activeTab === 'all' || activeTab === 'completed') && renderBookingGroup('Completed History', completedStays)}
+            {(activeTab === 'all' || activeTab === 'in-house') && renderBookingGroup('Active In-House Stays', inHouseStays)}
+            {(activeTab === 'all' || activeTab === 'upcoming') && renderBookingGroup('Upcoming Stays & Reservations', upcomingStays)}
+            {(activeTab === 'all' || activeTab === 'completed') && renderBookingGroup('Completed Stay History', completedStays)}
             {(activeTab === 'all' || activeTab === 'hidden') && currentUser?.role === 'Overall Admin' && renderBookingGroup('Hidden Bookings / Early Released Slots', hiddenBookings)}
           </>
         )}
@@ -438,6 +468,7 @@ export const Bookings = () => {
 
       {earlyCheckoutBooking && (
         <EarlyCheckoutModal
+          isOpen={Boolean(earlyCheckoutBooking)}
           booking={earlyCheckoutBooking}
           onClose={() => setEarlyCheckoutBooking(null)}
           onConfirm={(bookingId, createHiddenSlot) => {
