@@ -1,6 +1,5 @@
 import React from 'react';
-import { formatDate } from '../utils/formatters';
-import { X, Download, IdCard, CheckCircle2, ShieldCheck, FileText } from 'lucide-react';
+import { X, Download, IdCard, CheckCircle2, ShieldCheck } from 'lucide-react';
 
 export const IDCardViewerModal = ({ booking, onClose }) => {
   if (!booking) return null;

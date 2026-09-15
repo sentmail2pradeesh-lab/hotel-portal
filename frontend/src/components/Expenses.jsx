@@ -11,9 +11,10 @@ export const Expenses = () => {
   const [selectedCategory, setSelectedCategory] = useState('All');
 
   const filteredExpenses = expenses.filter((e) => {
-    const matchesSearch = 
-      e.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      e.category.toLowerCase().includes(searchTerm.toLowerCase());
+    const term = (searchTerm || '').toLowerCase();
+    const desc = (e.description || '').toLowerCase();
+    const cat = (e.category || '').toLowerCase();
+    const matchesSearch = desc.includes(term) || cat.includes(term);
     const matchesCategory = selectedCategory === 'All' || e.category === selectedCategory;
     return matchesSearch && matchesCategory;
   });

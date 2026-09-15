@@ -1,6 +1,6 @@
 import React from 'react';
 import { useHotel } from '../context/HotelContext';
-import { formatCurrency, formatDate, ALL_PROPERTY_ROOMS } from '../utils/formatters';
+import { formatCurrency, formatDate } from '../utils/formatters';
 import { 
   PlusCircle, 
   ArrowDownRight, 
@@ -13,8 +13,7 @@ import {
   Users,
   ChevronRight,
   Sparkles,
-  BedDouble,
-  FileCheck
+  BedDouble
 } from 'lucide-react';
 
 export const Overview = () => {
@@ -70,7 +69,7 @@ export const Overview = () => {
           </div>
         </div>
 
-        {currentUser?.role === 'Overall Admin' && (
+        {(currentUser?.role === 'Overall Admin' || currentUser?.role === 'Super Admin') && (
           <div className="metric-card amber" style={{ background: 'linear-gradient(135deg, #b45309 0%, #d97706 100%)' }}>
             <div className="metric-title">
               <span>HIDDEN REVENUE (ADMIN ONLY)</span>
@@ -159,7 +158,9 @@ export const Overview = () => {
               </span>
             </div>
             <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginTop: '2px' }}>
-              All guest bookings, cash collections, and identity document mappings are active.
+              {isRegisterOpen 
+                ? 'All guest bookings, cash collections, and identity document mappings are active.' 
+                : 'Shift register is closed. Portal is currently in View-Only mode.'}
             </div>
           </div>
         </div>

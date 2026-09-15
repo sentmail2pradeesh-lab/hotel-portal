@@ -153,6 +153,14 @@ DEFAULT_ROOMS = [
     '401', '402', '403', '404', '405'
 ]
 
+def get_initials(name_str: Optional[str]) -> str:
+    if not name_str:
+        return "PM"
+    parts = name_str.strip().split()
+    if len(parts) >= 2:
+        return (parts[0][0] + parts[1][0]).upper()
+    return name_str.strip()[:2].upper()
+
 def hash_password(password: str) -> str:
     pwd_bytes = password.encode('utf-8')[:72]
     salt = bcrypt.gensalt()
@@ -1635,12 +1643,14 @@ def accept_invitation(req: AcceptInvitationRequest, db: Session = Depends(get_db
 
 @app.get("/api/invitations")
 def list_invitations(
+    request: Request,
     db: Session = Depends(get_db),
     mgr_token_payload: dict = Depends(get_manager_me)
 ):
-    if mgr_token_payload.get("role") != "Overall Admin":
-        raise HTTPException(status_code=403, detail="Only Overall Admin can view invitations.")
+    if mgr_token_payload.get("role") not in ["Overall Admin", "Super Admin"]:
+        raise HTTPException(status_code=403, detail="Only Super Admin can view invitations.")
 
+    origin = request.headers.get("origin") or "https://aszenventures.com"
     invites = db.query(InvitationModel).order_by(InvitationModel.created_at.desc()).all()
     res = []
     for inv in invites:
@@ -1651,7 +1661,7 @@ def list_invitations(
             "email": inv.email,
             "senderEmail": inv.sender_email,
             "status": inv.status,
-            "inviteUrl": f"http://localhost:5173/#register?token={inv.id}",
+            "inviteUrl": f"{origin.rstrip('/')}/#register?token={inv.id}",
             "createdAt": inv.created_at.isoformat() if inv.created_at else ""
         })
     return res

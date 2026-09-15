@@ -1,6 +1,9 @@
 from sqlalchemy import Column, Integer, String, Float, Text, Boolean, DateTime
 from datetime import datetime
-from backend.database import Base
+try:
+    from backend.database import Base
+except ModuleNotFoundError:
+    from database import Base
 
 class ManagerAccount(Base):
     __tablename__ = "manager_accounts"

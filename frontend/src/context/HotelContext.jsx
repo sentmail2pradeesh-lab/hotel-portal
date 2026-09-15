@@ -5,7 +5,12 @@ import { api } from '../services/api';
 const HotelContext = createContext();
 
 export const HotelProvider = ({ children }) => {
-  const [activeTab, setActiveTabState] = useState('overview');
+  const [activeTab, setActiveTabState] = useState(() => {
+    if (typeof window !== 'undefined' && window.location.hash) {
+      return window.location.hash.replace('#', '') || 'overview';
+    }
+    return 'overview';
+  });
   const [manager, setManager] = useState(null);
   const [propertiesList, setPropertiesList] = useState([]);
   const [activePropertyId, setActivePropertyIdState] = useState(
@@ -81,11 +86,10 @@ export const HotelProvider = ({ children }) => {
     };
 
     const initialHash = window.location.hash.replace('#', '');
-    if (initialHash) {
-      setActiveTabState(initialHash);
-      window.history.replaceState({ tab: initialHash }, '', '#' + initialHash);
-    } else {
+    if (!initialHash) {
       window.history.replaceState({ tab: 'overview' }, '', '#overview');
+    } else {
+      window.history.replaceState({ tab: initialHash }, '', '#' + initialHash);
     }
 
     window.addEventListener('popstate', handlePopState);
@@ -165,10 +169,23 @@ export const HotelProvider = ({ children }) => {
       setBills([]);
       setIsRegisterOpen(true);
     }
-  }, [manager?.id, activePropertyId, refreshPropertyData]);
+  }, [manager, activePropertyId, refreshPropertyData]);
+
+  const logout = useCallback(() => {
+    localStorage.removeItem('frontdesk_jwt_token');
+    localStorage.removeItem('frontdesk_active_firm_id');
+    setManager(null);
+    setPropertiesList([]);
+    setActivePropertyIdState('');
+    setActiveTabState('overview');
+    if (typeof window !== 'undefined') {
+      window.history.replaceState({ tab: 'overview' }, '', '#overview');
+    }
+    setAuthNotice('');
+  }, []);
 
   // Inactivity timeout
-  const [lastActivity, setLastActivity] = useState(Date.now());
+  const [lastActivity, setLastActivity] = useState(() => Date.now());
 
   useEffect(() => {
     if (!currentUser) return;
@@ -195,7 +212,7 @@ export const HotelProvider = ({ children }) => {
       events.forEach((evt) => window.removeEventListener(evt, handleUserActivity));
       clearInterval(intervalId);
     };
-  }, [currentUser, lastActivity]);
+  }, [currentUser, lastActivity, logout]);
 
   const isAuthenticated = Boolean(manager);
 
@@ -371,15 +388,6 @@ export const HotelProvider = ({ children }) => {
     }
   };
 
-  const logout = () => {
-    localStorage.removeItem('frontdesk_jwt_token');
-    localStorage.removeItem('frontdesk_active_firm_id');
-    setManager(null);
-    setPropertiesList([]);
-    setActivePropertyIdState('');
-    setActiveTab('overview', true);
-    setAuthNotice('');
-  };
 
   // Rooms Management Actions
   const addCustomRoom = async (roomNum) => {

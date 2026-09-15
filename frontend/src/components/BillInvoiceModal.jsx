@@ -1,14 +1,21 @@
 import React, { useRef } from 'react';
-import { formatCurrency, formatDate } from '../utils/formatters';
+import { formatCurrency, formatDate, calculateNights } from '../utils/formatters';
 import { toPng } from 'html-to-image';
 import { Download, Printer, X, Building2, Edit3, FileText } from 'lucide-react';
 import { useHotel } from '../context/HotelContext';
 
 export const BillInvoiceModal = ({ bill, onClose, onEditBill }) => {
-  const { currentUser, isRegisterOpen } = useHotel();
+  const { currentUser, isRegisterOpen, bookings = [] } = useHotel();
   const invoiceRef = useRef(null);
 
   if (!bill) return null;
+
+  const linkedBooking = bill.bookingId ? bookings.find((b) => b.id === bill.bookingId || b.manualId === bill.bookingId) : null;
+  const effectiveCheckIn = bill.checkIn || linkedBooking?.checkIn;
+  const effectiveCheckOut = bill.checkOut || linkedBooking?.checkOut;
+  const effectiveNights = bill.nights || (effectiveCheckIn && effectiveCheckOut ? calculateNights(effectiveCheckIn, effectiveCheckOut) : 1);
+  const effectiveEmail = (bill.guestEmail && bill.guestEmail !== 'N/A') ? bill.guestEmail : (linkedBooking?.email || '');
+  const effectivePhone = (bill.guestPhone && bill.guestPhone !== 'N/A') ? bill.guestPhone : (linkedBooking?.phone || '');
 
   const handleDownloadImage = async () => {
     if (invoiceRef.current) {
@@ -84,8 +91,8 @@ export const BillInvoiceModal = ({ bill, onClose, onEditBill }) => {
               <span style={{ color: 'var(--text-secondary)', fontSize: '10px', fontWeight: 800, display: 'block', marginBottom: '4px', letterSpacing: '0.05em' }}>GUEST VISITOR DETAILS</span>
               <strong style={{ fontSize: '15px', color: '#0f172a', display: 'block', marginBottom: '4px' }}>{bill.guestName || 'Walk-in Guest'}</strong>
               <div style={{ fontSize: '11px', color: '#64748b', lineHeight: 1.5 }}>
-                {bill.guestEmail && bill.guestEmail !== 'N/A' && <div>Email: {bill.guestEmail}</div>}
-                {bill.guestPhone && bill.guestPhone !== 'N/A' && <div>Phone: {bill.guestPhone}</div>}
+                {effectiveEmail && <div>Email: {effectiveEmail}</div>}
+                {effectivePhone && <div>Phone: {effectivePhone}</div>}
               </div>
             </div>
 
@@ -95,9 +102,9 @@ export const BillInvoiceModal = ({ bill, onClose, onEditBill }) => {
                 {bill.bookingId ? `${bill.bookingId} • Room ${bill.roomNo || 'N/A'}` : 'Standalone Bill'}
               </strong>
               <div style={{ fontSize: '11px', color: '#334155', display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                <div><strong>Check-in:</strong> {formatDate(bill.checkIn)} ({bill.checkInTime || '10:00 AM'})</div>
-                <div><strong>Check-out:</strong> {formatDate(bill.checkOut)} ({bill.checkOutTime || '12:00 PM'})</div>
-                <div><strong>Duration:</strong> {bill.nights || 1} {bill.nights === 1 ? 'Night' : 'Nights'}</div>
+                <div><strong>Check-in:</strong> {formatDate(effectiveCheckIn)} ({bill.checkInTime || '10:00 AM'})</div>
+                <div><strong>Check-out:</strong> {formatDate(effectiveCheckOut)} ({bill.checkOutTime || '12:00 PM'})</div>
+                <div><strong>Duration:</strong> {effectiveNights} {effectiveNights === 1 ? 'Night' : 'Nights'}</div>
               </div>
             </div>
           </div>

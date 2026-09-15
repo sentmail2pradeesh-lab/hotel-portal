@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { LogOut, Calendar, Sparkles, X, ShieldAlert } from 'lucide-react';
+import { LogOut, Sparkles, X, ShieldAlert } from 'lucide-react';
 import { formatDate } from '../utils/formatters';
 
 export const EarlyCheckoutModal = ({ isOpen = true, onClose, booking, onConfirm }) => {

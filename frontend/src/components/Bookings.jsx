@@ -7,7 +7,7 @@ import { EarlyCheckoutModal } from './EarlyCheckoutModal';
 import { BillInvoiceModal } from './BillInvoiceModal';
 import { 
   Plus, Search, Trash2, Edit2, CheckCircle2, BedDouble, PhoneCall, 
-  Clock, LogIn, LogOut, FileText, UserCheck, Mail, Sparkles, EyeOff, Calendar, Phone, Filter
+  Clock, LogIn, LogOut, FileText, UserCheck, Mail, EyeOff, Calendar, Filter
 } from 'lucide-react';
 
 import { GenerateBillModal } from './GenerateBillModal';
@@ -19,6 +19,7 @@ export const Bookings = () => {
     checkInBooking, 
     checkOutBooking, 
     earlyCheckOutBooking,
+    addBill,
     currentUser,
     isRegisterOpen 
   } = useHotel();
@@ -32,11 +33,6 @@ export const Bookings = () => {
   const [selectedBillForInvoice, setSelectedBillForInvoice] = useState(null);
   const [generatingBillBooking, setGeneratingBillBooking] = useState(null);
 
-  const today = new Date();
-  const todayStr = today.toISOString().split('T')[0];
-  const yesterday = new Date(today);
-  yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayStr = yesterday.toISOString().split('T')[0];
 
   // Auto-calculated dynamic statuses for all bookings
   const bookingsWithAutoStatus = bookings.map(b => {
@@ -482,8 +478,11 @@ export const Bookings = () => {
         <GenerateBillModal
           booking={generatingBillBooking}
           onClose={() => setGeneratingBillBooking(null)}
-          onGenerate={(billPayload) => {
+          onGenerate={async (billPayload) => {
             setGeneratingBillBooking(null);
+            if (addBill) {
+              await addBill(billPayload);
+            }
             setSelectedBillForInvoice(billPayload);
           }}
         />

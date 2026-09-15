@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useHotel } from '../context/HotelContext';
 import { api } from '../services/api';
 import { 
@@ -33,32 +33,16 @@ export const CreateManagerModal = ({ isOpen, onClose }) => {
   const [managersList, setManagersList] = useState([]);
   const [loadingList, setLoadingList] = useState(false);
 
-  useEffect(() => {
-    if (propertiesList.length > 0 && !selectedPropertyId) {
-      setSelectedPropertyId(propertiesList[0].firmId);
-    }
-  }, [propertiesList, selectedPropertyId]);
-
-  useEffect(() => {
-    if (isOpen) {
-      setError('');
-      setSuccessData(null);
-      setCopied(false);
-      generateRandomPassword();
-      fetchManagers();
-    }
-  }, [isOpen]);
-
-  const generateRandomPassword = () => {
+  const generateRandomPassword = useCallback(() => {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
     let pass = 'Mgr@';
     for (let i = 0; i < 5; i++) {
       pass += chars.charAt(Math.floor(Math.random() * chars.length));
     }
     setTempPassword(pass);
-  };
+  }, []);
 
-  const fetchManagers = async () => {
+  const fetchManagers = useCallback(async () => {
     setLoadingList(true);
     try {
       const data = await api.getManagers();
@@ -68,16 +52,23 @@ export const CreateManagerModal = ({ isOpen, onClose }) => {
     } finally {
       setLoadingList(false);
     }
-  };
+  }, []);
 
-  if (!isOpen) return null;
+  const effectivePropertyId = selectedPropertyId || (propertiesList[0] ? propertiesList[0].firmId : '');
+
+  useEffect(() => {
+    if (isOpen) {
+      generateRandomPassword();
+      fetchManagers();
+    }
+  }, [isOpen, generateRandomPassword, fetchManagers]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setSuccessData(null);
 
-    if (!selectedPropertyId) {
+    if (!effectivePropertyId) {
       setError('Please select a property to assign this manager.');
       return;
     }
@@ -96,7 +87,7 @@ export const CreateManagerModal = ({ isOpen, onClose }) => {
 
     setLoading(true);
     try {
-      const res = await createManager(name.trim(), email.trim(), selectedPropertyId, tempPassword.trim());
+      const res = await createManager(name.trim(), email.trim(), effectivePropertyId, tempPassword.trim());
       if (res.success) {
         setSuccessData(res.manager);
         setName('');
@@ -130,6 +121,8 @@ Login Portal: ${loginUrl}
     setCopied(true);
     setTimeout(() => setCopied(false), 3000);
   };
+
+  if (!isOpen) return null;
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -283,7 +276,7 @@ Login Portal: ${loginUrl}
                     <Building2 size={16} className="input-icon" />
                     <select
                       className="form-input icon-padded"
-                      value={selectedPropertyId}
+                      value={effectivePropertyId}
                       onChange={(e) => setSelectedPropertyId(e.target.value)}
                       required
                     >

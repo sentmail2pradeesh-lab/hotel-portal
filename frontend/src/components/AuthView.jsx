@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import { useHotel } from '../context/HotelContext';
 import { 
   Building2, 
@@ -10,7 +10,6 @@ import {
   Clock, 
   Upload, 
   Plus, 
-  CheckCircle2, 
   Lock,
   Hotel,
   Eye,

@@ -11,7 +11,6 @@ import {
   TrendingUp, 
   DollarSign, 
   CreditCard, 
-  FileText, 
   User, 
   CheckCircle2, 
   BedDouble,
@@ -540,7 +539,7 @@ export const SettingsView = () => {
                       <button 
                         className="icon-btn" 
                         disabled={!isRegisterOpen}
-                        onClick={() => handleRemoveRoom(r)}
+                        onClick={() => handleDeleteRoom(r)}
                         style={{ color: '#94a3b8', padding: '4px' }}
                         title={isRegisterOpen ? "Remove Room" : "Shift Register is Closed (View-Only Mode)"}
                       >

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useHotel } from '../context/HotelContext';
 import { generateSystemBookingId, getAutoStayStatus } from '../utils/formatters';
-import { Upload, X, CheckCircle2, FileText, Sparkles, Hash, FileCheck } from 'lucide-react';
+import { Upload, X, CheckCircle2, FileText, Sparkles } from 'lucide-react';
 
 export const BookingModal = ({ isOpen, onClose, initialData = null }) => {
   const { bookings, roomsList, addBooking, updateBooking, isRegisterOpen } = useHotel();
@@ -14,7 +14,7 @@ export const BookingModal = ({ isOpen, onClose, initialData = null }) => {
   const availableRooms = roomsList.filter(r => !occupiedRooms.includes(r));
 
   const isHiddenAllocation = Boolean(initialData?.isHidden);
-  const [id, setId] = useState(initialData?.id || generateSystemBookingId(bookings));
+  const [id] = useState(initialData?.id || generateSystemBookingId(bookings));
   const [manualId, setManualId] = useState(initialData?.manualId || '');
   const [guestName, setGuestName] = useState(
     initialData?.guestName && initialData.guestName.startsWith('[HIDDEN BOOKING]') ? '' : (initialData?.guestName || '')

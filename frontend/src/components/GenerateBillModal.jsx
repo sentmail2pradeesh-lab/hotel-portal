@@ -3,18 +3,18 @@ import { formatCurrency, calculateNights } from '../utils/formatters';
 import { FileText, X, Receipt } from 'lucide-react';
 
 export const GenerateBillModal = ({ booking, onClose, onGenerate }) => {
-  if (!booking) return null;
+  const nights = calculateNights(booking?.checkIn, booking?.checkOut);
+  const defaultRoomRate = booking?.amountPaid || 0;
 
-  const nights = calculateNights(booking.checkIn, booking.checkOut);
-  const defaultRoomRate = booking.amountPaid || 0;
-
-  const [checkInTime, setCheckInTime] = useState(booking.checkInTime || '10:00 AM');
-  const [checkOutTime, setCheckOutTime] = useState(booking.checkOutTime || '12:00 PM');
+  const [checkInTime, setCheckInTime] = useState(booking?.checkInTime || '10:00 AM');
+  const [checkOutTime, setCheckOutTime] = useState(booking?.checkOutTime || '12:00 PM');
   const [roomCharge, setRoomCharge] = useState(defaultRoomRate);
   const [extraBedCharge, setExtraBedCharge] = useState(0);
   const [foodCharge, setFoodCharge] = useState(0);
   const [laundryCharge, setLaundryCharge] = useState(0);
   const [taxPercent, setTaxPercent] = useState(0);
+
+  if (!booking) return null;
 
   const roomSubtotal = parseFloat(roomCharge) || 0;
   const extraBedSubtotal = parseFloat(extraBedCharge) || 0;

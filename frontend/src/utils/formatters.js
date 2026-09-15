@@ -26,7 +26,7 @@ export const formatDate = (dateStr) => {
     const month = String(d.getMonth() + 1).padStart(2, '0');
     const year = d.getFullYear();
     return `${day}/${month}/${year}`;
-  } catch (e) {
+  } catch {
     return dateStr;
   }
 };
@@ -100,7 +100,7 @@ export const calculateNights = (checkInStr, checkOutStr) => {
     const diffTime = d2.getTime() - d1.getTime();
     const diffDays = Math.ceil(diffTime / (1000 * 3600 * 24));
     return diffDays > 0 ? diffDays : 1;
-  } catch (e) {
+  } catch {
     return 1;
   }
 };
