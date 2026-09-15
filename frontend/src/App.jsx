@@ -32,7 +32,47 @@ const MainView = () => {
 };
 
 const AppContent = () => {
-  const { isAuthenticated, isRegisterOpen } = useHotel();
+  const { isAuthenticated, isAuthLoading, isRegisterOpen } = useHotel();
+
+  if (isAuthLoading) {
+    return (
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          minHeight: '100vh',
+          background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
+          color: '#f8fafc',
+          fontFamily: 'var(--font-sans, system-ui, sans-serif)'
+        }}
+      >
+        <div
+          style={{
+            width: 48,
+            height: 48,
+            border: '4px solid rgba(245, 158, 11, 0.2)',
+            borderTopColor: '#f59e0b',
+            borderRadius: '50%',
+            animation: 'spin 0.8s linear infinite'
+          }}
+        />
+        <p
+          style={{
+            marginTop: 20,
+            fontSize: 15,
+            fontWeight: 600,
+            letterSpacing: '0.04em',
+            color: '#cbd5e1'
+          }}
+        >
+          Connecting to FrontDesk PMS...
+        </p>
+      </div>
+    );
+  }
+
   if (!isAuthenticated) {
     return <AuthView />;
   }

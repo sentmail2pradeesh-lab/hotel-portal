@@ -778,6 +778,71 @@ def update_profile(
     )
 
 
+# --- CONSOLIDATED FAST SYNC ENDPOINT ---
+@app.get("/api/sync")
+def sync_property_data(
+    current_user: PropertyAccount = Depends(get_current_property),
+    db: Session = Depends(get_db)
+):
+    # Rooms
+    rooms = db.query(RoomModel).filter(RoomModel.firm_id == current_user.firm_id).all()
+    if not rooms:
+        for rm in DEFAULT_ROOMS:
+            db.add(RoomModel(firm_id=current_user.firm_id, room_number=rm))
+        db.commit()
+        rooms = db.query(RoomModel).filter(RoomModel.firm_id == current_user.firm_id).all()
+    room_list = sorted([r.room_number for r in rooms], key=lambda x: (x.isdigit(), int(x) if x.isdigit() else x))
+
+    # Bookings
+    bookings = db.query(BookingModel).filter(BookingModel.firm_id == current_user.firm_id).all()
+    booking_list = [
+        BookingResponse(
+            id=b.id, manualId=b.manual_id or b.id, guestName=b.guest_name,
+            phone=b.phone or "", email=b.email or "", room=b.room,
+            checkIn=b.check_in, checkOut=b.check_out, amountPaid=b.amount_paid,
+            paidVia=b.paid_via or "Cash", notes=b.notes or "", idCard=b.id_card,
+            idCardName=b.id_card_name or "ID Photo", status=b.status or "Upcoming",
+            isHidden=bool(b.is_hidden), createdAt=b.created_at
+        ) for b in bookings
+    ]
+
+    # Expenses
+    expenses = db.query(ExpenseModel).filter(ExpenseModel.firm_id == current_user.firm_id).all()
+    expense_list = [
+        ExpenseResponse(
+            id=e.id, date=e.date, category=e.category,
+            description=e.description or "", amount=e.amount,
+            createdAt=e.created_at
+        ) for e in expenses
+    ]
+
+    # Bills
+    bills = db.query(BillModel).filter(BillModel.firm_id == current_user.firm_id).all()
+    bill_list = []
+    for b in bills:
+        try:
+            add_ons_list = json.loads(b.add_ons) if b.add_ons else []
+        except Exception:
+            add_ons_list = []
+        bill_list.append(BillResponse(
+            id=b.id, bookingId=b.booking_id, guestName=b.guest_name,
+            roomNo=b.room_no, roomCharge=b.room_charge, addOns=add_ons_list,
+            total=b.total, date=b.date
+        ))
+
+    # Register state
+    reg_state = db.query(RegisterStateModel).filter(RegisterStateModel.firm_id == current_user.firm_id).first()
+    is_open = reg_state.is_open if reg_state else True
+
+    return {
+        "rooms": room_list,
+        "bookings": booking_list,
+        "expenses": expense_list,
+        "bills": bill_list,
+        "registerStatus": {"isOpen": is_open}
+    }
+
+
 # --- ROOMS ENDPOINTS ---
 
 @app.get("/api/rooms", response_model=List[str])

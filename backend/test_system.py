@@ -303,5 +303,24 @@ class SystemEndToEndTestSuite(unittest.TestCase):
         restore_resp = client.post("/api/register-status/toggle", headers=auth_headers)
         self.assertEqual(restore_resp.json()["isOpen"], init_state)
 
+    def test_09_consolidated_sync_endpoint(self):
+        auth_headers = {
+            "Authorization": f"Bearer {self.admin_token}",
+            "X-Property-ID": self.test_firm_id
+        }
+        resp = client.get("/api/sync", headers=auth_headers)
+        self.assertEqual(resp.status_code, 200, resp.text)
+        data = resp.json()
+        self.assertIn("rooms", data)
+        self.assertIn("bookings", data)
+        self.assertIn("expenses", data)
+        self.assertIn("bills", data)
+        self.assertIn("registerStatus", data)
+        self.assertIsInstance(data["rooms"], list)
+        self.assertIsInstance(data["bookings"], list)
+        self.assertIsInstance(data["expenses"], list)
+        self.assertIsInstance(data["bills"], list)
+        self.assertIn("isOpen", data["registerStatus"])
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

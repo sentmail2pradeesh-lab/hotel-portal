@@ -19,6 +19,9 @@ export const HotelProvider = ({ children }) => {
   const [authNotice, setAuthNotice] = useState('');
   const [isServerConnected, setIsServerConnected] = useState(true);
   const [isAdminRegistered, setIsAdminRegistered] = useState(true);
+  const [isAuthLoading, setIsAuthLoading] = useState(() => {
+    return typeof window !== 'undefined' && Boolean(localStorage.getItem('frontdesk_jwt_token'));
+  });
 
   // Property Operational Data States
   const [roomsList, setRoomsList] = useState(ALL_PROPERTY_ROOMS);
@@ -96,39 +99,48 @@ export const HotelProvider = ({ children }) => {
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  // Fetch all operational property data from API for current active property
+  // Fetch all operational property data in a single atomic payload from API
   const refreshPropertyData = useCallback(async () => {
     if (!activePropertyId) return;
     try {
-      const [fetchedRooms, fetchedBookings, fetchedExpenses, fetchedBills, fetchedRegStatus] = await Promise.all([
-        api.getRooms().catch(() => ALL_PROPERTY_ROOMS),
-        api.getBookings().catch(() => []),
-        api.getExpenses().catch(() => []),
-        api.getBills().catch(() => []),
-        api.getRegisterStatus().catch(() => ({ isOpen: true }))
-      ]);
-
-      setRoomsList(fetchedRooms && fetchedRooms.length > 0 ? fetchedRooms : ALL_PROPERTY_ROOMS);
-      setBookings(fetchedBookings || []);
-      setExpenses(fetchedExpenses || []);
-      setBills(fetchedBills || []);
-      setIsRegisterOpen(fetchedRegStatus?.isOpen ?? true);
-      setIsServerConnected(true);
+      const data = await api.syncPropertyData();
+      if (data) {
+        if (Array.isArray(data.rooms) && data.rooms.length > 0) {
+          setRoomsList(data.rooms);
+        }
+        if (Array.isArray(data.bookings)) {
+          setBookings(data.bookings);
+        }
+        if (Array.isArray(data.expenses)) {
+          setExpenses(data.expenses);
+        }
+        if (Array.isArray(data.bills)) {
+          setBills(data.bills);
+        }
+        if (data.registerStatus && typeof data.registerStatus.isOpen === 'boolean') {
+          setIsRegisterOpen(data.registerStatus.isOpen);
+        }
+        setIsServerConnected(true);
+      }
     } catch (err) {
-      console.warn('Backend server disconnected or fetching error:', err);
+      console.warn('Backend server disconnected or sync error:', err);
       setIsServerConnected(false);
+      // Resilience guarantee: NEVER wipe out existing React state on network glitches
     }
   }, [activePropertyId]);
 
   // Initial user session check on app start
   useEffect(() => {
+    let isMounted = true;
     const checkMe = async () => {
       try {
         const sysStatus = await api.getSystemStatus().catch(() => ({ isAdminRegistered: true }));
-        setIsAdminRegistered(sysStatus?.isAdminRegistered ?? true);
+        if (isMounted) {
+          setIsAdminRegistered(sysStatus?.isAdminRegistered ?? true);
+        }
 
         const mgrMe = await api.getManagerMe();
-        if (mgrMe) {
+        if (mgrMe && isMounted) {
           setManager({
             id: mgrMe.id,
             name: mgrMe.name,
@@ -147,28 +159,54 @@ export const HotelProvider = ({ children }) => {
         }
       } catch (e) {
         console.warn('Authentication check failed:', e);
+      } finally {
+        if (isMounted) {
+          setIsAuthLoading(false);
+        }
       }
     };
     checkMe();
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   // Whenever manager or activePropertyId changes, fetch property data and poll
   useEffect(() => {
-    if (manager && activePropertyId) {
-      refreshPropertyData();
-      const intervalId = setInterval(() => {
-        if (document.visibilityState === 'visible') {
-          refreshPropertyData();
-        }
-      }, 10000);
-      return () => clearInterval(intervalId);
-    } else {
+    if (!manager) {
       setRoomsList(ALL_PROPERTY_ROOMS);
       setBookings([]);
       setExpenses([]);
       setBills([]);
       setIsRegisterOpen(true);
+      return;
     }
+
+    if (!activePropertyId) {
+      return;
+    }
+
+    refreshPropertyData();
+
+    // Re-fetch immediately when user returns to the tab
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        refreshPropertyData();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // Poll every 25 seconds while tab is active to preserve resources and eliminate lag
+    const intervalId = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        refreshPropertyData();
+      }
+    }, 25000);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      clearInterval(intervalId);
+    };
   }, [manager, activePropertyId, refreshPropertyData]);
 
   const logout = useCallback(() => {
@@ -622,6 +660,7 @@ export const HotelProvider = ({ children }) => {
         addProperty,
         currentUser,
         isAuthenticated,
+        isAuthLoading,
         authNotice,
         setAuthNotice,
         isServerConnected,

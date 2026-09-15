@@ -870,6 +870,15 @@ html, body {
   }
 }
 
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .modal-header-row {
   display: flex;
   align-items: center;

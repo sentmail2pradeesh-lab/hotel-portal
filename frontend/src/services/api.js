@@ -128,6 +128,12 @@ export const api = {
     return data;
   },
 
+  async syncPropertyData() {
+    const res = await fetch(`${API_BASE_URL}/sync`, { headers: getAuthHeaders() });
+    if (!res.ok) throw new Error('Failed to sync property data.');
+    return await res.json();
+  },
+
   async getRooms() {
     const res = await fetch(`${API_BASE_URL}/rooms`, { headers: getAuthHeaders() });
     if (!res.ok) throw new Error('Failed to fetch rooms.');
