@@ -5,6 +5,7 @@ class ManagerRegisterRequest(BaseModel):
     name: str
     email: str
     password: str
+    phone: Optional[str] = None
 
 class ManagerLoginRequest(BaseModel):
     identity: str
@@ -12,6 +13,12 @@ class ManagerLoginRequest(BaseModel):
 
 class PropertyCreateRequest(BaseModel):
     firmName: str
+    propertyCode: Optional[str] = None
+    managerId: Optional[str] = None
+    managerName: Optional[str] = None
+    ownerName: Optional[str] = None
+    ownerPhone: Optional[str] = None
+    tnebNumber: Optional[str] = None
     firmLogo: Optional[str] = None
     eSignature: Optional[str] = None
     address: Optional[str] = None
@@ -20,8 +27,13 @@ class PropertyCreateRequest(BaseModel):
 
 class PropertyResponse(BaseModel):
     firmId: str
+    propertyCode: Optional[str] = None
     firmName: str
     name: str
+    managerId: Optional[str] = None
+    ownerName: Optional[str] = None
+    ownerPhone: Optional[str] = None
+    tnebNumber: Optional[str] = None
     email: Optional[str] = None
     firmLogo: Optional[str] = None
     eSignature: Optional[str] = None
@@ -35,12 +47,17 @@ class ManagerResponse(BaseModel):
     id: str
     name: str
     email: str
+    phone: Optional[str] = None
     role: str = "Super Admin"
     properties: List[PropertyResponse] = []
     activeProperty: Optional[PropertyResponse] = None
 
 class RegisterRequest(BaseModel):
     firmName: str
+    propertyCode: Optional[str] = None
+    ownerName: Optional[str] = None
+    ownerPhone: Optional[str] = None
+    tnebNumber: Optional[str] = None
     name: str
     email: Optional[str] = None
     password: str
@@ -51,8 +68,13 @@ class LoginRequest(BaseModel):
 
 class UserProfileResponse(BaseModel):
     firmId: str
+    propertyCode: Optional[str] = None
     firmName: str
     name: str
+    managerId: Optional[str] = None
+    ownerName: Optional[str] = None
+    ownerPhone: Optional[str] = None
+    tnebNumber: Optional[str] = None
     email: Optional[str] = None
     firmLogo: Optional[str] = None
     eSignature: Optional[str] = None
@@ -65,7 +87,11 @@ class UserProfileResponse(BaseModel):
 
 class ProfileUpdateRequest(BaseModel):
     firmName: Optional[str] = None
+    propertyCode: Optional[str] = None
     name: Optional[str] = None
+    ownerName: Optional[str] = None
+    ownerPhone: Optional[str] = None
+    tnebNumber: Optional[str] = None
     email: Optional[str] = None
     firmLogo: Optional[str] = None
     eSignature: Optional[str] = None
@@ -79,19 +105,26 @@ class BookingBase(BaseModel):
     guestName: str
     phone: Optional[str] = ""
     email: Optional[str] = ""
-    room: str
+    room: Optional[str] = None
+    guestCount: Optional[int] = 1
+    adults: Optional[int] = 1
+    children: Optional[int] = 0
     checkIn: str
     checkOut: str
     amountPaid: float = 0.0
     paidVia: Optional[str] = "Cash"
+    txnId: Optional[str] = None
     notes: Optional[str] = ""
     idCard: Optional[str] = None
     idCardName: Optional[str] = "ID Photo"
     status: Optional[str] = "Upcoming"
+    bookingType: Optional[str] = "Walk-in"
+    isPrepaid: Optional[bool] = False
+    isGuaranteed: Optional[bool] = False
     isHidden: Optional[bool] = False
 
 class BookingCreate(BookingBase):
-    manualId: str
+    manualId: Optional[str] = None
 
 class BookingUpdate(BaseModel):
     manualId: Optional[str] = None
@@ -99,14 +132,21 @@ class BookingUpdate(BaseModel):
     phone: Optional[str] = None
     email: Optional[str] = None
     room: Optional[str] = None
+    guestCount: Optional[int] = None
+    adults: Optional[int] = None
+    children: Optional[int] = None
     checkIn: Optional[str] = None
     checkOut: Optional[str] = None
     amountPaid: Optional[float] = None
     paidVia: Optional[str] = None
+    txnId: Optional[str] = None
     notes: Optional[str] = None
     idCard: Optional[str] = None
     idCardName: Optional[str] = None
     status: Optional[str] = None
+    bookingType: Optional[str] = None
+    isPrepaid: Optional[bool] = None
+    isGuaranteed: Optional[bool] = None
     isHidden: Optional[bool] = None
 
 class BookingResponse(BookingBase):
@@ -115,6 +155,41 @@ class BookingResponse(BookingBase):
 
     class Config:
         from_attributes = True
+
+class BulkImportBookingItem(BaseModel):
+    id: Optional[str] = None
+    manualId: Optional[str] = None
+    guestName: str
+    phone: Optional[str] = ""
+    email: Optional[str] = ""
+    room: Optional[str] = None
+    guestCount: Optional[int] = 1
+    adults: Optional[int] = 1
+    children: Optional[int] = 0
+    checkIn: str
+    checkOut: str
+    amountPaid: Optional[float] = 0.0
+    paidVia: Optional[str] = "Cash"
+    txnId: Optional[str] = None
+    notes: Optional[str] = ""
+    status: Optional[str] = None
+    bookingType: Optional[str] = "OTA"
+    isPrepaid: Optional[bool] = False
+    isGuaranteed: Optional[bool] = False
+
+class BulkImportRequest(BaseModel):
+    bookings: List[BulkImportBookingItem]
+
+class BulkImportResponse(BaseModel):
+    success: bool
+    importedCount: int
+    skippedDuplicatesCount: int
+    importedBookings: List[BookingResponse]
+
+class AllotRoomRequest(BaseModel):
+    room: str
+    status: Optional[str] = None
+    isGuaranteed: Optional[bool] = True
 
 class EarlyCheckoutRequest(BaseModel):
     createHiddenSlot: bool = True
@@ -170,6 +245,20 @@ class BillResponse(BillBase):
 
 class RoomCreate(BaseModel):
     roomNumber: str
+    roomType: Optional[str] = "Standard"
+    isStaffRoom: Optional[bool] = False
+
+class RoomUpdate(BaseModel):
+    roomNumber: str
+    roomType: Optional[str] = "Standard"
+    isStaffRoom: Optional[bool] = False
+
+class RoomDetailResponse(BaseModel):
+    roomNumber: str
+    roomType: str = "Standard"
+    isStaffRoom: bool = False
+    isOccupied: bool = False
+    isAvailable: bool = True
 
 class RegisterStateResponse(BaseModel):
     isOpen: bool
@@ -201,6 +290,11 @@ class ManagerCreateRequest(BaseModel):
     email: str
     propertyId: str
     tempPassword: str
+    role: Optional[str] = "Manager"  # "Admin" or "Manager"
+
+class FeatureToggleRequest(BaseModel):
+    role: str
+    features: dict
 
 class ChangePasswordRequest(BaseModel):
     currentPassword: str

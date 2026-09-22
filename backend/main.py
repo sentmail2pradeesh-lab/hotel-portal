@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timedelta
 from typing import List, Optional
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi import FastAPI, Depends, HTTPException, status, Header, Request
+from fastapi import FastAPI, Depends, HTTPException, status, Header, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -19,51 +19,79 @@ except ImportError:
     pass
 
 try:
-    from backend.database import engine, Base, get_db
+    from backend.database import engine, Base, get_db, SessionLocal
     from backend.models import (
         ManagerAccount, PropertyAccount, RoomModel, BookingModel,
-        ExpenseModel, BillModel, RegisterStateModel, InvitationModel
+        ExpenseModel, BillModel, RegisterStateModel, InvitationModel,
+        FeatureToggleModel
     )
     from backend.schemas import (
         ManagerRegisterRequest, ManagerLoginRequest, ManagerResponse,
         PropertyCreateRequest, PropertyResponse,
         RegisterRequest, LoginRequest, UserProfileResponse, ProfileUpdateRequest,
-        BookingCreate, BookingUpdate, BookingResponse, EarlyCheckoutRequest,
+        BookingCreate, BookingUpdate, BookingResponse, AllotRoomRequest, EarlyCheckoutRequest,
+        BulkImportRequest, BulkImportResponse,
         ExpenseCreate, ExpenseResponse,
         BillCreate, BillUpdate, BillResponse,
-        RoomCreate, RegisterStateResponse,
+        RoomCreate, RoomUpdate, RoomDetailResponse, RegisterStateResponse,
         InvitationCreateRequest, InvitationResponse, AcceptInvitationRequest,
-        ManagerCreateRequest, ChangePasswordRequest
+        ManagerCreateRequest, ChangePasswordRequest, FeatureToggleRequest
     )
 except ModuleNotFoundError:
-    from database import engine, Base, get_db
+    from database import engine, Base, get_db, SessionLocal
     from models import (
         ManagerAccount, PropertyAccount, RoomModel, BookingModel,
-        ExpenseModel, BillModel, RegisterStateModel, InvitationModel
+        ExpenseModel, BillModel, RegisterStateModel, InvitationModel,
+        FeatureToggleModel
     )
     from schemas import (
         ManagerRegisterRequest, ManagerLoginRequest, ManagerResponse,
         PropertyCreateRequest, PropertyResponse,
         RegisterRequest, LoginRequest, UserProfileResponse, ProfileUpdateRequest,
-        BookingCreate, BookingUpdate, BookingResponse, EarlyCheckoutRequest,
+        BookingCreate, BookingUpdate, BookingResponse, AllotRoomRequest, EarlyCheckoutRequest,
+        BulkImportRequest, BulkImportResponse,
         ExpenseCreate, ExpenseResponse,
         BillCreate, BillUpdate, BillResponse,
-        RoomCreate, RegisterStateResponse,
+        RoomCreate, RoomUpdate, RoomDetailResponse, RegisterStateResponse,
         InvitationCreateRequest, InvitationResponse, AcceptInvitationRequest,
-        ManagerCreateRequest, ChangePasswordRequest
+        ManagerCreateRequest, ChangePasswordRequest, FeatureToggleRequest
     )
 
 # Initialize database tables
 Base.metadata.create_all(bind=engine)
 
-# Auto-migrate missing SQLite columns on existing tables (SQLite only)
+# Auto-migrate missing columns on existing tables
+DEFAULT_ADMIN_FEATURES = {
+    "bookings": True,
+    "expenses": True,
+    "bills": True,
+    "guest_ids": True,
+    "reports": True,
+    "edit_rooms": True,
+    "shift_register": True
+}
+
+DEFAULT_MANAGER_FEATURES = {
+    "bookings": True,
+    "guest_ids": True,
+    "expenses": False,
+    "bills": False,
+    "reports": False,
+    "edit_rooms": False,
+    "shift_register": False
+}
+
 if engine.name == "sqlite":
     try:
         with engine.connect() as conn:
+            # Property accounts
             res = conn.execute(text("PRAGMA table_info(property_accounts)")).fetchall()
             cols = [r[1] for r in res]
             if "manager_id" not in cols:
                 conn.execute(text("ALTER TABLE property_accounts ADD COLUMN manager_id VARCHAR"))
+                conn.commit()
+            if "property_code" not in cols:
+                conn.execute(text("ALTER TABLE property_accounts ADD COLUMN property_code VARCHAR"))
                 conn.commit()
             if "address" not in cols:
                 conn.execute(text("ALTER TABLE property_accounts ADD COLUMN address TEXT"))
@@ -71,7 +99,43 @@ if engine.name == "sqlite":
             if "phone" not in cols:
                 conn.execute(text("ALTER TABLE property_accounts ADD COLUMN phone VARCHAR"))
                 conn.commit()
+            if "owner_name" not in cols:
+                conn.execute(text("ALTER TABLE property_accounts ADD COLUMN owner_name VARCHAR"))
+                conn.commit()
+            if "owner_phone" not in cols:
+                conn.execute(text("ALTER TABLE property_accounts ADD COLUMN owner_phone VARCHAR"))
+                conn.commit()
+            if "tneb_number" not in cols:
+                conn.execute(text("ALTER TABLE property_accounts ADD COLUMN tneb_number VARCHAR"))
+                conn.commit()
 
+            # Manager accounts
+            m_res = conn.execute(text("PRAGMA table_info(manager_accounts)")).fetchall()
+            m_cols = [r[1] for r in m_res]
+            if "temp_password_hash" not in m_cols:
+                conn.execute(text("ALTER TABLE manager_accounts ADD COLUMN temp_password_hash VARCHAR"))
+                conn.commit()
+            if "temp_password_plain" not in m_cols:
+                conn.execute(text("ALTER TABLE manager_accounts ADD COLUMN temp_password_plain VARCHAR"))
+                conn.commit()
+            if "created_by" not in m_cols:
+                conn.execute(text("ALTER TABLE manager_accounts ADD COLUMN created_by VARCHAR"))
+                conn.commit()
+            if "phone" not in m_cols:
+                conn.execute(text("ALTER TABLE manager_accounts ADD COLUMN phone VARCHAR"))
+                conn.commit()
+
+            # Rooms
+            r_res = conn.execute(text("PRAGMA table_info(rooms)")).fetchall()
+            r_cols = [r[1] for r in r_res]
+            if "room_type" not in r_cols:
+                conn.execute(text("ALTER TABLE rooms ADD COLUMN room_type VARCHAR DEFAULT 'Standard'"))
+                conn.commit()
+            if "is_staff_room" not in r_cols:
+                conn.execute(text("ALTER TABLE rooms ADD COLUMN is_staff_room BOOLEAN DEFAULT 0"))
+                conn.commit()
+
+            # Bookings
             b_res = conn.execute(text("PRAGMA table_info(bookings)")).fetchall()
             b_cols = [r[1] for r in b_res]
             if "status" not in b_cols:
@@ -86,21 +150,110 @@ if engine.name == "sqlite":
             if "is_hidden" not in b_cols:
                 conn.execute(text("ALTER TABLE bookings ADD COLUMN is_hidden BOOLEAN DEFAULT 0"))
                 conn.commit()
+            if "booking_type" not in b_cols:
+                conn.execute(text("ALTER TABLE bookings ADD COLUMN booking_type VARCHAR DEFAULT 'Walk-in'"))
+                conn.commit()
+            if "is_prepaid" not in b_cols:
+                conn.execute(text("ALTER TABLE bookings ADD COLUMN is_prepaid BOOLEAN DEFAULT 0"))
+                conn.commit()
+            if "txn_id" not in b_cols:
+                conn.execute(text("ALTER TABLE bookings ADD COLUMN txn_id VARCHAR"))
+                conn.commit()
+            if "guest_count" not in b_cols:
+                conn.execute(text("ALTER TABLE bookings ADD COLUMN guest_count INTEGER DEFAULT 1"))
+                conn.commit()
+            if "adults" not in b_cols:
+                conn.execute(text("ALTER TABLE bookings ADD COLUMN adults INTEGER DEFAULT 1"))
+                conn.commit()
+            if "children" not in b_cols:
+                conn.execute(text("ALTER TABLE bookings ADD COLUMN children INTEGER DEFAULT 0"))
+                conn.commit()
+            if "is_guaranteed" not in b_cols:
+                conn.execute(text("ALTER TABLE bookings ADD COLUMN is_guaranteed BOOLEAN DEFAULT 0"))
+                conn.commit()
+
+            # Initialize default feature toggles if empty
+            ft_res = conn.execute(text("SELECT COUNT(*) FROM feature_toggles")).scalar()
+            if ft_res == 0:
+                conn.execute(
+                    text("INSERT INTO feature_toggles (role, features_json) VALUES (:r1, :j1), (:r2, :j2)"),
+                    {"r1": "Admin", "j1": json.dumps(DEFAULT_ADMIN_FEATURES), "r2": "Manager", "j2": json.dumps(DEFAULT_MANAGER_FEATURES)}
+                )
+                conn.commit()
     except Exception as e:
         print("Database auto-migration info:", e)
 else:
     try:
         with engine.connect() as conn:
             conn.execute(text("ALTER TABLE property_accounts ADD COLUMN IF NOT EXISTS manager_id VARCHAR"))
+            conn.execute(text("ALTER TABLE property_accounts ADD COLUMN IF NOT EXISTS property_code VARCHAR"))
             conn.execute(text("ALTER TABLE property_accounts ADD COLUMN IF NOT EXISTS address TEXT"))
             conn.execute(text("ALTER TABLE property_accounts ADD COLUMN IF NOT EXISTS phone VARCHAR"))
+            conn.execute(text("ALTER TABLE property_accounts ADD COLUMN IF NOT EXISTS owner_name VARCHAR"))
+            conn.execute(text("ALTER TABLE property_accounts ADD COLUMN IF NOT EXISTS owner_phone VARCHAR"))
+            conn.execute(text("ALTER TABLE property_accounts ADD COLUMN IF NOT EXISTS tneb_number VARCHAR"))
+            conn.execute(text("ALTER TABLE manager_accounts ADD COLUMN IF NOT EXISTS temp_password_hash VARCHAR"))
+            conn.execute(text("ALTER TABLE manager_accounts ADD COLUMN IF NOT EXISTS temp_password_plain VARCHAR"))
+            conn.execute(text("ALTER TABLE manager_accounts ADD COLUMN IF NOT EXISTS created_by VARCHAR"))
+            conn.execute(text("ALTER TABLE manager_accounts ADD COLUMN IF NOT EXISTS phone VARCHAR"))
+            conn.execute(text("ALTER TABLE rooms ADD COLUMN IF NOT EXISTS room_type VARCHAR DEFAULT 'Standard'"))
+            conn.execute(text("ALTER TABLE rooms ADD COLUMN IF NOT EXISTS is_staff_room BOOLEAN DEFAULT FALSE"))
             conn.execute(text("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS status VARCHAR DEFAULT 'Upcoming'"))
             conn.execute(text("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS manual_id VARCHAR"))
             conn.execute(text("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS email VARCHAR"))
             conn.execute(text("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS is_hidden BOOLEAN DEFAULT FALSE"))
+            conn.execute(text("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS booking_type VARCHAR DEFAULT 'Walk-in'"))
+            conn.execute(text("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS is_prepaid BOOLEAN DEFAULT FALSE"))
+            conn.execute(text("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS guest_count INTEGER DEFAULT 1"))
+            conn.execute(text("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS adults INTEGER DEFAULT 1"))
+            conn.execute(text("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS children INTEGER DEFAULT 0"))
+            conn.execute(text("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS is_guaranteed BOOLEAN DEFAULT FALSE"))
             conn.commit()
     except Exception as e:
         print("PostgreSQL auto-migration info:", e)
+
+# Self-healing sanitizer for invalid / orphan room assignments
+def sanitize_orphan_rooms():
+    try:
+        with SessionLocal() as db:
+            all_bookings = db.query(BookingModel).filter(
+                BookingModel.room.isnot(None),
+                BookingModel.room != ""
+            ).all()
+            for b in all_bookings:
+                valid_room = db.query(RoomModel).filter(
+                    RoomModel.firm_id == b.firm_id,
+                    RoomModel.room_number == b.room,
+                    RoomModel.is_staff_room == False
+                ).first()
+                if not valid_room:
+                    if b.status in ["In-House", "Checked-In"]:
+                        # In-house guest needs a valid real room. Reassign to first available clean non-staff room
+                        occupied_rooms = set(
+                            ob.room for ob in db.query(BookingModel).filter(
+                                BookingModel.firm_id == b.firm_id,
+                                BookingModel.status.in_(["In-House", "Checked-In"]),
+                                BookingModel.id != b.id
+                            ).all() if ob.room
+                        )
+                        avail = db.query(RoomModel).filter(
+                            RoomModel.firm_id == b.firm_id,
+                            RoomModel.is_staff_room == False,
+                            ~RoomModel.room_number.in_(occupied_rooms)
+                        ).first()
+                        if avail:
+                            print(f"[Sanitizer] Reassigning in-house stay {b.id} ({b.guest_name}) from invalid room '{b.room}' to '{avail.room_number}'")
+                            b.room = avail.room_number
+                        else:
+                            b.room = ""
+                    else:
+                        print(f"[Sanitizer] Resetting invalid room '{b.room}' on booking {b.id} ({b.guest_name}) to unallocated")
+                        b.room = ""
+            db.commit()
+    except Exception as e:
+        print("[Sanitizer] Notice:", e)
+
+sanitize_orphan_rooms()
 
 app = FastAPI(
     title="Hotel Booking & Property Management API",
@@ -201,19 +354,21 @@ def get_current_property(
 
     if manager_id:
         mgr = db.query(ManagerAccount).filter(ManagerAccount.id == manager_id).first()
-        is_overall_admin = mgr and (mgr.role in ["Overall Admin", "Super Admin"])
+        is_privileged = mgr and (mgr.role in ["Overall Admin", "Super Admin", "Admin"])
         if x_property_id:
-            if is_overall_admin:
-                prop = db.query(PropertyAccount).filter(PropertyAccount.firm_id == x_property_id).first()
+            if is_privileged:
+                prop = db.query(PropertyAccount).filter(
+                    (PropertyAccount.firm_id == x_property_id) | (PropertyAccount.property_code == x_property_id)
+                ).first()
             else:
                 prop = db.query(PropertyAccount).filter(
-                    PropertyAccount.firm_id == x_property_id,
+                    ((PropertyAccount.firm_id == x_property_id) | (PropertyAccount.property_code == x_property_id)),
                     PropertyAccount.manager_id == manager_id
                 ).first()
             if prop:
                 return prop
         # Fallback to first property
-        if is_overall_admin:
+        if is_privileged:
             prop = db.query(PropertyAccount).first()
         else:
             prop = db.query(PropertyAccount).filter(PropertyAccount.manager_id == manager_id).first()
@@ -247,11 +402,12 @@ def register_overall_admin(req: ManagerRegisterRequest, db: Session = Depends(ge
         raise HTTPException(status_code=400, detail="Super Admin account has already been registered.")
 
     clean_name = req.name.strip()
+    clean_phone = (req.phone or "").strip()
     clean_email = req.email.strip().lower()
     clean_pass = req.password.strip()
 
     if not clean_name or not clean_email or not clean_pass:
-        raise HTTPException(status_code=400, detail="Please fill out all admin registration fields.")
+        raise HTTPException(status_code=400, detail="Please fill out all required admin registration fields.")
 
     existing_email = db.query(ManagerAccount).filter(ManagerAccount.email.ilike(clean_email)).first()
     if existing_email:
@@ -262,6 +418,7 @@ def register_overall_admin(req: ManagerRegisterRequest, db: Session = Depends(ge
         id=mgr_id,
         name=clean_name,
         email=clean_email,
+        phone=clean_phone if clean_phone else None,
         password_hash=hash_password(clean_pass),
         role="Super Admin"
     )
@@ -281,6 +438,7 @@ def register_overall_admin(req: ManagerRegisterRequest, db: Session = Depends(ge
             "id": admin_mgr.id,
             "name": admin_mgr.name,
             "email": admin_mgr.email,
+            "phone": admin_mgr.phone,
             "role": admin_mgr.role,
             "properties": [],
             "activeProperty": None
@@ -336,7 +494,9 @@ def login_manager(req: ManagerLoginRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Please enter identity and password.")
 
     matched = db.query(ManagerAccount).filter(
-        (ManagerAccount.email.ilike(clean_id)) | (ManagerAccount.name.ilike(clean_id))
+        (ManagerAccount.email.ilike(clean_id)) |
+        (ManagerAccount.name.ilike(clean_id)) |
+        (ManagerAccount.phone == clean_id)
     ).first()
 
     # Fallback check for property account
@@ -363,14 +523,21 @@ def login_manager(req: ManagerLoginRequest, db: Session = Depends(get_db)):
             else:
                 matched = db.query(ManagerAccount).filter(ManagerAccount.id == prop_account.manager_id).first()
 
-    if not matched or not verify_password(clean_pass, matched.password_hash):
+    is_valid_pass = False
+    if matched:
+        is_valid_pass = verify_password(clean_pass, matched.password_hash) or (
+            bool(matched.temp_password_hash) and verify_password(clean_pass, matched.temp_password_hash)
+        )
+
+    if not matched or not is_valid_pass:
         raise HTTPException(
             status_code=400,
             detail="Invalid email/username or password."
         )
 
-    is_admin = matched.role in ["Overall Admin", "Super Admin"]
-    if is_admin:
+    is_super = matched.role in ["Overall Admin", "Super Admin"]
+    is_admin = matched.role == "Admin"
+    if is_super or is_admin:
         props = db.query(PropertyAccount).all()
     else:
         props = db.query(PropertyAccount).filter(PropertyAccount.manager_id == matched.id).all()
@@ -378,8 +545,13 @@ def login_manager(req: ManagerLoginRequest, db: Session = Depends(get_db)):
     prop_responses = [
         PropertyResponse(
             firmId=p.firm_id,
+            propertyCode=p.property_code,
             firmName=p.firm_name,
             name=p.name,
+            managerId=p.manager_id,
+            ownerName=p.owner_name,
+            ownerPhone=p.owner_phone,
+            tnebNumber=p.tneb_number,
             email=p.email,
             firmLogo=p.firm_logo,
             eSignature=p.e_signature,
@@ -392,10 +564,11 @@ def login_manager(req: ManagerLoginRequest, db: Session = Depends(get_db)):
         for p in props
     ]
 
+    effective_role = "Super Admin" if is_super else ("Admin" if is_admin else "Manager")
     token = create_access_token({
         "sub": matched.id,
         "manager_id": matched.id,
-        "role": "Super Admin" if is_admin else (matched.role or "Property Manager"),
+        "role": effective_role,
         "email": matched.email
     })
     return {
@@ -404,7 +577,7 @@ def login_manager(req: ManagerLoginRequest, db: Session = Depends(get_db)):
             "id": matched.id,
             "name": matched.name,
             "email": matched.email,
-            "role": "Super Admin" if is_admin else (matched.role or "Property Manager"),
+            "role": effective_role,
             "properties": prop_responses,
             "activeProperty": prop_responses[0] if prop_responses else None
         }
@@ -432,8 +605,9 @@ def get_manager_me(
         if not mgr:
             raise HTTPException(status_code=404, detail="Manager account not found.")
 
-        is_admin = mgr.role in ["Overall Admin", "Super Admin"]
-        if is_admin:
+        is_super = mgr.role in ["Overall Admin", "Super Admin"]
+        is_admin = mgr.role == "Admin"
+        if is_super or is_admin:
             props = db.query(PropertyAccount).all()
         else:
             props = db.query(PropertyAccount).filter(PropertyAccount.manager_id == mgr.id).all()
@@ -441,8 +615,13 @@ def get_manager_me(
         prop_responses = [
             PropertyResponse(
                 firmId=p.firm_id,
+                propertyCode=p.property_code,
                 firmName=p.firm_name,
                 name=p.name,
+                managerId=p.manager_id,
+                ownerName=p.owner_name,
+                ownerPhone=p.owner_phone,
+                tnebNumber=p.tneb_number,
                 email=p.email,
                 firmLogo=p.firm_logo,
                 eSignature=p.e_signature,
@@ -461,11 +640,13 @@ def get_manager_me(
         if not active_prop and prop_responses:
             active_prop = prop_responses[0]
 
+        effective_role = "Super Admin" if is_super else ("Admin" if is_admin else "Manager")
         return {
             "id": mgr.id,
             "name": mgr.name,
             "email": mgr.email,
-            "role": "Super Admin" if is_admin else (mgr.role or "Property Manager"),
+            "phone": getattr(mgr, "phone", None),
+            "role": effective_role,
             "properties": prop_responses,
             "activeProperty": active_prop
         }
@@ -475,8 +656,13 @@ def get_manager_me(
             raise HTTPException(status_code=404, detail="Property not found.")
         prop_resp = PropertyResponse(
             firmId=prop.firm_id,
+            propertyCode=prop.property_code,
             firmName=prop.firm_name,
             name=prop.name,
+            managerId=prop.manager_id,
+            ownerName=prop.owner_name,
+            ownerPhone=prop.owner_phone,
+            tnebNumber=prop.tneb_number,
             email=prop.email,
             firmLogo=prop.firm_logo,
             eSignature=prop.e_signature,
@@ -522,8 +708,13 @@ def get_manager_properties(
     return [
         PropertyResponse(
             firmId=p.firm_id,
+            propertyCode=p.property_code,
             firmName=p.firm_name,
             name=p.name,
+            managerId=p.manager_id,
+            ownerName=p.owner_name,
+            ownerPhone=p.owner_phone,
+            tnebNumber=p.tneb_number,
             email=p.email,
             firmLogo=p.firm_logo,
             eSignature=p.e_signature,
@@ -557,24 +748,52 @@ def create_property(
         raise HTTPException(status_code=401, detail="Manager account not found.")
 
     if mgr.role not in ["Overall Admin", "Super Admin"]:
-        raise HTTPException(status_code=403, detail="Only Super Admin is authorized to create properties.")
+        raise HTTPException(status_code=403, detail="Only Super Admin is authorized to create properties. Admin accounts cannot create properties.")
 
     clean_firm = req.firmName.strip()
     if not clean_firm:
         raise HTTPException(status_code=400, detail="Property name is required.")
 
+    clean_code = (req.propertyCode or "").strip().upper()
+    if not clean_code:
+        words = clean_firm.split()
+        prefix = "".join(w[0] for w in words if w.isalnum())[:4].upper() or "PR"
+        clean_code = f"{prefix}-{uuid.uuid4().hex[:4].upper()}"
+
+    # Assigned manager resolution
+    assigned_mgr_id = None
+    assigned_mgr_name = mgr.name
+    if req.managerId and req.managerId.strip():
+        target_mgr = db.query(ManagerAccount).filter(ManagerAccount.id == req.managerId.strip()).first()
+        if target_mgr:
+            assigned_mgr_id = target_mgr.id
+            assigned_mgr_name = target_mgr.name
+    elif req.managerName and req.managerName.strip():
+        assigned_mgr_name = req.managerName.strip()
+    else:
+        assigned_mgr_id = mgr.id
+        assigned_mgr_name = mgr.name
+
+    owner_name = req.ownerName.strip() if req.ownerName and req.ownerName.strip() else None
+    owner_phone = req.ownerPhone.strip() if req.ownerPhone and req.ownerPhone.strip() else None
+    tneb_number = req.tnebNumber.strip() if req.tnebNumber and req.tnebNumber.strip() else None
+
     firm_id = f"firm_{int(datetime.utcnow().timestamp())}_{uuid.uuid4().hex[:4]}"
-    parts = mgr.name.split(" ")
-    initials = (parts[0][0] + parts[1][0]).upper() if len(parts) >= 2 else mgr.name[:2].upper()
+    parts = assigned_mgr_name.split(" ")
+    initials = (parts[0][0] + parts[1][0]).upper() if len(parts) >= 2 else assigned_mgr_name[:2].upper()
     email_val = req.email.strip().lower() if req.email and req.email.strip() else f"{clean_firm.lower().replace(' ', '')}_{uuid.uuid4().hex[:4]}@property.com"
     address_val = req.address.strip() if req.address and req.address.strip() else None
     phone_val = req.phone.strip() if req.phone and req.phone.strip() else None
 
     new_prop = PropertyAccount(
-        manager_id=mgr.id,
+        manager_id=assigned_mgr_id,
+        property_code=clean_code,
         firm_id=firm_id,
         firm_name=clean_firm,
-        name=mgr.name,
+        name=assigned_mgr_name,
+        owner_name=owner_name,
+        owner_phone=owner_phone,
+        tneb_number=tneb_number,
         email=email_val,
         address=address_val,
         phone=phone_val,
@@ -598,8 +817,13 @@ def create_property(
 
     return PropertyResponse(
         firmId=new_prop.firm_id,
+        propertyCode=new_prop.property_code,
         firmName=new_prop.firm_name,
         name=new_prop.name,
+        managerId=new_prop.manager_id,
+        ownerName=new_prop.owner_name,
+        ownerPhone=new_prop.owner_phone,
+        tnebNumber=new_prop.tneb_number,
         email=new_prop.email,
         firmLogo=new_prop.firm_logo,
         eSignature=new_prop.e_signature,
@@ -609,6 +833,49 @@ def create_property(
         role=new_prop.role or "Property Manager",
         initials=new_prop.initials or "PM"
     )
+
+
+@app.delete("/api/properties/{firm_id}")
+def delete_property(
+    firm_id: str,
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+):
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing authorization token.")
+    token = authorization.split(" ")[1]
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        manager_id = payload.get("manager_id")
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid token.")
+
+    if not manager_id:
+        raise HTTPException(status_code=401, detail="Manager authorization required.")
+
+    mgr = db.query(ManagerAccount).filter(ManagerAccount.id == manager_id).first()
+    if not mgr or mgr.role not in ["Overall Admin", "Super Admin"]:
+        raise HTTPException(status_code=403, detail="Only Super Admin is authorized to delete properties.")
+
+    prop = db.query(PropertyAccount).filter(PropertyAccount.firm_id == firm_id).first()
+    if not prop:
+        raise HTTPException(status_code=404, detail="Property not found.")
+
+    prop_name = prop.firm_name
+
+    # Cascade delete all related records for this property
+    db.query(BookingModel).filter(BookingModel.firm_id == firm_id).delete()
+    db.query(RoomModel).filter(RoomModel.firm_id == firm_id).delete()
+    db.query(ExpenseModel).filter(ExpenseModel.firm_id == firm_id).delete()
+    db.query(BillModel).filter(BillModel.firm_id == firm_id).delete()
+    db.query(RegisterStateModel).filter(RegisterStateModel.firm_id == firm_id).delete()
+    db.query(InvitationModel).filter(InvitationModel.property_id == firm_id).delete()
+
+    # Delete the property itself
+    db.delete(prop)
+    db.commit()
+
+    return {"success": True, "message": f"Property '{prop_name}' deleted successfully."}
 
 
 # --- AUTH ENDPOINTS ---
@@ -641,8 +908,15 @@ def register_property(req: RegisterRequest, db: Session = Depends(get_db)):
 
     email_val = clean_email or f"{clean_name.lower().replace(' ', '')}@property.com"
 
+    clean_code = (req.propertyCode or "").strip().upper()
+    if not clean_code:
+        words = clean_firm.split()
+        prefix = "".join(w[0] for w in words if w.isalnum())[:4].upper() or "PR"
+        clean_code = f"{prefix}-{uuid.uuid4().hex[:4].upper()}"
+
     new_account = PropertyAccount(
         firm_id=firm_id,
+        property_code=clean_code,
         firm_name=clean_firm,
         name=clean_name,
         email=email_val,
@@ -665,8 +939,13 @@ def register_property(req: RegisterRequest, db: Session = Depends(get_db)):
     token = create_access_token({"firm_id": firm_id})
     user_data = UserProfileResponse(
         firmId=new_account.firm_id,
+        propertyCode=new_account.property_code,
         firmName=new_account.firm_name,
         name=new_account.name,
+        managerId=new_account.manager_id,
+        ownerName=new_account.owner_name,
+        ownerPhone=new_account.owner_phone,
+        tnebNumber=new_account.tneb_number,
         email=new_account.email,
         firmLogo=new_account.firm_logo,
         eSignature=new_account.e_signature,
@@ -701,8 +980,13 @@ def login_property(req: LoginRequest, db: Session = Depends(get_db)):
     token = create_access_token({"firm_id": matched.firm_id})
     user_data = UserProfileResponse(
         firmId=matched.firm_id,
+        propertyCode=matched.property_code,
         firmName=matched.firm_name,
         name=matched.name,
+        managerId=matched.manager_id,
+        ownerName=matched.owner_name,
+        ownerPhone=matched.owner_phone,
+        tnebNumber=matched.tneb_number,
         email=matched.email,
         firmLogo=matched.firm_logo,
         eSignature=matched.e_signature,
@@ -720,8 +1004,13 @@ def login_property(req: LoginRequest, db: Session = Depends(get_db)):
 def get_me(current_user: PropertyAccount = Depends(get_current_property)):
     return UserProfileResponse(
         firmId=current_user.firm_id,
+        propertyCode=current_user.property_code,
         firmName=current_user.firm_name,
         name=current_user.name,
+        managerId=current_user.manager_id,
+        ownerName=current_user.owner_name,
+        ownerPhone=current_user.owner_phone,
+        tnebNumber=current_user.tneb_number,
         email=current_user.email,
         firmLogo=current_user.firm_logo,
         eSignature=current_user.e_signature,
@@ -737,11 +1026,54 @@ def get_me(current_user: PropertyAccount = Depends(get_current_property)):
 @app.put("/api/auth/profile", response_model=UserProfileResponse)
 def update_profile(
     req: ProfileUpdateRequest,
+    authorization: Optional[str] = Header(None),
     current_user: PropertyAccount = Depends(get_current_property),
     db: Session = Depends(get_db)
 ):
+    caller_role = None
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.split(" ")[1]
+        try:
+            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+            manager_id = payload.get("manager_id")
+            if manager_id:
+                mgr = db.query(ManagerAccount).filter(ManagerAccount.id == manager_id).first()
+                if mgr:
+                    caller_role = mgr.role
+        except Exception:
+            pass
+
+    # Property-level changes are restricted strictly to Super Admin
+    is_prop_edit = False
+    if req.firmName is not None and req.firmName.strip() != (current_user.firm_name or ""):
+        is_prop_edit = True
+    if req.propertyCode is not None and req.propertyCode.strip().upper() != (current_user.property_code or ""):
+        is_prop_edit = True
+    if req.firmLogo is not None and req.firmLogo != current_user.firm_logo:
+        is_prop_edit = True
+    if req.ownerName is not None and req.ownerName.strip() != (current_user.owner_name or ""):
+        is_prop_edit = True
+    if req.ownerPhone is not None and req.ownerPhone.strip() != (current_user.owner_phone or ""):
+        is_prop_edit = True
+    if req.tnebNumber is not None and req.tnebNumber.strip() != (current_user.tneb_number or ""):
+        is_prop_edit = True
+
+    if is_prop_edit and caller_role not in ["Overall Admin", "Super Admin"]:
+        raise HTTPException(
+            status_code=403,
+            detail="Only Super Admin is authorized to edit property details. Admins and Managers cannot edit properties."
+        )
+
     if req.firmName is not None:
         current_user.firm_name = req.firmName.strip()
+    if req.propertyCode is not None:
+        current_user.property_code = req.propertyCode.strip().upper()
+    if req.ownerName is not None:
+        current_user.owner_name = req.ownerName.strip()
+    if req.ownerPhone is not None:
+        current_user.owner_phone = req.ownerPhone.strip()
+    if req.tnebNumber is not None:
+        current_user.tneb_number = req.tnebNumber.strip()
     if req.name is not None:
         current_user.name = req.name.strip()
         parts = current_user.name.split(" ")
@@ -764,8 +1096,13 @@ def update_profile(
 
     return UserProfileResponse(
         firmId=current_user.firm_id,
+        propertyCode=current_user.property_code,
         firmName=current_user.firm_name,
         name=current_user.name,
+        managerId=current_user.manager_id,
+        ownerName=current_user.owner_name,
+        ownerPhone=current_user.owner_phone,
+        tnebNumber=current_user.tneb_number,
         email=current_user.email,
         firmLogo=current_user.firm_logo,
         eSignature=current_user.e_signature,
@@ -788,23 +1125,68 @@ def sync_property_data(
     rooms = db.query(RoomModel).filter(RoomModel.firm_id == current_user.firm_id).all()
     if not rooms:
         for rm in DEFAULT_ROOMS:
-            db.add(RoomModel(firm_id=current_user.firm_id, room_number=rm))
+            db.add(RoomModel(firm_id=current_user.firm_id, room_number=rm, room_type="Standard", is_staff_room=False))
         db.commit()
         rooms = db.query(RoomModel).filter(RoomModel.firm_id == current_user.firm_id).all()
     room_list = sorted([r.room_number for r in rooms], key=lambda x: (x.isdigit(), int(x) if x.isdigit() else x))
 
-    # Bookings
+    # Bookings: automatically transition expired in-house stays to Completed
+    today_str = datetime.now().strftime("%Y-%m-%d")
     bookings = db.query(BookingModel).filter(BookingModel.firm_id == current_user.firm_id).all()
+    has_expired_updates = False
+    for b in bookings:
+        if b.status in ["In-House", "Checked-In"] and b.check_out and b.check_out < today_str:
+            b.status = "Completed"
+            has_expired_updates = True
+    if has_expired_updates:
+        db.commit()
     booking_list = [
         BookingResponse(
             id=b.id, manualId=b.manual_id or b.id, guestName=b.guest_name,
-            phone=b.phone or "", email=b.email or "", room=b.room,
+            phone=b.phone or "", email=b.email or "", room=b.room if (b.room and b.room.strip()) else None,
+            guestCount=b.guest_count or 1,
+            adults=b.adults or 1,
+            children=b.children or 0,
             checkIn=b.check_in, checkOut=b.check_out, amountPaid=b.amount_paid,
-            paidVia=b.paid_via or "Cash", notes=b.notes or "", idCard=b.id_card,
+            paidVia=b.paid_via or "Cash", txnId=b.txn_id, notes=b.notes or "", idCard=b.id_card,
             idCardName=b.id_card_name or "ID Photo", status=b.status or "Upcoming",
+            bookingType=b.booking_type or "Walk-in",
+            isPrepaid=bool(b.is_prepaid),
+            isGuaranteed=bool(b.is_guaranteed),
             isHidden=bool(b.is_hidden), createdAt=b.created_at
         ) for b in bookings
     ]
+
+    # Detailed Room Objects with real-time occupancy and availability
+    valid_non_staff_rooms = set(r.room_number for r in rooms if not r.is_staff_room)
+    active_inhouse_rooms = set(
+        b.room for b in bookings 
+        if b.status in ["In-House", "Checked-In"] 
+        and b.room and b.room.strip() 
+        and b.room.strip() in valid_non_staff_rooms
+    )
+    guaranteed_reserved_rooms = set(
+        b.room for b in bookings 
+        if (b.is_guaranteed or b.is_prepaid or b.booking_type == "Online Pre-paid") 
+        and b.room and b.room.strip()
+        and b.room.strip() in valid_non_staff_rooms
+        and b.status not in ["Completed", "Checked-Out", "Cancelled"]
+    )
+    room_details = []
+    for r in rooms:
+        is_occ = r.room_number in active_inhouse_rooms
+        is_staff = bool(r.is_staff_room)
+        is_res = (r.room_number in guaranteed_reserved_rooms) and (not is_occ)
+        is_avail = (not is_occ) and (not is_staff) and (not is_res)
+        room_details.append({
+            "roomNumber": r.room_number,
+            "roomType": r.room_type or "Standard",
+            "isStaffRoom": is_staff,
+            "isOccupied": is_occ,
+            "isReserved": is_res,
+            "isAvailable": is_avail
+        })
+    room_details.sort(key=lambda x: (x["roomNumber"].isdigit(), int(x["roomNumber"]) if x["roomNumber"].isdigit() else x["roomNumber"]))
 
     # Expenses
     expenses = db.query(ExpenseModel).filter(ExpenseModel.firm_id == current_user.firm_id).all()
@@ -834,12 +1216,27 @@ def sync_property_data(
     reg_state = db.query(RegisterStateModel).filter(RegisterStateModel.firm_id == current_user.firm_id).first()
     is_open = reg_state.is_open if reg_state else True
 
+    # Feature Toggles
+    toggles = db.query(FeatureToggleModel).all()
+    feature_toggles = {}
+    for t in toggles:
+        try:
+            feature_toggles[t.role] = json.loads(t.features_json)
+        except Exception:
+            feature_toggles[t.role] = {}
+    if "Admin" not in feature_toggles:
+        feature_toggles["Admin"] = DEFAULT_ADMIN_FEATURES
+    if "Manager" not in feature_toggles:
+        feature_toggles["Manager"] = DEFAULT_MANAGER_FEATURES
+
     return {
         "rooms": room_list,
+        "roomDetails": room_details,
         "bookings": booking_list,
         "expenses": expense_list,
         "bills": bill_list,
-        "registerStatus": {"isOpen": is_open}
+        "registerStatus": {"isOpen": is_open},
+        "featureToggles": feature_toggles
     }
 
 
@@ -852,14 +1249,70 @@ def get_rooms(
 ):
     rooms = db.query(RoomModel).filter(RoomModel.firm_id == current_user.firm_id).all()
     if not rooms:
-        # Seed default rooms if empty
         for rm in DEFAULT_ROOMS:
-            db.add(RoomModel(firm_id=current_user.firm_id, room_number=rm))
+            db.add(RoomModel(firm_id=current_user.firm_id, room_number=rm, room_type="Standard", is_staff_room=False))
         db.commit()
         rooms = db.query(RoomModel).filter(RoomModel.firm_id == current_user.firm_id).all()
     
     room_list = [r.room_number for r in rooms]
     return sorted(room_list, key=lambda x: (x.isdigit(), int(x) if x.isdigit() else x))
+
+
+@app.get("/api/rooms/available")
+def get_available_rooms(
+    check_in: Optional[str] = Query(None, alias="checkIn"),
+    check_out: Optional[str] = Query(None, alias="checkOut"),
+    exclude_booking_id: Optional[str] = Query(None, alias="excludeBookingId"),
+    current_user: PropertyAccount = Depends(get_current_property),
+    db: Session = Depends(get_db)
+):
+    rooms = db.query(RoomModel).filter(
+        RoomModel.firm_id == current_user.firm_id,
+        RoomModel.is_staff_room == False
+    ).all()
+    all_room_numbers = sorted([r.room_number for r in rooms], key=lambda x: (x.isdigit(), int(x) if x.isdigit() else x))
+    
+    # Query all active bookings for this property that have a room assigned
+    query = db.query(BookingModel).filter(
+        BookingModel.firm_id == current_user.firm_id,
+        BookingModel.status.in_(["In-House", "Checked-In", "Upcoming", "Confirmed"]),
+        BookingModel.room.isnot(None)
+    )
+    if exclude_booking_id:
+        query = query.filter(BookingModel.id != exclude_booking_id)
+        
+    active_bookings = query.all()
+    
+    blocked_rooms = set()
+    occupied_rooms = set()
+    guaranteed_rooms = set()
+    
+    for b in active_bookings:
+        if not b.room or not b.room.strip():
+            continue
+        clean_rm = b.room.strip()
+        has_overlap = True
+        if check_in and check_out:
+            # Overlap: b.check_in < check_out and b.check_out > check_in
+            if not (b.check_in < check_out and b.check_out > check_in):
+                has_overlap = False
+                
+        if has_overlap:
+            blocked_rooms.add(clean_rm)
+            if b.status in ["In-House", "Checked-In"]:
+                occupied_rooms.add(clean_rm)
+            elif b.is_guaranteed or b.is_prepaid or b.booking_type == "Online Pre-paid":
+                guaranteed_rooms.add(clean_rm)
+
+    available_rooms = [rm for rm in all_room_numbers if rm not in blocked_rooms]
+    
+    return {
+        "availableRooms": available_rooms,
+        "occupiedRooms": list(occupied_rooms),
+        "guaranteedRooms": list(guaranteed_rooms),
+        "totalRooms": len(all_room_numbers),
+        "availableCount": len(available_rooms)
+    }
 
 
 @app.post("/api/rooms")
@@ -880,8 +1333,73 @@ def add_room(
     if existing:
         raise HTTPException(status_code=400, detail=f"Room {clean_num} already exists in inventory.")
 
-    new_room = RoomModel(firm_id=current_user.firm_id, room_number=clean_num)
+    new_room = RoomModel(
+        firm_id=current_user.firm_id,
+        room_number=clean_num,
+        room_type=req.roomType or "Standard",
+        is_staff_room=bool(req.isStaffRoom)
+    )
     db.add(new_room)
+    db.commit()
+    return {"success": True}
+
+
+@app.put("/api/rooms/{room_number}")
+def update_room(
+    room_number: str,
+    req: RoomUpdate,
+    authorization: Optional[str] = Header(None),
+    current_user: PropertyAccount = Depends(get_current_property),
+    db: Session = Depends(get_db)
+):
+    caller_role = "Property"
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.split(" ")[1]
+        try:
+            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+            caller_role = payload.get("role", "Property")
+        except Exception:
+            pass
+
+    if caller_role not in ["Overall Admin", "Super Admin", "Admin"]:
+        raise HTTPException(status_code=403, detail="Only Super Admin and Admin can modify room settings.")
+
+    room = db.query(RoomModel).filter(
+        RoomModel.firm_id == current_user.firm_id,
+        RoomModel.room_number == room_number
+    ).first()
+
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found.")
+
+    new_num = req.roomNumber.strip() if req.roomNumber else room_number
+    if new_num != room_number:
+        exists = db.query(RoomModel).filter(
+            RoomModel.firm_id == current_user.firm_id,
+            RoomModel.room_number == new_num
+        ).first()
+        if exists:
+            raise HTTPException(status_code=400, detail=f"Room {new_num} already exists in inventory.")
+
+        # Cascade update in active bookings
+        db.query(BookingModel).filter(
+            BookingModel.firm_id == current_user.firm_id,
+            BookingModel.room == room_number
+        ).update({"room": new_num}, synchronize_session=False)
+
+        room.room_number = new_num
+
+    if req.roomType is not None:
+        room.room_type = req.roomType
+    if req.isStaffRoom is not None:
+        room.is_staff_room = req.isStaffRoom
+        if req.isStaffRoom:
+            # If converted to a staff room, unallot any active bookings currently assigned to it
+            db.query(BookingModel).filter(
+                BookingModel.firm_id == current_user.firm_id,
+                BookingModel.room == room.room_number
+            ).update({"room": ""}, synchronize_session=False)
+
     db.commit()
     return {"success": True}
 
@@ -889,14 +1407,32 @@ def add_room(
 @app.delete("/api/rooms/{room_number}")
 def delete_room(
     room_number: str,
+    authorization: Optional[str] = Header(None),
     current_user: PropertyAccount = Depends(get_current_property),
     db: Session = Depends(get_db)
 ):
+    caller_role = "Property"
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.split(" ")[1]
+        try:
+            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+            caller_role = payload.get("role", "Property")
+        except Exception:
+            pass
+
+    if caller_role not in ["Overall Admin", "Super Admin", "Admin"]:
+        raise HTTPException(status_code=403, detail="Only Super Admin and Admin can delete rooms.")
+
     room = db.query(RoomModel).filter(
         RoomModel.firm_id == current_user.firm_id,
         RoomModel.room_number == room_number
     ).first()
     if room:
+        # Cascade unallot any bookings that had this room
+        db.query(BookingModel).filter(
+            BookingModel.firm_id == current_user.firm_id,
+            BookingModel.room == room_number
+        ).update({"room": ""}, synchronize_session=False)
         db.delete(room)
         db.commit()
     return {"success": True}
@@ -909,7 +1445,15 @@ def get_bookings(
     current_user: PropertyAccount = Depends(get_current_property),
     db: Session = Depends(get_db)
 ):
+    today_str = datetime.now().strftime("%Y-%m-%d")
     bookings = db.query(BookingModel).filter(BookingModel.firm_id == current_user.firm_id).all()
+    has_expired_updates = False
+    for b in bookings:
+        if b.status in ["In-House", "Checked-In"] and b.check_out and b.check_out < today_str:
+            b.status = "Completed"
+            has_expired_updates = True
+    if has_expired_updates:
+        db.commit()
     res = []
     for b in bookings:
         res.append(BookingResponse(
@@ -918,15 +1462,22 @@ def get_bookings(
             guestName=b.guest_name,
             phone=b.phone or "",
             email=b.email or "",
-            room=b.room,
+            room=b.room if (b.room and b.room.strip()) else None,
+            guestCount=b.guest_count or 1,
+            adults=b.adults or 1,
+            children=b.children or 0,
             checkIn=b.check_in,
             checkOut=b.check_out,
             amountPaid=b.amount_paid,
             paidVia=b.paid_via or "Cash",
+            txnId=b.txn_id,
             notes=b.notes or "",
             idCard=b.id_card,
             idCardName=b.id_card_name or "ID Photo",
             status=b.status or "Upcoming",
+            bookingType=b.booking_type or "Walk-in",
+            isPrepaid=bool(b.is_prepaid),
+            isGuaranteed=bool(b.is_guaranteed),
             isHidden=bool(b.is_hidden),
             createdAt=b.created_at
         ))
@@ -968,6 +1519,30 @@ def create_booking(
         booking_id = generate_next_booking_id(db)
 
     now_iso = datetime.utcnow().isoformat() + "Z"
+    effective_booking_type = req.bookingType or ("Online Pre-paid" if req.isPrepaid else "Walk-in")
+    effective_is_prepaid = bool(req.isPrepaid or (effective_booking_type == "Online Pre-paid"))
+    
+    # Guaranteed if prepaid, explicit isGuaranteed, online pre-paid, or digital net/UPI payment made
+    effective_is_guaranteed = bool(
+        req.isGuaranteed or 
+        effective_is_prepaid or 
+        (req.paidVia in ["UPI", "Credit Card", "Debit Card", "Net Banking"] and req.amountPaid and req.amountPaid > 0)
+    )
+    
+    adults_cnt = req.adults if (req.adults is not None and req.adults > 0) else 1
+    children_cnt = req.children if (req.children is not None and req.children >= 0) else 0
+    total_guest_cnt = req.guestCount if (req.guestCount is not None and req.guestCount > 0) else (adults_cnt + children_cnt)
+
+    allocated_room = req.room.strip() if (req.room and req.room.strip()) else ""
+    if allocated_room:
+        room_rec = db.query(RoomModel).filter(
+            RoomModel.firm_id == current_user.firm_id,
+            RoomModel.room_number == allocated_room
+        ).first()
+        if not room_rec:
+            raise HTTPException(status_code=400, detail=f"Room suite '{allocated_room}' does not exist in property inventory.")
+        if room_rec.is_staff_room:
+            raise HTTPException(status_code=400, detail=f"Room '{allocated_room}' is a designated staff room and cannot be assigned to guests.")
 
     new_b = BookingModel(
         id=booking_id,
@@ -976,15 +1551,22 @@ def create_booking(
         guest_name=req.guestName.strip(),
         phone=req.phone,
         email=req.email,
-        room=req.room,
+        room=allocated_room,
+        guest_count=total_guest_cnt,
+        adults=adults_cnt,
+        children=children_cnt,
         check_in=req.checkIn,
         check_out=req.checkOut,
         amount_paid=req.amountPaid,
         paid_via=req.paidVia or "Cash",
+        txn_id=req.txnId.strip() if req.txnId else None,
         notes=req.notes,
         id_card=req.idCard,
         id_card_name=req.idCardName or "ID Photo",
         status=req.status or "Upcoming",
+        booking_type=effective_booking_type,
+        is_prepaid=effective_is_prepaid,
+        is_guaranteed=effective_is_guaranteed,
         is_hidden=bool(req.isHidden),
         created_at=now_iso
     )
@@ -998,17 +1580,190 @@ def create_booking(
         guestName=new_b.guest_name,
         phone=new_b.phone or "",
         email=new_b.email or "",
-        room=new_b.room,
+        room=new_b.room if (new_b.room and new_b.room.strip()) else None,
+        guestCount=new_b.guest_count or 1,
+        adults=new_b.adults or 1,
+        children=new_b.children or 0,
         checkIn=new_b.check_in,
         checkOut=new_b.check_out,
         amountPaid=new_b.amount_paid,
         paidVia=new_b.paid_via or "Cash",
+        txnId=new_b.txn_id,
         notes=new_b.notes or "",
         idCard=new_b.id_card,
         idCardName=new_b.id_card_name or "ID Photo",
         status=new_b.status or "Upcoming",
+        bookingType=new_b.booking_type or "Walk-in",
+        isPrepaid=bool(new_b.is_prepaid),
+        isGuaranteed=bool(new_b.is_guaranteed),
         isHidden=bool(new_b.is_hidden),
         createdAt=new_b.created_at
+    )
+
+
+@app.post("/api/bookings/bulk-import", response_model=BulkImportResponse)
+def bulk_import_bookings(
+    req: BulkImportRequest,
+    authorization: Optional[str] = Header(None),
+    current_user: PropertyAccount = Depends(get_current_property),
+    db: Session = Depends(get_db)
+):
+    caller_role = None
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.split(" ")[1]
+        try:
+            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+            manager_id = payload.get("manager_id")
+            if manager_id:
+                mgr = db.query(ManagerAccount).filter(ManagerAccount.id == manager_id).first()
+                if mgr:
+                    caller_role = mgr.role
+        except Exception:
+            pass
+
+    # Restrict to Super Admin and Admin roles
+    is_authorized = caller_role in ["Overall Admin", "Super Admin", "Admin"] or current_user.role in ["Super Admin", "Admin"]
+    if not is_authorized:
+        raise HTTPException(
+            status_code=403,
+            detail="Only Super Admin and Admin accounts are authorized to import external booking files."
+        )
+
+    if not req.bookings:
+        return BulkImportResponse(
+            success=True,
+            importedCount=0,
+            skippedDuplicatesCount=0,
+            importedBookings=[]
+        )
+
+    # Pre-fetch existing bookings for this property to avoid duplicate manual_id or id
+    existing_bookings = db.query(BookingModel).filter(BookingModel.firm_id == current_user.firm_id).all()
+    existing_ids = set(b.id for b in existing_bookings if b.id)
+    existing_manual_ids = set((b.manual_id or "").strip().lower() for b in existing_bookings if b.manual_id)
+
+    # Pre-fetch valid rooms in inventory (excluding staff rooms)
+    property_rooms = db.query(RoomModel).filter(RoomModel.firm_id == current_user.firm_id).all()
+    valid_rooms_map = {r.room_number.strip().lower(): r for r in property_rooms}
+
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    now_iso = datetime.utcnow().isoformat() + "Z"
+
+    imported_list = []
+    skipped_count = 0
+
+    for item in req.bookings:
+        m_id = (item.manualId or "").strip()
+        custom_id = (item.id or "").strip()
+
+        # Check for duplicates in existing database records
+        if custom_id and custom_id in existing_ids:
+            skipped_count += 1
+            continue
+
+        if m_id and m_id.lower() in existing_manual_ids:
+            skipped_count += 1
+            continue
+
+        system_id = custom_id if custom_id else generate_next_booking_id(db)
+
+        # Date normalization & validation
+        in_date = item.checkIn.strip() if item.checkIn else today_str
+        out_date = item.checkOut.strip() if item.checkOut else today_str
+        if not out_date or out_date < in_date:
+            out_date = in_date
+
+        # Auto-compute stay status if not explicitly given
+        if item.status:
+            stay_status = item.status
+        else:
+            if out_date < today_str:
+                stay_status = "Completed"
+            elif in_date <= today_str <= out_date:
+                stay_status = "In-House"
+            else:
+                stay_status = "Upcoming"
+
+        # Check room inventory matching
+        allocated_room = ""
+        if item.room:
+            r_clean = str(item.room).strip()
+            matched_rm = valid_rooms_map.get(r_clean.lower())
+            if matched_rm and not matched_rm.is_staff_room:
+                allocated_room = matched_rm.room_number
+
+        effective_btype = item.bookingType or "OTA"
+        is_prepaid = bool(item.isPrepaid or effective_btype in ["Online Pre-paid", "OYO Prepaid"])
+        is_guaranteed = bool(item.isGuaranteed or is_prepaid or (item.amountPaid and item.amountPaid > 0))
+
+        adults_cnt = item.adults if (item.adults and item.adults > 0) else 1
+        children_cnt = item.children if (item.children and item.children >= 0) else 0
+        total_guests = item.guestCount if (item.guestCount and item.guestCount > 0) else (adults_cnt + children_cnt)
+
+        new_b = BookingModel(
+            id=system_id,
+            manual_id=m_id if m_id else system_id,
+            firm_id=current_user.firm_id,
+            guest_name=item.guestName.strip() if item.guestName else "Guest",
+            phone=item.phone or "",
+            email=item.email or "",
+            room=allocated_room,
+            guest_count=total_guests,
+            adults=adults_cnt,
+            children=children_cnt,
+            check_in=in_date,
+            check_out=out_date,
+            amount_paid=float(item.amountPaid or 0.0),
+            paid_via=item.paidVia or ("Online" if is_prepaid else "Cash"),
+            txn_id=item.txnId,
+            notes=item.notes or f"Imported from {effective_btype}",
+            status=stay_status,
+            booking_type=effective_btype,
+            is_prepaid=is_prepaid,
+            is_guaranteed=is_guaranteed,
+            is_hidden=False,
+            created_at=now_iso
+        )
+        db.add(new_b)
+        db.flush()
+
+        existing_ids.add(system_id)
+        if m_id:
+            existing_manual_ids.add(m_id.lower())
+
+        imported_list.append(BookingResponse(
+            id=new_b.id,
+            manualId=new_b.manual_id or new_b.id,
+            guestName=new_b.guest_name,
+            phone=new_b.phone or "",
+            email=new_b.email or "",
+            room=new_b.room if (new_b.room and new_b.room.strip()) else None,
+            guestCount=new_b.guest_count or 1,
+            adults=new_b.adults or 1,
+            children=new_b.children or 0,
+            checkIn=new_b.check_in,
+            checkOut=new_b.check_out,
+            amountPaid=new_b.amount_paid,
+            paidVia=new_b.paid_via or "Cash",
+            txnId=new_b.txn_id,
+            notes=new_b.notes or "",
+            idCard=new_b.id_card,
+            idCardName=new_b.id_card_name or "ID Photo",
+            status=new_b.status or "Upcoming",
+            bookingType=new_b.booking_type or "OTA",
+            isPrepaid=bool(new_b.is_prepaid),
+            isGuaranteed=bool(new_b.is_guaranteed),
+            isHidden=bool(new_b.is_hidden),
+            createdAt=new_b.created_at
+        ))
+
+    db.commit()
+
+    return BulkImportResponse(
+        success=True,
+        importedCount=len(imported_list),
+        skippedDuplicatesCount=skipped_count,
+        importedBookings=imported_list
     )
 
 
@@ -1026,6 +1781,9 @@ def checkin_booking(
     if not b:
         raise HTTPException(status_code=404, detail="Booking not found.")
 
+    if not b.room or not b.room.strip():
+        raise HTTPException(status_code=400, detail="Cannot check in without an allotted room suite. Please allot a room first.")
+
     b.status = "In-House"
     db.commit()
     db.refresh(b)
@@ -1037,14 +1795,21 @@ def checkin_booking(
         phone=b.phone or "",
         email=b.email or "",
         room=b.room,
+        guestCount=b.guest_count or 1,
+        adults=b.adults or 1,
+        children=b.children or 0,
         checkIn=b.check_in,
         checkOut=b.check_out,
         amountPaid=b.amount_paid,
         paidVia=b.paid_via or "Cash",
+        txnId=b.txn_id,
         notes=b.notes or "",
         idCard=b.id_card,
         idCardName=b.id_card_name or "ID Photo",
         status=b.status,
+        bookingType=b.booking_type or "Walk-in",
+        isPrepaid=bool(b.is_prepaid),
+        isGuaranteed=bool(b.is_guaranteed),
         isHidden=bool(b.is_hidden),
         createdAt=b.created_at
     )
@@ -1075,14 +1840,21 @@ def checkout_booking(
         phone=b.phone or "",
         email=b.email or "",
         room=b.room,
+        guestCount=b.guest_count or 1,
+        adults=b.adults or 1,
+        children=b.children or 0,
         checkIn=b.check_in,
         checkOut=b.check_out,
         amountPaid=b.amount_paid,
         paidVia=b.paid_via or "Cash",
+        txnId=b.txn_id,
         notes=b.notes or "",
         idCard=b.id_card,
         idCardName=b.id_card_name or "ID Photo",
         status=b.status,
+        bookingType=b.booking_type or "Walk-in",
+        isPrepaid=bool(b.is_prepaid),
+        isGuaranteed=bool(b.is_guaranteed),
         isHidden=bool(b.is_hidden),
         createdAt=b.created_at
     )
@@ -1120,6 +1892,9 @@ def early_checkout_booking(
             phone=b.phone or "",
             email=b.email or "",
             room=b.room,
+            guest_count=b.guest_count or 1,
+            adults=b.adults or 1,
+            children=b.children or 0,
             check_in=today_str,
             check_out=orig_checkout,
             amount_paid=0.0,
@@ -1140,20 +1915,24 @@ def early_checkout_booking(
     return {
         "updatedBooking": BookingResponse(
             id=b.id, manualId=b.manual_id or b.id, guestName=b.guest_name,
-            phone=b.phone or "", email=b.email or "", room=b.room, checkIn=b.check_in,
-            checkOut=b.check_out, amountPaid=b.amount_paid, paidVia=b.paid_via or "Cash",
-            notes=b.notes or "", idCard=b.id_card, idCardName=b.id_card_name or "ID Photo",
-            status=b.status, isHidden=bool(b.is_hidden), createdAt=b.created_at
+            phone=b.phone or "", email=b.email or "", room=b.room,
+            guestCount=b.guest_count or 1, adults=b.adults or 1, children=b.children or 0,
+            checkIn=b.check_in, checkOut=b.check_out, amountPaid=b.amount_paid, paidVia=b.paid_via or "Cash",
+            txnId=b.txn_id, notes=b.notes or "", idCard=b.id_card, idCardName=b.id_card_name or "ID Photo",
+            status=b.status, bookingType=b.booking_type or "Walk-in", isPrepaid=bool(b.is_prepaid),
+            isGuaranteed=bool(b.is_guaranteed), isHidden=bool(b.is_hidden), createdAt=b.created_at
         ),
         "hiddenBooking": BookingResponse(
             id=hidden_booking.id, manualId=hidden_booking.manual_id or hidden_booking.id,
             guestName=hidden_booking.guest_name, phone=hidden_booking.phone or "",
             email=hidden_booking.email or "", room=hidden_booking.room,
+            guestCount=hidden_booking.guest_count or 1, adults=hidden_booking.adults or 1, children=hidden_booking.children or 0,
             checkIn=hidden_booking.check_in, checkOut=hidden_booking.check_out,
             amountPaid=hidden_booking.amount_paid, paidVia=hidden_booking.paid_via or "Cash",
             notes=hidden_booking.notes or "", idCard=hidden_booking.id_card,
             idCardName=hidden_booking.id_card_name or "ID Photo",
-            status=hidden_booking.status, isHidden=True, createdAt=hidden_booking.created_at
+            status=hidden_booking.status, bookingType="Walk-in", isPrepaid=False,
+            isGuaranteed=False, isHidden=True, createdAt=hidden_booking.created_at
         ) if hidden_booking else None
     }
 
@@ -1183,14 +1962,100 @@ def confirm_booking(
         phone=b.phone or "",
         email=b.email or "",
         room=b.room,
+        guestCount=b.guest_count or 1,
+        adults=b.adults or 1,
+        children=b.children or 0,
         checkIn=b.check_in,
         checkOut=b.check_out,
         amountPaid=b.amount_paid,
         paidVia=b.paid_via or "Cash",
+        txnId=b.txn_id,
         notes=b.notes or "",
         idCard=b.id_card,
         idCardName=b.id_card_name or "ID Photo",
         status=b.status,
+        bookingType=b.booking_type or "Walk-in",
+        isPrepaid=bool(b.is_prepaid),
+        isGuaranteed=bool(b.is_guaranteed),
+        isHidden=bool(b.is_hidden),
+        createdAt=b.created_at
+    )
+
+
+@app.post("/api/bookings/{booking_id}/allot-room", response_model=BookingResponse)
+def allot_room(
+    booking_id: str,
+    req: AllotRoomRequest,
+    current_user: PropertyAccount = Depends(get_current_property),
+    db: Session = Depends(get_db)
+):
+    b = db.query(BookingModel).filter(
+        BookingModel.id == booking_id,
+        BookingModel.firm_id == current_user.firm_id
+    ).first()
+    if not b:
+        raise HTTPException(status_code=404, detail="Booking not found.")
+
+    target_room = req.room.strip() if req.room else ""
+    if not target_room:
+        raise HTTPException(status_code=400, detail="Room suite number is required.")
+
+    # Check room exists in inventory and is not staff room
+    room_obj = db.query(RoomModel).filter(
+        RoomModel.firm_id == current_user.firm_id,
+        RoomModel.room_number == target_room
+    ).first()
+    if not room_obj:
+        raise HTTPException(status_code=400, detail=f"Room suite '{target_room}' does not exist in property inventory.")
+    if room_obj.is_staff_room:
+        raise HTTPException(status_code=400, detail=f"Room {target_room} is a designated staff room and cannot be allotted to guests.")
+
+    # Check date collision with other active bookings for the same room
+    conflicts = db.query(BookingModel).filter(
+        BookingModel.firm_id == current_user.firm_id,
+        BookingModel.id != booking_id,
+        BookingModel.room == target_room,
+        BookingModel.status.in_(["In-House", "Checked-In", "Upcoming", "Confirmed"]),
+        BookingModel.check_in < b.check_out,
+        BookingModel.check_out > b.check_in
+    ).all()
+    if conflicts:
+        c_names = ", ".join([c.guest_name for c in conflicts])
+        raise HTTPException(status_code=400, detail=f"Room {target_room} is already occupied or reserved during these stay dates by {c_names}.")
+
+    b.room = target_room
+    if req.status:
+        b.status = req.status
+    if req.isGuaranteed is not None:
+        b.is_guaranteed = req.isGuaranteed
+    else:
+        b.is_guaranteed = True
+
+    db.commit()
+    db.refresh(b)
+
+    return BookingResponse(
+        id=b.id,
+        manualId=b.manual_id or b.id,
+        guestName=b.guest_name,
+        phone=b.phone or "",
+        email=b.email or "",
+        room=b.room,
+        guestCount=b.guest_count or 1,
+        adults=b.adults or 1,
+        children=b.children or 0,
+        checkIn=b.check_in,
+        checkOut=b.check_out,
+        amountPaid=b.amount_paid,
+        paidVia=b.paid_via or "Cash",
+        txnId=b.txn_id,
+        notes=b.notes or "",
+        idCard=b.id_card,
+        idCardName=b.id_card_name or "ID Photo",
+        status=b.status or "Upcoming",
+        bookingType=b.booking_type or "Walk-in",
+        isPrepaid=bool(b.is_prepaid),
+        isGuaranteed=bool(b.is_guaranteed),
         isHidden=bool(b.is_hidden),
         createdAt=b.created_at
     )
@@ -1220,7 +2085,23 @@ def update_booking(
     if req.email is not None:
         b.email = req.email
     if req.room is not None:
-        b.room = req.room
+        clean_room = req.room.strip() if req.room.strip() else None
+        if clean_room:
+            room_rec = db.query(RoomModel).filter(
+                RoomModel.firm_id == current_user.firm_id,
+                RoomModel.room_number == clean_room
+            ).first()
+            if not room_rec:
+                raise HTTPException(status_code=400, detail=f"Room suite '{clean_room}' does not exist in property inventory.")
+            if room_rec.is_staff_room:
+                raise HTTPException(status_code=400, detail=f"Room '{clean_room}' is a designated staff room and cannot be assigned to guests.")
+        b.room = clean_room or ""
+    if req.guestCount is not None:
+        b.guest_count = req.guestCount
+    if req.adults is not None:
+        b.adults = req.adults
+    if req.children is not None:
+        b.children = req.children
     if req.checkIn is not None:
         b.check_in = req.checkIn
     if req.checkOut is not None:
@@ -1229,6 +2110,8 @@ def update_booking(
         b.amount_paid = req.amountPaid
     if req.paidVia is not None:
         b.paid_via = req.paidVia
+    if req.txnId is not None:
+        b.txn_id = req.txnId.strip() if req.txnId else None
     if req.notes is not None:
         b.notes = req.notes
     if req.idCard is not None:
@@ -1237,6 +2120,12 @@ def update_booking(
         b.id_card_name = req.idCardName
     if req.status is not None:
         b.status = req.status
+    if req.bookingType is not None:
+        b.booking_type = req.bookingType
+    if req.isPrepaid is not None:
+        b.is_prepaid = req.isPrepaid
+    if req.isGuaranteed is not None:
+        b.is_guaranteed = req.isGuaranteed
     if req.isHidden is not None:
         b.is_hidden = req.isHidden
 
@@ -1250,14 +2139,21 @@ def update_booking(
         phone=b.phone or "",
         email=b.email or "",
         room=b.room,
+        guestCount=b.guest_count or 1,
+        adults=b.adults or 1,
+        children=b.children or 0,
         checkIn=b.check_in,
         checkOut=b.check_out,
         amountPaid=b.amount_paid,
         paidVia=b.paid_via or "Cash",
+        txnId=b.txn_id,
         notes=b.notes or "",
         idCard=b.id_card,
         idCardName=b.id_card_name or "ID Photo",
         status=b.status or "Upcoming",
+        bookingType=b.booking_type or "Walk-in",
+        isPrepaid=bool(b.is_prepaid),
+        isGuaranteed=bool(b.is_guaranteed),
         isHidden=bool(b.is_hidden),
         createdAt=b.created_at
     )
@@ -1682,8 +2578,13 @@ def accept_invitation(req: AcceptInvitationRequest, db: Session = Depends(get_db
 
     prop_resp = PropertyResponse(
         firmId=prop.firm_id,
+        propertyCode=prop.property_code,
         firmName=prop.firm_name,
         name=prop.name,
+        managerId=prop.manager_id,
+        ownerName=prop.owner_name,
+        ownerPhone=prop.owner_phone,
+        tnebNumber=prop.tneb_number,
         email=prop.email,
         firmLogo=prop.firm_logo,
         eSignature=prop.e_signature,
@@ -1734,67 +2635,87 @@ def list_invitations(
 
 # --- DIRECT MANAGER CREATION & SECURITY ENDPOINTS ---
 
+# --- DIRECT MANAGER & ADMIN CREATION & SECURITY ENDPOINTS ---
+
 @app.post("/api/managers/create")
 def create_manager_account(
     req: ManagerCreateRequest,
     db: Session = Depends(get_db),
     mgr_token_payload: dict = Depends(get_manager_me)
 ):
-    if mgr_token_payload.get("role") not in ["Overall Admin", "Super Admin"]:
-        raise HTTPException(status_code=403, detail="Only Super Admin can create manager accounts.")
+    caller_role = mgr_token_payload.get("role")
+    if caller_role not in ["Overall Admin", "Super Admin", "Admin"]:
+        raise HTTPException(status_code=403, detail="Unauthorized to create user accounts.")
+
+    target_role = "Admin" if req.role == "Admin" else "Manager"
+    if target_role == "Admin" and caller_role not in ["Overall Admin", "Super Admin"]:
+        raise HTTPException(status_code=403, detail="Only Super Admin can create Admin accounts.")
 
     clean_name = req.name.strip()
     clean_email = req.email.strip().lower()
     clean_pass = req.tempPassword.strip()
     prop_id = req.propertyId.strip()
 
-    if not clean_name or not clean_email or not clean_pass or not prop_id:
-        raise HTTPException(status_code=400, detail="Please fill in all manager fields.")
+    if not clean_name or not clean_email or not clean_pass:
+        raise HTTPException(status_code=400, detail="Please fill in all user fields.")
 
     if len(clean_pass) < 6:
         raise HTTPException(status_code=400, detail="Temporary password must be at least 6 characters.")
 
-    prop = db.query(PropertyAccount).filter(PropertyAccount.firm_id == prop_id).first()
-    if not prop:
-        raise HTTPException(status_code=404, detail="Selected property was not found.")
+    prop = None
+    if prop_id and prop_id != "all":
+        prop = db.query(PropertyAccount).filter(PropertyAccount.firm_id == prop_id).first()
+        if not prop and target_role == "Manager":
+            raise HTTPException(status_code=404, detail="Selected property was not found.")
 
+    hashed_pass = hash_password(clean_pass)
     existing_mgr = db.query(ManagerAccount).filter(ManagerAccount.email.ilike(clean_email)).first()
     if existing_mgr:
-        if existing_mgr.role in ["Overall Admin", "Super Admin"]:
-            raise HTTPException(status_code=400, detail="Cannot assign a Super Admin account as a property manager.")
+        if existing_mgr.role in ["Overall Admin", "Super Admin"] and caller_role != "Super Admin":
+            raise HTTPException(status_code=400, detail="Cannot modify a Super Admin account.")
         existing_mgr.name = clean_name
-        existing_mgr.password_hash = hash_password(clean_pass)
+        existing_mgr.password_hash = hashed_pass
+        existing_mgr.temp_password_hash = hashed_pass
+        existing_mgr.temp_password_plain = clean_pass
+        existing_mgr.role = target_role
         mgr_user = existing_mgr
     else:
-        mgr_id = f"mgr_{int(datetime.utcnow().timestamp())}_{uuid.uuid4().hex[:4]}"
+        prefix = "admin" if target_role == "Admin" else "mgr"
+        mgr_id = f"{prefix}_{int(datetime.utcnow().timestamp())}_{uuid.uuid4().hex[:4]}"
         mgr_user = ManagerAccount(
             id=mgr_id,
             name=clean_name,
             email=clean_email,
-            password_hash=hash_password(clean_pass),
-            role="Property Manager"
+            password_hash=hashed_pass,
+            temp_password_hash=hashed_pass,
+            temp_password_plain=clean_pass,
+            role=target_role,
+            created_by=mgr_token_payload.get("id")
         )
         db.add(mgr_user)
         db.flush()
 
-    prop.manager_id = mgr_user.id
-    prop.name = mgr_user.name
-    prop.email = clean_email
-    prop.password_hash = mgr_user.password_hash
+    if prop and target_role == "Manager":
+        prop.manager_id = mgr_user.id
+        prop.name = mgr_user.name
+        prop.email = clean_email
+        prop.password_hash = mgr_user.password_hash
 
     db.commit()
     db.refresh(mgr_user)
-    db.refresh(prop)
+    if prop:
+        db.refresh(prop)
 
     return {
         "success": True,
-        "message": f"Manager '{clean_name}' created successfully for property '{prop.firm_name}'.",
+        "message": f"{target_role} '{clean_name}' created successfully.",
         "manager": {
             "id": mgr_user.id,
             "name": mgr_user.name,
             "email": mgr_user.email,
-            "propertyId": prop.firm_id,
-            "propertyName": prop.firm_name,
+            "role": target_role,
+            "propertyId": prop.firm_id if prop else "All",
+            "propertyName": prop.firm_name if prop else "All Super Admin Properties",
             "tempPassword": clean_pass
         }
     }
@@ -1805,24 +2726,31 @@ def list_managers(
     db: Session = Depends(get_db),
     mgr_token_payload: dict = Depends(get_manager_me)
 ):
-    if mgr_token_payload.get("role") not in ["Overall Admin", "Super Admin"]:
-        raise HTTPException(status_code=403, detail="Only Super Admin can view managers.")
+    caller_role = mgr_token_payload.get("role")
+    if caller_role not in ["Overall Admin", "Super Admin", "Admin"]:
+        raise HTTPException(status_code=403, detail="Unauthorized to view users.")
 
-    managers = db.query(ManagerAccount).filter(ManagerAccount.role == "Property Manager").all()
+    if caller_role in ["Overall Admin", "Super Admin"]:
+        users = db.query(ManagerAccount).filter(ManagerAccount.role.in_(["Admin", "Manager", "Property Manager"])).all()
+    else:
+        users = db.query(ManagerAccount).filter(ManagerAccount.role.in_(["Manager", "Property Manager"])).all()
+
     props = db.query(PropertyAccount).all()
     prop_by_mgr = {p.manager_id: p for p in props if p.manager_id}
 
     result = []
-    for m in managers:
+    for m in users:
         assigned_prop = prop_by_mgr.get(m.id)
+        role_label = "Admin" if m.role == "Admin" else "Manager"
         result.append({
             "id": m.id,
             "name": m.name,
             "email": m.email,
-            "role": m.role,
+            "role": role_label,
             "createdAt": m.created_at.isoformat() if m.created_at else None,
             "propertyId": assigned_prop.firm_id if assigned_prop else None,
-            "propertyName": assigned_prop.firm_name if assigned_prop else None
+            "propertyName": assigned_prop.firm_name if assigned_prop else ("All Properties" if role_label == "Admin" else "Unassigned"),
+            "tempPassword": m.temp_password_plain if caller_role in ["Overall Admin", "Super Admin"] else None
         })
     return result
 
@@ -1857,8 +2785,16 @@ def change_password(
         if not mgr:
             raise HTTPException(status_code=404, detail="User account not found.")
 
-        if not verify_password(clean_current, mgr.password_hash):
+        # Dual password check: verify with active password OR with initial temporary password
+        is_curr_valid = verify_password(clean_current, mgr.password_hash) or (
+            bool(mgr.temp_password_hash) and verify_password(clean_current, mgr.temp_password_hash)
+        )
+        if not is_curr_valid:
             raise HTTPException(status_code=400, detail="Current password does not match.")
+
+        # Ensure temp_password_hash is preserved so both remain bound and valid
+        if not mgr.temp_password_hash:
+            mgr.temp_password_hash = mgr.password_hash
 
         mgr.password_hash = hash_password(clean_new)
         props = db.query(PropertyAccount).filter(PropertyAccount.manager_id == mgr.id).all()
@@ -1866,7 +2802,7 @@ def change_password(
             p.password_hash = mgr.password_hash
 
         db.commit()
-        return {"success": True, "message": "Password changed successfully."}
+        return {"success": True, "message": "Password changed successfully. Both temporary and new credentials remain bound."}
 
     elif firm_id:
         prop = db.query(PropertyAccount).filter(PropertyAccount.firm_id == firm_id).first()
@@ -1881,4 +2817,101 @@ def change_password(
         return {"success": True, "message": "Password changed successfully."}
 
     raise HTTPException(status_code=401, detail="Unauthorized.")
+
+
+# --- FEATURE TOGGLE & SUPER ADMIN IMPERSONATION ENDPOINTS ---
+
+@app.get("/api/system/feature-toggles")
+def get_feature_toggles(db: Session = Depends(get_db)):
+    toggles = db.query(FeatureToggleModel).all()
+    result = {}
+    for t in toggles:
+        try:
+            result[t.role] = json.loads(t.features_json)
+        except Exception:
+            result[t.role] = {}
+    if "Admin" not in result:
+        result["Admin"] = DEFAULT_ADMIN_FEATURES
+    if "Manager" not in result:
+        result["Manager"] = DEFAULT_MANAGER_FEATURES
+    return result
+
+
+@app.post("/api/system/feature-toggles")
+def update_feature_toggles(
+    req: FeatureToggleRequest,
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+):
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    token = authorization.split(" ")[1]
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        manager_id = payload.get("manager_id")
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid token.")
+
+    mgr = db.query(ManagerAccount).filter(ManagerAccount.id == manager_id).first() if manager_id else None
+    if not mgr or mgr.role not in ["Overall Admin", "Super Admin"]:
+        raise HTTPException(status_code=403, detail="Only Super Admin can configure feature releases.")
+
+    ft = db.query(FeatureToggleModel).filter(FeatureToggleModel.role == req.role).first()
+    if not ft:
+        ft = FeatureToggleModel(role=req.role, features_json=json.dumps(req.features))
+        db.add(ft)
+    else:
+        ft.features_json = json.dumps(req.features)
+    db.commit()
+    return {"success": True, "role": req.role, "features": req.features}
+
+
+@app.post("/api/auth/impersonate/{user_id}")
+def impersonate_user(
+    user_id: str,
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+):
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    token = authorization.split(" ")[1]
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        mgr_id = payload.get("manager_id")
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid token.")
+
+    caller = db.query(ManagerAccount).filter(ManagerAccount.id == mgr_id).first() if mgr_id else None
+    if not caller or caller.role not in ["Overall Admin", "Super Admin"]:
+        raise HTTPException(status_code=403, detail="Only Super Admin can switch to view as other users.")
+
+    target_user = db.query(ManagerAccount).filter(ManagerAccount.id == user_id).first()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="Target user account not found.")
+
+    target_role = "Admin" if target_user.role == "Admin" else ("Super Admin" if target_user.role in ["Overall Admin", "Super Admin"] else "Manager")
+    impersonation_token = create_access_token({
+        "sub": target_user.id,
+        "manager_id": target_user.id,
+        "role": target_role,
+        "email": target_user.email,
+        "impersonated_by": caller.id
+    })
+    return {
+        "success": True,
+        "token": impersonation_token,
+        "targetUser": {
+            "id": target_user.id,
+            "name": target_user.name,
+            "email": target_user.email,
+            "role": target_role
+        }
+    }
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
+
+
 

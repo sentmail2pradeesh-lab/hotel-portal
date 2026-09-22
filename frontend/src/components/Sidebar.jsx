@@ -19,28 +19,50 @@ export const Sidebar = () => {
     isRegisterOpen, 
     guestIDCards,
     currentUser,
-    logout
+    logout,
+    canAccess,
+    isSuperAdmin,
+    isAdmin,
+    isManager
   } = useHotel();
 
   const totalIDCards = guestIDCards.filter(item => item.hasID).length;
 
-  const navItems = [
-    { id: 'overview', label: 'Overview', icon: LayoutDashboard },
-    { id: 'bookings', label: 'Bookings', icon: BookOpen },
-    { id: 'expenses', label: 'Daily expenses', icon: Receipt },
-    { id: 'bills', label: 'Bills & add-ons', icon: FileText },
-    { id: 'guest-ids', label: 'Guest ID cards', icon: IdCard, badge: totalIDCards },
-    { id: 'settings', label: 'Settings & Reports', icon: Settings },
+  const allNavItems = [
+    { id: 'overview', label: 'Overview', icon: LayoutDashboard, feature: 'overview' },
+    { id: 'bookings', label: 'Bookings', icon: BookOpen, feature: 'bookings' },
+    { id: 'expenses', label: 'Daily expenses', icon: Receipt, feature: 'expenses' },
+    { id: 'bills', label: 'Bills & add-ons', icon: FileText, feature: 'bills' },
+    { id: 'guest-ids', label: 'Guest ID cards', icon: IdCard, badge: totalIDCards, feature: 'guest_ids' },
+    { id: 'settings', label: 'Settings & Reports', icon: Settings, feature: 'reports' },
   ];
+
+  const navItems = allNavItems.filter(item => item.feature === 'overview' || canAccess(item.feature));
 
   return (
     <aside className="sidebar">
       <div>
         <div className="sidebar-header">
-          <div className="avatar-icon">{currentUser?.initials || 'PM'}</div>
+          <div className="avatar-icon" style={{
+            background: isSuperAdmin ? '#d97706' : (isAdmin ? '#0284c7' : '#047857')
+          }}>
+            {currentUser?.initials || (isSuperAdmin ? 'SA' : (isAdmin ? 'AD' : 'PM'))}
+          </div>
           <div className="user-details">
-            <span className="user-name">{currentUser?.name || 'Property Manager'}</span>
-            <span className="user-email" style={{ color: '#f59e0b' }}>{currentUser?.firmName || 'Property Dashboard'}</span>
+            <span className="user-name" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span>{currentUser?.name || 'User'}</span>
+            </span>
+            <span style={{ 
+              fontSize: '10px', 
+              fontWeight: 800, 
+              color: isSuperAdmin ? '#f59e0b' : (isAdmin ? '#38bdf8' : '#34d399'),
+              textTransform: 'uppercase'
+            }}>
+              {currentUser?.role || 'Portal User'}
+            </span>
+            <span className="user-email" style={{ color: 'rgba(255, 255, 255, 0.65)', fontSize: '11px', marginTop: '2px' }}>
+              {currentUser?.firmName || 'Property Dashboard'}
+            </span>
           </div>
         </div>
 

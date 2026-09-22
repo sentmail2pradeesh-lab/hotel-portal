@@ -55,6 +55,61 @@ export const Expenses = () => {
         </button>
       </div>
 
+      {/* Executive Metric Cards */}
+      <div className="metrics-row" style={{ gridTemplateColumns: 'repeat(3, 1fr)', marginBottom: '18px' }}>
+        <div className="metric-card">
+          <div className="metric-card-header">
+            <span className="metric-card-label">Total Cash Outflow</span>
+            <div className="metric-icon-badge rose">
+              <Receipt size={15} />
+            </div>
+          </div>
+          <div className="metric-card-value-row">
+            <span className="metric-card-value" style={{ color: '#dc2626' }}>
+              {formatCurrency(totalFilteredOutflow)}
+            </span>
+          </div>
+          <div className="metric-card-footer">
+            <span className="metric-status-dot rose" />
+            <span>Across {filteredExpenses.length} expense log(s)</span>
+          </div>
+        </div>
+
+        <div className="metric-card">
+          <div className="metric-card-header">
+            <span className="metric-card-label">Logged Entries</span>
+            <div className="metric-icon-badge slate">
+              <Tag size={15} />
+            </div>
+          </div>
+          <div className="metric-card-value-row">
+            <span className="metric-card-value">{filteredExpenses.length}</span>
+            <span className="metric-tag-sub">of {expenses.length} total</span>
+          </div>
+          <div className="metric-card-footer">
+            <span>Operational records on file</span>
+          </div>
+        </div>
+
+        <div className="metric-card">
+          <div className="metric-card-header">
+            <span className="metric-card-label">Average Expense</span>
+            <div className="metric-icon-badge amber">
+              <Receipt size={15} />
+            </div>
+          </div>
+          <div className="metric-card-value-row">
+            <span className="metric-card-value">
+              {formatCurrency(filteredExpenses.length > 0 ? Math.round(totalFilteredOutflow / filteredExpenses.length) : 0)}
+            </span>
+          </div>
+          <div className="metric-card-footer">
+            <span className="metric-status-dot amber" />
+            <span>Mean outflow per voucher</span>
+          </div>
+        </div>
+      </div>
+
       <div className="toolbar-row">
         <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
           <div className="search-box">

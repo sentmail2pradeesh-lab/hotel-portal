@@ -13,7 +13,11 @@ import {
   Lock,
   Hotel,
   Eye,
-  EyeOff
+  EyeOff,
+  Phone,
+  Hash,
+  UserCheck,
+  Zap
 } from 'lucide-react';
 
 export const AuthView = () => {
@@ -26,6 +30,7 @@ export const AuthView = () => {
 
   // Super Admin Register State
   const [regName, setRegName] = useState('');
+  const [regPhone, setRegPhone] = useState('');
   const [regEmail, setRegEmail] = useState('');
   const [regPassword, setRegPassword] = useState('');
   const [regConfirmPassword, setRegConfirmPassword] = useState('');
@@ -33,7 +38,11 @@ export const AuthView = () => {
   const [showRegConfirmPassword, setShowRegConfirmPassword] = useState(false);
 
   // Initial Onboarding 1st Property State
+  const [firstPropCode, setFirstPropCode] = useState('PR001');
   const [firmName, setFirmName] = useState('');
+  const [firstOwnerName, setFirstOwnerName] = useState('');
+  const [firstOwnerPhone, setFirstOwnerPhone] = useState('');
+  const [firstTnebNumber, setFirstTnebNumber] = useState('');
   const [firmLogo, setFirmLogo] = useState(null);
 
   const [error, setError] = useState('');
@@ -44,11 +53,15 @@ export const AuthView = () => {
     e.preventDefault();
     setError('');
 
-    if (!regName.trim() || !regEmail.trim() || !regPassword) {
-      setError('Please fill out all admin registration fields.');
+    if (!regName.trim() || !regPhone.trim() || !regEmail.trim() || !regPassword) {
+      setError('Please fill out all registration fields: Name, Phone Number, Email, and Password.');
       return;
     }
-    if (!regEmail.includes('@')) {
+    if (regPhone.trim().replace(/[^0-9]/g, '').length < 7) {
+      setError('Please enter a valid contact phone number.');
+      return;
+    }
+    if (!regEmail.includes('@') || !regEmail.includes('.')) {
       setError('Please enter a valid email address.');
       return;
     }
@@ -63,7 +76,7 @@ export const AuthView = () => {
 
     setLoading(true);
     try {
-      const res = await adminRegister(regName.trim(), regEmail.trim(), regPassword);
+      const res = await adminRegister(regName.trim(), regPhone.trim(), regEmail.trim(), regPassword);
       if (res && !res.success) {
         setError(res.message || 'Super Admin registration failed.');
       }
@@ -98,6 +111,10 @@ export const AuthView = () => {
   // Handle First Property Creation (If Super Admin has 0 properties)
   const handleCreateFirstProperty = async (e) => {
     e.preventDefault();
+    if (!firstPropCode.trim()) {
+      setError('Please enter a property code (e.g. PR001).');
+      return;
+    }
     if (!firmName.trim()) {
       setError('Please enter your initial property or hotel name.');
       return;
@@ -106,7 +123,11 @@ export const AuthView = () => {
     setLoading(true);
     try {
       const res = await addProperty({
+        propertyCode: firstPropCode.trim().toUpperCase(),
         firmName: firmName.trim(),
+        ownerName: firstOwnerName.trim() || null,
+        ownerPhone: firstOwnerPhone.trim() || null,
+        tnebNumber: firstTnebNumber.trim() || null,
         firmLogo: firmLogo,
         eSignature: null
       });
@@ -137,7 +158,7 @@ export const AuthView = () => {
   if (manager && propertiesList.length === 0) {
     return (
       <div className="auth-container">
-        <div className="auth-card" style={{ maxWidth: '520px' }}>
+        <div className="auth-card" style={{ maxWidth: '540px' }}>
           <div className="auth-header">
             <div className="auth-logo" style={{ background: '#d97706' }}>
               <Hotel size={28} color="#ffffff" />
@@ -154,18 +175,79 @@ export const AuthView = () => {
             </div>
           )}
 
-          <form onSubmit={handleCreateFirstProperty} className="auth-form" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <form onSubmit={handleCreateFirstProperty} className="auth-form" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '12px' }}>
+              <div className="form-group">
+                <label className="form-label">Property Code <span style={{ color: '#e11d48' }}>*</span></label>
+                <div className="input-icon-wrapper">
+                  <Hash size={16} className="input-icon" />
+                  <input
+                    type="text"
+                    className="form-input icon-padded"
+                    placeholder="e.g. PR001"
+                    value={firstPropCode}
+                    onChange={(e) => setFirstPropCode(e.target.value.toUpperCase())}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Property / Hotel Name <span style={{ color: '#e11d48' }}>*</span></label>
+                <div className="input-icon-wrapper">
+                  <Building2 size={16} className="input-icon" />
+                  <input
+                    type="text"
+                    className="form-input icon-padded"
+                    placeholder="e.g. Grand Horizon Hotel & Suites"
+                    value={firmName}
+                    onChange={(e) => setFirmName(e.target.value)}
+                    required
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div className="form-group">
+                <label className="form-label">Property Owner Name</label>
+                <div className="input-icon-wrapper">
+                  <UserCheck size={16} className="input-icon" />
+                  <input
+                    type="text"
+                    className="form-input icon-padded"
+                    placeholder="e.g. Mr. Rajesh Sharma"
+                    value={firstOwnerName}
+                    onChange={(e) => setFirstOwnerName(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Owner Number / Phone</label>
+                <div className="input-icon-wrapper">
+                  <Phone size={16} className="input-icon" />
+                  <input
+                    type="tel"
+                    className="form-input icon-padded"
+                    placeholder="e.g. +91 98765 43210"
+                    value={firstOwnerPhone}
+                    onChange={(e) => setFirstOwnerPhone(e.target.value)}
+                  />
+                </div>
+              </div>
+            </div>
+
             <div className="form-group">
-              <label className="form-label">Property / Hotel Name <span style={{ color: '#e11d48' }}>*</span></label>
+              <label className="form-label">TNEB Account Number</label>
               <div className="input-icon-wrapper">
-                <Building2 size={16} className="input-icon" />
+                <Zap size={16} className="input-icon" color="#d97706" />
                 <input
                   type="text"
                   className="form-input icon-padded"
-                  placeholder="e.g. Grand Horizon Hotel & Suites"
-                  value={firmName}
-                  onChange={(e) => setFirmName(e.target.value)}
-                  required
+                  placeholder="e.g. 04-123-456-7890 (EB Consumer No)"
+                  value={firstTnebNumber}
+                  onChange={(e) => setFirstTnebNumber(e.target.value)}
                 />
               </div>
             </div>
@@ -309,6 +391,21 @@ export const AuthView = () => {
                   placeholder="Enter your full name"
                   value={regName}
                   onChange={(e) => setRegName(e.target.value)}
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Contact / Mobile Number <span style={{ color: '#e11d48' }}>*</span></label>
+              <div className="input-icon-wrapper">
+                <Phone size={16} className="input-icon" />
+                <input
+                  type="tel"
+                  className="form-input icon-padded"
+                  placeholder="e.g. +91 98765 43210"
+                  value={regPhone}
+                  onChange={(e) => setRegPhone(e.target.value)}
                   required
                 />
               </div>

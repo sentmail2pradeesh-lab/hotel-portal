@@ -71,7 +71,6 @@ export const exportToCSV = (filename, headers, rows) => {
 
 export const getAutoStayStatus = (checkInStr, checkOutStr, currentStatus) => {
   if (currentStatus === 'Completed') return 'Completed';
-  if (currentStatus === 'In-House') return 'In-House';
   
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -80,9 +79,13 @@ export const getAutoStayStatus = (checkInStr, checkOutStr, currentStatus) => {
   const inDate = checkInStr ? checkInStr.split('T')[0] : '';
   const outDate = checkOutStr ? checkOutStr.split('T')[0] : '';
 
+  // Expired stay: If checkout date is before today, stay is automatically marked as Completed!
   if (outDate && outDate < todayStr) {
     return 'Completed';
   }
+
+  if (currentStatus === 'In-House') return 'In-House';
+
   if (inDate && inDate <= todayStr && (!outDate || outDate >= todayStr)) {
     return 'In-House';
   }

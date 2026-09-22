@@ -15,11 +15,13 @@ import {
   BedDouble,
   Plus,
   Check,
-  Edit2
+  Edit2,
+  UserPlus
 } from 'lucide-react';
 import { useHotel } from '../context/HotelContext';
 import { confirmDouble } from '../utils/formatters';
 import { AddPropertyModal } from './AddPropertyModal';
+import { CreateManagerModal } from './CreateManagerModal';
 
 export const Navbar = () => {
   const { 
@@ -35,13 +37,19 @@ export const Navbar = () => {
     toggleRegisterStatus,
     guestIDCards,
     clearAllData,
-    bookings
+    bookings,
+    canAccess,
+    isSuperAdmin,
+    isAdmin,
+    isManager,
+    openNewBookingModal
   } = useHotel();
 
   const [showShiftModal, setShowShiftModal] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showPropertyMenu, setShowPropertyMenu] = useState(false);
   const [showAddPropertyModal, setShowAddPropertyModal] = useState(false);
+  const [showCreateManagerModal, setShowCreateManagerModal] = useState(false);
   const [editingProp, setEditingProp] = useState(null);
   const [renameInput, setRenameInput] = useState('');
 
@@ -63,42 +71,63 @@ export const Navbar = () => {
   }, []);
 
   const totalIDCards = guestIDCards.filter(item => item.hasID).length;
-  const isSuperAdmin = currentUser?.role === 'Overall Admin' || currentUser?.role === 'Super Admin';
 
-  const navItems = [
-    { id: 'overview', label: 'Overview', icon: LayoutDashboard },
-    { id: 'bookings', label: 'Bookings', icon: BookOpen },
-    { id: 'expenses', label: 'Daily expenses', icon: Receipt },
-    { id: 'bills', label: 'Bills & add-ons', icon: FileText },
-    { id: 'guest-ids', label: 'Guest ID cards', icon: IdCard, badge: totalIDCards },
+  // Filter navigation items by active user role permissions & feature toggles
+  const allNavItems = [
+    { id: 'overview', label: 'Overview', icon: LayoutDashboard, feature: 'overview' },
+    { id: 'bookings', label: 'Bookings', icon: BookOpen, feature: 'bookings' },
+    { id: 'expenses', label: 'Daily expenses', icon: Receipt, feature: 'expenses' },
+    { id: 'bills', label: 'Bills & add-ons', icon: FileText, feature: 'bills' },
+    { id: 'guest-ids', label: 'Guest ID cards', icon: IdCard, badge: totalIDCards, feature: 'guest_ids' },
+    { id: 'settings', label: 'Settings & Controls', icon: Settings, feature: 'settings' },
   ];
 
+  const navItems = allNavItems.filter(item => 
+    item.feature === 'overview' || item.feature === 'settings' || canAccess(item.feature)
+  );
+
   return (
-    <header className="top-nav">
-      {/* Brand & Property Switcher Section */}
-      <div className="brand-section" ref={propertyMenuRef}>
+    <aside className="sidebar-nav">
+      {/* Brand & Property Switcher Header */}
+      <div className="sidebar-brand-section" ref={propertyMenuRef}>
         <div 
           className="property-switcher-trigger"
           onClick={() => setShowPropertyMenu((prev) => !prev)}
-          title="Click to switch property or add new property"
+          title="Click to switch property"
         >
           <div className="brand-logo">
             {currentUser?.firmLogo ? (
               <img 
                 src={currentUser.firmLogo} 
                 alt={currentUser?.firmName || 'Property Logo'} 
-                style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'var(--radius-md)' }} 
+                style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
               />
             ) : (
-              <Building2 size={22} color="#000000" />
+              <Building2 size={20} color="#000000" />
             )}
           </div>
           <div className="brand-text">
-            <div className="brand-title" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span>{currentUser?.firmName || 'Property Register'}</span>
-              <ChevronDown size={14} className={`dropdown-chevron ${showPropertyMenu ? 'open' : ''}`} color="#d97706" />
-            </div>
-            <div className="brand-subtitle">{isSuperAdmin ? 'Super Admin Multi-Property Portal' : 'Property Operations Portal'}</div>
+            {currentUser?.propertyCode ? (
+              <>
+                <div className="brand-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span>{currentUser.propertyCode}</span>
+                  <ChevronDown size={14} className={`dropdown-chevron ${showPropertyMenu ? 'open' : ''}`} color="#d97706" />
+                </div>
+                <div className="brand-subtitle">
+                  {currentUser.firmName}
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="brand-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span>{currentUser?.firmName || 'Property Register'}</span>
+                  <ChevronDown size={14} className={`dropdown-chevron ${showPropertyMenu ? 'open' : ''}`} color="#d97706" />
+                </div>
+                <div className="brand-subtitle">
+                  {isSuperAdmin ? 'Super Admin Portal' : (isAdmin ? 'Admin Operations' : 'Front-Desk Portal')}
+                </div>
+              </>
+            )}
           </div>
         </div>
 
@@ -106,16 +135,17 @@ export const Navbar = () => {
         {showPropertyMenu && (
           <div className="property-dropdown-menu">
             <div className="property-dropdown-header">
-              <span>{isSuperAdmin ? `MY PROPERTIES (${propertiesList.length})` : 'ASSIGNED PROPERTY'}</span>
+              <span>{isSuperAdmin ? `MY PROPERTIES (${propertiesList.length})` : (isAdmin ? `MANAGED PROPERTIES (${propertiesList.length})` : 'ASSIGNED PROPERTY')}</span>
               {isSuperAdmin && (
                 <button 
                   className="add-prop-btn-pill"
-                  onClick={() => {
+                  onClick={(e) => {
+                    e.stopPropagation();
                     setShowAddPropertyModal(true);
                     setShowPropertyMenu(false);
                   }}
                 >
-                  <Plus size={12} /> Add Property
+                  <Plus size={12} /> Add
                 </button>
               )}
             </div>
@@ -130,7 +160,7 @@ export const Navbar = () => {
                     style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
                   >
                     <div 
-                      style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, cursor: 'pointer' }}
+                      style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, cursor: 'pointer', overflow: 'hidden' }}
                       onClick={() => {
                         switchProperty(p.firmId);
                         setShowPropertyMenu(false);
@@ -144,8 +174,12 @@ export const Navbar = () => {
                         )}
                       </div>
                       <div className="prop-item-info">
-                        <div className="prop-item-name">{p.firmName}</div>
-                        <div className="prop-item-sub">Firm ID: {p.firmId}</div>
+                        <div className="prop-item-name">
+                          {p.propertyCode ? p.propertyCode : p.firmName}
+                        </div>
+                        <div className="prop-item-sub">
+                          {p.propertyCode ? p.firmName : `Firm ID: ${p.firmId}`}
+                        </div>
                       </div>
                     </div>
 
@@ -181,7 +215,7 @@ export const Navbar = () => {
                     setShowPropertyMenu(false);
                   }}
                 >
-                  <Plus size={15} /> Add Another Property
+                  <Plus size={14} /> Add Another Property
                 </button>
               </>
             )}
@@ -189,28 +223,8 @@ export const Navbar = () => {
         )}
       </div>
 
-      <nav className="nav-tabs">
-        {navItems.map((item) => {
-          const Icon = item.icon;
-          const isActive = activeTab === item.id;
-          return (
-            <button
-              key={item.id}
-              className={`tab-button ${isActive ? 'active' : ''}`}
-              onClick={() => setActiveTab(item.id)}
-            >
-              <Icon size={16} color={isActive ? '#f59e0b' : 'currentColor'} />
-              <span>{item.label}</span>
-              {item.badge !== undefined && (
-                <span className="tab-badge">{item.badge}</span>
-              )}
-            </button>
-          );
-        })}
-      </nav>
-
-      <div className="top-right-controls">
-        {/* Register Status Pill */}
+      {/* Shift Register Status Card */}
+      <div className="sidebar-status-card">
         <div 
           className={`register-status-pill ${isRegisterOpen ? 'open' : 'closed'}`}
           onClick={() => setShowShiftModal(true)}
@@ -220,10 +234,10 @@ export const Navbar = () => {
           <span>{isRegisterOpen ? 'REGISTER OPEN' : 'REGISTER CLOSED'}</span>
         </div>
 
-        {bookings.length > 0 && (
+        {/* Clear Register Button (Super Admin Only) */}
+        {isSuperAdmin && bookings.length > 0 && (
           <button 
-            className="btn-sub"
-            style={{ padding: '6px 12px', fontSize: '12px', color: '#fb7185', whiteSpace: 'nowrap' }}
+            className="sidebar-clear-btn"
             disabled={!isRegisterOpen}
             onClick={() => {
               if (!isRegisterOpen) {
@@ -239,129 +253,222 @@ export const Navbar = () => {
             }}
             title={isRegisterOpen ? "Clear all register entries" : "Shift Register is Closed (View-Only Mode)"}
           >
-            <Trash2 size={13} /> Clear Register
+            <Trash2 size={12} /> Clear Register
           </button>
         )}
+      </div>
 
-        {/* Profile Dropdown Menu */}
-        <div className="user-profile-wrapper" ref={profileMenuRef}>
-          <div 
-            className={`user-profile-trigger ${showProfileMenu ? 'active' : ''}`}
-            onClick={() => setShowProfileMenu((prev) => !prev)}
-            title={isSuperAdmin ? "Super Admin Account & Settings" : "Property Manager Account & Settings"}
-          >
-            <div className="user-avatar" style={{ background: isSuperAdmin ? '#d97706' : '#0f172a' }}>
-              {currentUser?.initials || (isSuperAdmin ? 'SA' : 'PM')}
-            </div>
-            <div className="user-profile-text">
-              <span className="user-profile-name" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <span>{currentUser?.name || (isSuperAdmin ? 'Super Admin' : 'Manager')}</span>
-                {isSuperAdmin && (
-                  <span style={{ fontSize: '9px', background: '#fef3c7', color: '#b45309', padding: '1px 5px', borderRadius: '4px', fontWeight: 800, textTransform: 'uppercase' }}>
-                    Super Admin
-                  </span>
-                )}
-              </span>
-              <span className="user-profile-firm">{currentUser?.firmName || 'Firm Dashboard'}</span>
-            </div>
-            <ChevronDown size={14} className={`dropdown-chevron ${showProfileMenu ? 'open' : ''}`} />
+      {/* Navigation Tabs List */}
+      <div className="sidebar-nav-content">
+        <div className="sidebar-section-title">Main Menu</div>
+        {navItems.map((item) => {
+          const Icon = item.icon;
+          const isActive = activeTab === item.id;
+          return (
+            <button
+              key={item.id}
+              className={`sidebar-tab-button ${isActive ? 'active' : ''}`}
+              onClick={() => setActiveTab(item.id)}
+            >
+              <div className="sidebar-tab-left">
+                <Icon size={17} color={isActive ? '#f59e0b' : 'currentColor'} />
+                <span>{item.label}</span>
+              </div>
+              {item.badge !== undefined && (
+                <span className="sidebar-tab-badge">{item.badge}</span>
+              )}
+            </button>
+          );
+        })}
+
+        {/* Global New Booking Action */}
+        <button 
+          type="button"
+          className="sidebar-action-button primary-booking"
+          style={{
+            marginTop: '12px',
+            marginBottom: '6px',
+            background: isRegisterOpen ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)' : '#334155',
+            color: '#ffffff',
+            fontWeight: 700,
+            border: 'none',
+            boxShadow: isRegisterOpen ? '0 4px 14px rgba(217, 119, 6, 0.3)' : 'none',
+            cursor: isRegisterOpen ? 'pointer' : 'not-allowed'
+          }}
+          onClick={() => openNewBookingModal()}
+          disabled={!isRegisterOpen}
+          title={isRegisterOpen ? 'Open New Stay Registration Popup' : 'Shift Register is Closed'}
+        >
+          <Plus size={16} />
+          <span>New Stay Booking</span>
+        </button>
+
+        {/* Quick Management Shortcuts */}
+        {(isSuperAdmin || isAdmin) && (
+          <>
+            <div className="sidebar-section-title" style={{ marginTop: '10px' }}>Management</div>
+            <button 
+              type="button"
+              className="sidebar-action-button emerald"
+              onClick={() => setShowCreateManagerModal(true)}
+            >
+              <UserPlus size={15} />
+              <span>Create Manager</span>
+            </button>
+            {isSuperAdmin && (
+              <button 
+                type="button"
+                className="sidebar-action-button"
+                onClick={() => setShowAddPropertyModal(true)}
+              >
+                <Plus size={15} color="#d97706" />
+                <span>Add Property</span>
+              </button>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* User Profile Footer & Menu */}
+      <div className="sidebar-footer" ref={profileMenuRef}>
+        <div 
+          className={`sidebar-user-trigger ${showProfileMenu ? 'active' : ''}`}
+          onClick={() => setShowProfileMenu((prev) => !prev)}
+          title="Click for account options"
+        >
+          <div className="sidebar-user-avatar" style={{ background: isSuperAdmin ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)' : 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)' }}>
+            {currentUser?.initials || (isSuperAdmin ? 'SA' : 'PM')}
           </div>
+          <div className="sidebar-user-text">
+            <div className="sidebar-user-name">
+              {currentUser?.name || (isSuperAdmin ? 'Super Admin' : 'Manager')}
+            </div>
+            <div className="sidebar-user-role">
+              {isSuperAdmin ? 'SUPER ADMIN' : (isAdmin ? 'ADMIN' : 'FRONT-DESK')}
+            </div>
+          </div>
+          <ChevronDown size={14} className={`dropdown-chevron ${showProfileMenu ? 'open' : ''}`} />
+        </div>
 
-          {showProfileMenu && (
-            <div className="profile-dropdown-menu">
-              <div className="profile-dropdown-header">
-                <div className="dropdown-avatar" style={{ background: isSuperAdmin ? '#d97706' : '#0f172a' }}>
-                  {currentUser?.initials || (isSuperAdmin ? 'SA' : 'PM')}
-                </div>
-                <div className="dropdown-user-details">
-                  <div className="dropdown-user-name">{currentUser?.name || (isSuperAdmin ? 'Super Admin' : 'Manager')}</div>
-                  <span className="dropdown-firm-tag" style={{
-                    background: isSuperAdmin ? '#fef3c7' : '#ecfdf5',
-                    color: isSuperAdmin ? '#b45309' : '#047857',
-                    fontWeight: 800
-                  }}>
-                    {isSuperAdmin ? 'Super Admin' : 'Property Manager'}
-                  </span>
-                </div>
+        <div 
+          onClick={() => logout()}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            fontSize: '11px',
+            color: '#94a3b8',
+            marginTop: '8px',
+            cursor: 'pointer',
+            paddingLeft: '6px',
+            transition: 'color 0.15s'
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.color = '#f87171'}
+          onMouseLeave={(e) => e.currentTarget.style.color = '#94a3b8'}
+          title="Sign out of PMS"
+        >
+          <LogOut size={12} />
+          <span>Log out</span>
+        </div>
+
+        {/* Profile Pop-Up Menu (Pops Upwards) */}
+        {showProfileMenu && (
+          <div className="sidebar-profile-dropdown">
+            <div className="profile-dropdown-header">
+              <div className="dropdown-avatar" style={{ background: isSuperAdmin ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)' : 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)' }}>
+                {currentUser?.initials || (isSuperAdmin ? 'SA' : 'PM')}
               </div>
-
-              <div className="dropdown-divider" />
-
-              <div className="dropdown-items-group">
-                {isSuperAdmin && (
-                  <button 
-                    className="dropdown-item"
-                    onClick={() => {
-                      setShowAddPropertyModal(true);
-                      setShowProfileMenu(false);
-                    }}
-                  >
-                    <Plus size={16} color="#047857" />
-                    <div className="dropdown-item-text">
-                      <span className="item-title" style={{ fontWeight: 700, color: '#047857' }}>+ Add New Property</span>
-                      <span className="item-sub">Create & switch to new property</span>
-                    </div>
-                  </button>
-                )}
-
-                <button 
-                  className="dropdown-item"
-                  onClick={() => {
-                    setActiveTab('settings');
-                    setShowProfileMenu(false);
-                  }}
-                >
-                  <Settings size={16} color="#f59e0b" />
-                  <div className="dropdown-item-text">
-                    <span className="item-title">Settings & Executive Analytics</span>
-                    <span className="item-sub">Reports, financial logs, & exports</span>
-                  </div>
-                </button>
-
-                <button 
-                  className="dropdown-item"
-                  onClick={() => {
-                    setActiveTab('settings');
-                    setShowProfileMenu(false);
-                  }}
-                >
-                  <BedDouble size={16} color="#0284c7" />
-                  <div className="dropdown-item-text">
-                    <span className="item-title">Add & Manage Rooms</span>
-                    <span className="item-sub">Configure property room inventory</span>
-                  </div>
-                </button>
-
-                <button 
-                  className="dropdown-item"
-                  onClick={() => {
-                    setShowShiftModal(true);
-                    setShowProfileMenu(false);
-                  }}
-                >
-                  <ShieldCheck size={16} color={isRegisterOpen ? '#10b981' : '#f43f5e'} />
-                  <div className="dropdown-item-text">
-                    <span className="item-title">Shift Register Status</span>
-                    <span className="item-sub">{isRegisterOpen ? 'Shift Register is OPEN' : 'Shift Register is CLOSED'}</span>
-                  </div>
-                </button>
+              <div className="dropdown-user-details">
+                <div className="dropdown-user-name">{currentUser?.name || (isSuperAdmin ? 'Super Admin' : 'Manager')}</div>
+                <div className="dropdown-user-email">{currentUser?.email || ''}</div>
+                <span className="dropdown-firm-tag" style={{
+                  background: isSuperAdmin ? '#fef3c7' : '#ecfdf5',
+                  color: isSuperAdmin ? '#b45309' : '#047857',
+                  fontWeight: 800
+                }}>
+                  {isSuperAdmin ? 'Super Admin' : (isAdmin ? 'Admin' : 'Front-Desk Manager')}
+                </span>
               </div>
+            </div>
 
-              <div className="dropdown-divider" />
+            <div className="dropdown-divider" />
+
+            <div className="dropdown-items-group">
+              {(isSuperAdmin || isAdmin) && (
+                <button 
+                  className="dropdown-item"
+                  onClick={() => {
+                    setShowCreateManagerModal(true);
+                    setShowProfileMenu(false);
+                  }}
+                >
+                  <UserPlus size={16} color="#047857" />
+                  <div className="dropdown-item-text">
+                    <span className="item-title" style={{ fontWeight: 700, color: '#047857' }}>
+                      {isSuperAdmin ? '+ Create Admin / Manager' : '+ Create Manager'}
+                    </span>
+                    <span className="item-sub">Add team credentials</span>
+                  </div>
+                </button>
+              )}
 
               <button 
-                className="dropdown-item danger"
+                className="dropdown-item"
                 onClick={() => {
-                  logout();
+                  setActiveTab('settings');
                   setShowProfileMenu(false);
                 }}
               >
-                <LogOut size={16} />
-                <span>Log Out Session</span>
+                <Settings size={16} color="#f59e0b" />
+                <div className="dropdown-item-text">
+                  <span className="item-title">Settings & Feature Controls</span>
+                  <span className="item-sub">Reports & configurations</span>
+                </div>
+              </button>
+
+              <button 
+                className="dropdown-item"
+                onClick={() => {
+                  setActiveTab('settings');
+                  setShowProfileMenu(false);
+                }}
+              >
+                <BedDouble size={16} color="#0284c7" />
+                <div className="dropdown-item-text">
+                  <span className="item-title">Add & Manage Rooms</span>
+                  <span className="item-sub">Configure inventory</span>
+                </div>
+              </button>
+
+              <button 
+                className="dropdown-item"
+                onClick={() => {
+                  setShowShiftModal(true);
+                  setShowProfileMenu(false);
+                }}
+              >
+                <ShieldCheck size={16} color={isRegisterOpen ? '#10b981' : '#f43f5e'} />
+                <div className="dropdown-item-text">
+                  <span className="item-title">Shift Register Status</span>
+                  <span className="item-sub">{isRegisterOpen ? 'Shift is OPEN' : 'Shift is CLOSED'}</span>
+                </div>
               </button>
             </div>
-          )}
-        </div>
+
+            <div className="dropdown-divider" />
+
+            <button 
+              className="dropdown-item danger"
+              onClick={() => {
+                logout();
+                setShowProfileMenu(false);
+              }}
+            >
+              <LogOut size={16} />
+              <span>Log Out Session</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Add Property Modal */}
@@ -432,6 +539,7 @@ export const Navbar = () => {
         </div>
       )}
 
+      {/* Rename Property Modal */}
       {editingProp && (
         <div className="modal-overlay" onClick={() => setEditingProp(null)}>
           <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '440px' }}>
@@ -474,6 +582,14 @@ export const Navbar = () => {
           </div>
         </div>
       )}
-    </header>
+
+      {/* Create Manager / Admin Modal */}
+      {showCreateManagerModal && (
+        <CreateManagerModal
+          isOpen={showCreateManagerModal}
+          onClose={() => setShowCreateManagerModal(false)}
+        />
+      )}
+    </aside>
   );
 };

@@ -1,6 +1,7 @@
 import React from 'react';
 import { HotelProvider, useHotel } from './context/HotelContext';
 import { Navbar } from './components/Navbar';
+import { TopHeader } from './components/TopHeader';
 import { Overview } from './components/Overview';
 import { Bookings } from './components/Bookings';
 import { Expenses } from './components/Expenses';
@@ -8,6 +9,7 @@ import { Bills } from './components/Bills';
 import { GuestIDCards } from './components/GuestIDCards';
 import { SettingsView } from './components/SettingsView';
 import { AuthView } from './components/AuthView';
+import { BookingModal } from './components/BookingModal';
 import { Lock } from 'lucide-react';
 
 const MainView = () => {
@@ -32,7 +34,17 @@ const MainView = () => {
 };
 
 const AppContent = () => {
-  const { isAuthenticated, isAuthLoading, isRegisterOpen } = useHotel();
+  const { 
+    isAuthenticated, 
+    isAuthLoading, 
+    isRegisterOpen,
+    isImpersonating,
+    currentUser,
+    exitImpersonation,
+    isBookingModalOpen,
+    closeBookingModal,
+    bookingModalInitialData
+  } = useHotel();
 
   if (isAuthLoading) {
     return (
@@ -80,17 +92,42 @@ const AppContent = () => {
   return (
     <div className="app-container">
       <Navbar />
-      {!isRegisterOpen && (
-        <div className="register-closed-banner">
-          <Lock size={18} />
-          <span>
-            <strong>Shift Register Closed</strong> — The portal is currently in <strong>View-Only Mode</strong>. Operations & actions (adding/editing/deleting bookings, expenses, statements, and room inventory) are disabled until the register shift is re-opened.
-          </span>
-        </div>
+      <div className="app-main-wrapper">
+        <TopHeader />
+        {isImpersonating && (
+          <div className="impersonation-top-banner">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Lock size={16} color="#fb923c" />
+              <span>Super Admin View Mode: Currently viewing dashboard as <strong>{currentUser?.name} ({currentUser?.role})</strong></span>
+            </div>
+            <button 
+              onClick={exitImpersonation}
+              className="exit-impersonation-btn"
+            >
+              Exit to Super Admin
+            </button>
+          </div>
+        )}
+        {!isRegisterOpen && (
+          <div className="register-closed-banner">
+            <Lock size={18} />
+            <span>
+              <strong>Shift Register Closed</strong> — The portal is currently in <strong>View-Only Mode</strong>. Operations & actions (adding/editing/deleting bookings, expenses, statements, and room inventory) are disabled until the register shift is re-opened.
+            </span>
+          </div>
+        )}
+        <main className="view-body">
+          <MainView />
+        </main>
+      </div>
+
+      {isBookingModalOpen && (
+        <BookingModal
+          isOpen={isBookingModalOpen}
+          onClose={closeBookingModal}
+          initialData={bookingModalInitialData}
+        />
       )}
-      <main className="view-body">
-        <MainView />
-      </main>
     </div>
   );
 };

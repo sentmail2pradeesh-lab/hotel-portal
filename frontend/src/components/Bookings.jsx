@@ -1,38 +1,43 @@
 import React, { useState } from 'react';
 import { useHotel } from '../context/HotelContext';
 import { formatCurrency, formatDate, confirmDouble, calculateNights, getAutoStayStatus } from '../utils/formatters';
-import { BookingModal } from './BookingModal';
 import { IDCardViewerModal } from './IDCardViewerModal';
 import { EarlyCheckoutModal } from './EarlyCheckoutModal';
 import { BillInvoiceModal } from './BillInvoiceModal';
+import { GenerateBillModal } from './GenerateBillModal';
+import { AllotRoomModal } from './AllotRoomModal';
+import { ImportBookingsModal } from './ImportBookingsModal';
 import { 
   Plus, Search, Trash2, Edit2, CheckCircle2, BedDouble, PhoneCall, 
-  Clock, LogIn, LogOut, FileText, UserCheck, Mail, EyeOff, Calendar, Filter
+  Clock, LogIn, LogOut, FileText, UserCheck, Mail, EyeOff, Calendar, Filter,
+  Users, ShieldCheck, AlertCircle, UploadCloud
 } from 'lucide-react';
-
-import { GenerateBillModal } from './GenerateBillModal';
 
 export const Bookings = () => {
   const { 
     bookings, 
+    roomsList,
     deleteBooking, 
     checkInBooking, 
     checkOutBooking, 
     earlyCheckOutBooking,
     addBill,
     currentUser,
-    isRegisterOpen 
+    isRegisterOpen,
+    openNewBookingModal,
+    isSuperAdmin,
+    isAdmin
   } = useHotel();
   
-  const [activeTab, setActiveTab] = useState('all'); // 'in-house' | 'upcoming' | 'completed' | 'hidden' | 'all'
+  const [activeTab, setActiveTab] = useState('in-house'); // 'in-house' | 'upcoming' | 'completed' | 'hidden' | 'all'
   const [searchTerm, setSearchTerm] = useState('');
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingBooking, setEditingBooking] = useState(null);
   const [selectedIDBooking, setSelectedIDBooking] = useState(null);
   const [earlyCheckoutBooking, setEarlyCheckoutBooking] = useState(null);
   const [selectedBillForInvoice, setSelectedBillForInvoice] = useState(null);
   const [generatingBillBooking, setGeneratingBillBooking] = useState(null);
-
+  const [allottingBooking, setAllottingBooking] = useState(null);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const todayStr = new Date().toISOString().split('T')[0];
 
   // Auto-calculated dynamic statuses for all bookings
   const bookingsWithAutoStatus = bookings.map(b => {
@@ -55,8 +60,7 @@ export const Bookings = () => {
   );
 
   const handleEdit = (booking) => {
-    setEditingBooking(booking);
-    setIsModalOpen(true);
+    openNewBookingModal(booking);
   };
 
   const handleDelete = (id, name) => {
@@ -98,13 +102,15 @@ export const Bookings = () => {
   const filterBySearch = (list) => {
     if (!searchTerm.trim()) return list;
     const term = searchTerm.toLowerCase();
+    const propCode = (currentUser?.propertyCode || '').toLowerCase();
     return list.filter(b => 
       (b.guestName && b.guestName.toLowerCase().includes(term)) ||
       (b.phone && b.phone.toLowerCase().includes(term)) ||
       (b.email && b.email.toLowerCase().includes(term)) ||
       (b.id && b.id.toLowerCase().includes(term)) ||
       (b.manualId && b.manualId.toLowerCase().includes(term)) ||
-      (b.room && String(b.room).toLowerCase().includes(term))
+      (b.room && String(b.room).toLowerCase().includes(term)) ||
+      (propCode && propCode.includes(term))
     );
   };
 
@@ -164,13 +170,35 @@ export const Bookings = () => {
               >
                 {/* Guest Info */}
                 <div style={{ flex: '1.2', minWidth: '220px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                     <h4 style={{ fontSize: '16px', fontWeight: 700, color: '#0f172a', margin: 0 }}>
                       {b.guestName}
                     </h4>
+                    <span className="badge-guest-count">
+                      <Users size={11} /> {b.guestCount || (b.adults || 1) + (b.children || 0)} Guests
+                    </span>
+                    {b.isGuaranteed || b.isPrepaid || b.bookingType === 'Online Pre-paid' ? (
+                      <span className="badge-guaranteed-shield" title="100% Guaranteed Pre-paid reservation. Room is protected from walk-ins.">
+                        <ShieldCheck size={11} /> GUARANTEED
+                      </span>
+                    ) : (!b.room ? (
+                      <span className="badge-tentative-clock" title="Tentative unconfirmed inquiry. Room to be allotted on arrival.">
+                        <Clock size={11} /> TENTATIVE
+                      </span>
+                    ) : null)}
                     {b.isHidden && (
                       <span style={{ fontSize: '10px', fontWeight: 800, padding: '2px 6px', borderRadius: '4px', background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a' }}>
                         HIDDEN BOOKING
+                      </span>
+                    )}
+                    {isInHouse && b.checkOut && b.checkOut.split('T')[0] === todayStr && (
+                      <span style={{ fontSize: '10px', fontWeight: 800, padding: '2px 6px', borderRadius: '4px', background: '#fffbeb', color: '#b45309', border: '1px solid #fde68a', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                        <Clock size={10} /> CHECKOUT DUE TODAY
+                      </span>
+                    )}
+                    {isCompleted && b.checkOut && b.checkOut.split('T')[0] < todayStr && b.status !== 'Checked-Out' && (
+                      <span style={{ fontSize: '10px', fontWeight: 800, padding: '2px 6px', borderRadius: '4px', background: '#f5f3ff', color: '#7c3aed', border: '1px solid #ddd6fe', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                        <CheckCircle2 size={10} /> AUTO-COMPLETED (EXPIRED)
                       </span>
                     )}
                   </div>
@@ -197,28 +225,92 @@ export const Bookings = () => {
                 </div>
 
                 {/* Middle Info: Duration & Room Suite */}
-                <div style={{ flex: '1', minWidth: '180px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '14px', fontWeight: 700, color: '#0f172a' }}>
-                    <BedDouble size={16} color="#0284c7" />
-                    <span>Room {b.room}</span>
+                <div style={{ flex: '1.2', minWidth: '220px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'nowrap' }}>
+                    {currentUser?.propertyCode && (
+                      <span style={{
+                        background: '#f1f5f9',
+                        color: '#334155',
+                        padding: '2px 7px',
+                        borderRadius: '5px',
+                        fontSize: '11px',
+                        fontWeight: 800,
+                        letterSpacing: '0.04em',
+                        border: '1px solid #cbd5e1',
+                        whiteSpace: 'nowrap'
+                      }}>
+                        {currentUser.propertyCode}
+                      </span>
+                    )}
+                    {(() => {
+                      const isRoomInInventory = b.room && roomsList && roomsList.includes(b.room);
+                      if (isRoomInInventory) {
+                        return (
+                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' }}>
+                            <span className="badge-room-assigned">
+                              <BedDouble size={13} /> Room {b.room}
+                            </span>
+                            {/* Room cannot be changed after checkin; only before arrival */}
+                            {isUpcoming && (
+                              <button 
+                                className="btn-change-room"
+                                onClick={() => setAllottingBooking(b)}
+                                title="Change or re-assign room suite prior to check-in"
+                              >
+                                Change
+                              </button>
+                            )}
+                          </div>
+                        );
+                      } else if (b.room && !isRoomInInventory) {
+                        return (
+                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' }}>
+                            <span className="badge-room-invalid" title="This room does not exist in property inventory">
+                              <AlertCircle size={12} /> Invalid ({b.room})
+                            </span>
+                            {isUpcoming && (
+                              <button 
+                                className="btn-change-room"
+                                onClick={() => setAllottingBooking(b)}
+                                title="Allot a valid physical room suite"
+                              >
+                                Allot
+                              </button>
+                            )}
+                          </div>
+                        );
+                      } else {
+                        return (
+                          <span className="badge-room-unassigned" title="Physical room will be assigned on arrival or check-in">
+                            <Clock size={12} /> Awaiting Allotment
+                          </span>
+                        );
+                      }
+                    })()}
                   </div>
-                  <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <Calendar size={13} color="var(--text-muted)" />
+                  <div style={{ fontSize: '12.5px', color: '#64748b', marginTop: '6px', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' }}>
+                    <Calendar size={13} color="#94a3b8" />
                     <span><strong>{nights} {nights === 1 ? 'Night' : 'Nights'}</strong> ({formatDate(b.checkIn)} - {formatDate(b.checkOut)})</span>
                   </div>
                 </div>
 
                 {/* Amount & Payment Info */}
-                <div style={{ minWidth: '140px' }}>
-                  <div style={{ fontSize: '15px', fontWeight: 800, color: '#d97706' }} className="mono">
+                <div style={{ minWidth: '120px', whiteSpace: 'nowrap' }}>
+                  <div style={{ fontSize: '15px', fontWeight: 800, color: '#0f172a' }} className="mono">
                     {formatCurrency(b.amountPaid)}
                   </div>
-                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px', fontWeight: 600 }}>
+                  <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px', fontWeight: 600 }}>
                     Paid via {b.paidVia || 'Cash'}
                   </div>
+                  {b.txnId && (
+                    <div style={{ fontSize: '10px', color: '#0284c7', fontFamily: 'var(--font-mono)', marginTop: '2px', fontWeight: 700 }} title={`Txn Reference: ${b.txnId}`}>
+                      Txn: {b.txnId}
+                    </div>
+                  )}
                 </div>
+
                 {/* Status Badge */}
-                <div style={{ minWidth: '110px' }}>
+                <div style={{ minWidth: '95px', whiteSpace: 'nowrap' }}>
                   {isUpcoming && (
                     <span className="status-pill upcoming">
                       <Clock size={11} /> UPCOMING
@@ -237,7 +329,7 @@ export const Bookings = () => {
                 </div>
 
                 {/* ID Document & Actions */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'flex-end', minWidth: '240px', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'flex-end', flexWrap: 'nowrap' }}>
                   {b.idCard ? (
                     <button 
                       className="id-status-badge has-id"
@@ -259,17 +351,29 @@ export const Bookings = () => {
 
                   {/* Primary Action Buttons */}
                   {isUpcoming && !b.isHidden && (
-                    <button
-                      className="btn-action-checkin"
-                      disabled={!isRegisterOpen}
-                      onClick={() => checkInBooking(b.id)}
-                      title="Check-In Guest"
-                    >
-                      <LogIn size={13} /> Check-In
-                    </button>
+                    (!b.room || (roomsList && !roomsList.includes(b.room))) ? (
+                      <button
+                        className="btn-action-allot"
+                        disabled={!isRegisterOpen}
+                        onClick={() => setAllottingBooking(b)}
+                        title="Allot Room Suite & Check-In"
+                      >
+                        <BedDouble size={13} /> Allot & Check-In
+                      </button>
+                    ) : (
+                      <button
+                        className="btn-action-checkin"
+                        disabled={!isRegisterOpen}
+                        onClick={() => checkInBooking(b.id)}
+                        title="Check-In Guest"
+                      >
+                        <LogIn size={13} /> Check-In
+                      </button>
+                    )
                   )}
 
-                  {(isInHouse || isUpcoming) && !b.isHidden && (
+                  {/* Check-Out Button: Strictly ONLY for In-House guests (NOT upcoming) */}
+                  {isInHouse && !b.isHidden && (
                     <button
                       className="btn-action-checkout"
                       disabled={!isRegisterOpen}
@@ -284,37 +388,36 @@ export const Bookings = () => {
                   {(isInHouse || isCompleted) && !b.isHidden && (
                     <button
                       className="btn-sub"
-                      style={{ padding: '5px 10px', fontSize: '11px', color: '#0284c7', borderColor: '#bae6fd', background: '#f0f9ff' }}
+                      style={{ padding: '6px 10px', fontSize: '11px', color: '#0284c7', borderColor: '#bae6fd', background: '#f0f9ff', whiteSpace: 'nowrap' }}
                       onClick={() => handleGenerateBillForBooking(b)}
                       title="Generate Official Guest Bill Receipt"
                     >
-                      <FileText size={13} /> Generate Bill
+                      <FileText size={13} /> Bill
                     </button>
                   )}
 
-                  {/* Edit Button: ONLY for In-House/Upcoming AND ONLY for Overall Admin */}
-                  {!isCompleted && currentUser?.role === 'Overall Admin' && (
-                    <button 
-                      className="icon-btn"
-                      disabled={!isRegisterOpen}
-                      onClick={() => handleEdit(b)}
-                      title="Edit Stay Details (Admin Only)"
-                    >
-                      <Edit2 size={15} />
-                    </button>
-                  )}
+                  {/* Edit & Delete Action Buttons (Super Admin / Admin) */}
+                  {!isCompleted && (isSuperAdmin || isAdmin) && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <button 
+                        className="icon-btn"
+                        disabled={!isRegisterOpen}
+                        onClick={() => handleEdit(b)}
+                        title="Edit Stay Details"
+                      >
+                        <Edit2 size={14} />
+                      </button>
 
-                  {/* Delete Button: ONLY for In-House/Upcoming AND ONLY for Overall Admin */}
-                  {!isCompleted && currentUser?.role === 'Overall Admin' && (
-                    <button 
-                      className="icon-btn"
-                      style={{ color: '#be123c' }}
-                      disabled={!isRegisterOpen}
-                      onClick={() => handleDelete(b.id, b.guestName)}
-                      title="Delete Stay Record (Admin Only)"
-                    >
-                      <Trash2 size={15} />
-                    </button>
+                      <button 
+                        className="icon-btn"
+                        style={{ color: '#e11d48' }}
+                        disabled={!isRegisterOpen}
+                        onClick={() => handleDelete(b.id, b.guestName)}
+                        title="Delete Stay Record"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>
@@ -332,33 +435,92 @@ export const Bookings = () => {
           <h1 className="page-heading">Property Booking & Stay History</h1>
           <p className="page-subheading">Manage upcoming arrivals, active in-house guests, and completed stay logs for this property.</p>
         </div>
-        <button 
-          className="btn-main"
-          disabled={!isRegisterOpen}
-          onClick={() => {
-            if (!isRegisterOpen) {
-              alert('Shift Register is Closed. Please open the shift register to add a new booking.');
-              return;
-            }
-            setEditingBooking(null);
-            setIsModalOpen(true);
-          }}
-          title={isRegisterOpen ? 'New Booking' : 'Shift Register is Closed (View-Only Mode)'}
-        >
-          <Plus size={17} /> New Booking
-        </button>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          {(isSuperAdmin || isAdmin) && (
+            <button 
+              className="btn-sub"
+              disabled={!isRegisterOpen}
+              onClick={() => {
+                if (!isRegisterOpen) {
+                  alert('Shift Register is Closed. Please open shift register to import external bookings.');
+                  return;
+                }
+                setIsImportModalOpen(true);
+              }}
+              style={{ padding: '9px 14px', fontSize: '13px', gap: '6px' }}
+              title={isRegisterOpen ? 'Import bookings from OYO or CSV file' : 'Shift Register is Closed (View-Only Mode)'}
+            >
+              <UploadCloud size={16} color="#0284c7" /> Import OYO / CSV
+            </button>
+          )}
+          <button 
+            className="btn-main"
+            disabled={!isRegisterOpen}
+            onClick={() => openNewBookingModal()}
+            title={isRegisterOpen ? 'New Booking' : 'Shift Register is Closed (View-Only Mode)'}
+          >
+            <Plus size={17} /> New Booking
+          </button>
+        </div>
+      </div>
+
+      {/* Executive Metric Cards */}
+      <div className="metrics-row" style={{ gridTemplateColumns: 'repeat(3, 1fr)', marginBottom: '18px' }}>
+        <div className="metric-card">
+          <div className="metric-card-header">
+            <span className="metric-card-label">Active In-House Stays</span>
+            <div className="metric-icon-badge emerald">
+              <LogIn size={15} />
+            </div>
+          </div>
+          <div className="metric-card-value-row">
+            <span className="metric-card-value" style={{ color: '#047857' }}>{inHouseCount}</span>
+            <span className="metric-tag-sub">Suites</span>
+          </div>
+          <div className="metric-card-footer">
+            <span className="metric-status-dot emerald" />
+            <span>Guests actively lodged on premises</span>
+          </div>
+        </div>
+
+        <div className="metric-card">
+          <div className="metric-card-header">
+            <span className="metric-card-label">Upcoming Arrivals</span>
+            <div className="metric-icon-badge blue">
+              <Clock size={15} />
+            </div>
+          </div>
+          <div className="metric-card-value-row">
+            <span className="metric-card-value">{upcomingCount}</span>
+            <span className="metric-tag-sub">Bookings</span>
+          </div>
+          <div className="metric-card-footer">
+            <span className="metric-status-dot blue" />
+            <span>Confirmed arrivals & reservations</span>
+          </div>
+        </div>
+
+        <div className="metric-card">
+          <div className="metric-card-header">
+            <span className="metric-card-label">Total Reservations</span>
+            <div className="metric-icon-badge amber">
+              <UserCheck size={15} />
+            </div>
+          </div>
+          <div className="metric-card-value-row">
+            <span className="metric-card-value">{allCount}</span>
+            <span className="metric-tag-sub">Records</span>
+          </div>
+          <div className="metric-card-footer">
+            <span className="metric-status-dot amber" />
+            <span>All active property stay records</span>
+          </div>
+        </div>
       </div>
 
       {/* Filter Tabs */}
       <div style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
         <div className="booking-tabs-container">
-          <button 
-            className={`booking-tab-btn ${activeTab === 'all' ? 'active' : ''}`}
-            onClick={() => setActiveTab('all')}
-          >
-            <UserCheck size={15} /> All Bookings
-            <span className="tab-badge-count">{allCount}</span>
-          </button>
           <button 
             className={`booking-tab-btn in-house ${activeTab === 'in-house' ? 'active' : ''}`}
             onClick={() => setActiveTab('in-house')}
@@ -390,6 +552,13 @@ export const Bookings = () => {
               <span className="tab-badge-count" style={{ background: '#fef3c7', color: '#b45309' }}>{hiddenCount}</span>
             </button>
           )}
+          <button 
+            className={`booking-tab-btn ${activeTab === 'all' ? 'active' : ''}`}
+            onClick={() => setActiveTab('all')}
+          >
+            <UserCheck size={15} /> All Bookings
+            <span className="tab-badge-count">{allCount}</span>
+          </button>
         </div>
       </div>
 
@@ -415,13 +584,13 @@ export const Bookings = () => {
             value={activeTab}
             onChange={(e) => setActiveTab(e.target.value)}
           >
-            <option value="all">All Statuses ({allCount})</option>
             <option value="in-house">In-House Stays ({inHouseCount})</option>
             <option value="upcoming">Upcoming Reservations ({upcomingCount})</option>
             <option value="completed">Completed History ({completedCount})</option>
             {hiddenCount > 0 && currentUser?.role === 'Overall Admin' && (
               <option value="hidden">Hidden Bookings ({hiddenCount})</option>
             )}
+            <option value="all">All Bookings ({allCount})</option>
           </select>
         </div>
       </div>
@@ -436,25 +605,35 @@ export const Bookings = () => {
         ) : (
           <>
             {(activeTab === 'all' || activeTab === 'in-house') && renderBookingGroup('Active In-House Stays', inHouseStays)}
+            {activeTab === 'in-house' && inHouseStays.length === 0 && (
+              <div className="card-container" style={{ textAlign: 'center', padding: '36px 20px', color: 'var(--text-secondary)' }}>
+                <LogIn size={36} color="#94a3b8" style={{ marginBottom: '8px' }} />
+                <p style={{ fontWeight: 600, fontSize: '14px', color: 'var(--text-main)', margin: '0 0 4px 0' }}>No In-House Guests Currently</p>
+                <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>Check in guests from Upcoming Stays or click New Booking to register a walk-in.</p>
+              </div>
+            )}
             {(activeTab === 'all' || activeTab === 'upcoming') && renderBookingGroup('Upcoming Stays & Reservations', upcomingStays)}
+            {activeTab === 'upcoming' && upcomingStays.length === 0 && (
+              <div className="card-container" style={{ textAlign: 'center', padding: '36px 20px', color: 'var(--text-secondary)' }}>
+                <Clock size={36} color="#94a3b8" style={{ marginBottom: '8px' }} />
+                <p style={{ fontWeight: 600, fontSize: '14px', color: 'var(--text-main)', margin: '0 0 4px 0' }}>No Upcoming Reservations</p>
+                <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>Future bookings will appear here.</p>
+              </div>
+            )}
             {(activeTab === 'all' || activeTab === 'completed') && renderBookingGroup('Completed Stay History', completedStays)}
+            {activeTab === 'completed' && completedStays.length === 0 && (
+              <div className="card-container" style={{ textAlign: 'center', padding: '36px 20px', color: 'var(--text-secondary)' }}>
+                <LogOut size={36} color="#94a3b8" style={{ marginBottom: '8px' }} />
+                <p style={{ fontWeight: 600, fontSize: '14px', color: 'var(--text-main)', margin: '0 0 4px 0' }}>No Completed Stays Yet</p>
+                <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>Checked-out guests will be listed in this history log.</p>
+              </div>
+            )}
             {(activeTab === 'all' || activeTab === 'hidden') && currentUser?.role === 'Overall Admin' && renderBookingGroup('Hidden Bookings / Early Released Slots', hiddenBookings)}
           </>
         )}
       </div>
 
       {/* Modals */}
-      {isModalOpen && (
-        <BookingModal
-          isOpen={isModalOpen}
-          onClose={() => {
-            setIsModalOpen(false);
-            setEditingBooking(null);
-          }}
-          initialData={editingBooking}
-        />
-      )}
-
       {selectedIDBooking && (
         <IDCardViewerModal
           booking={selectedIDBooking}
@@ -492,6 +671,20 @@ export const Bookings = () => {
         <BillInvoiceModal
           bill={selectedBillForInvoice}
           onClose={() => setSelectedBillForInvoice(null)}
+        />
+      )}
+
+      {allottingBooking && (
+        <AllotRoomModal
+          booking={allottingBooking}
+          isOpen={Boolean(allottingBooking)}
+          onClose={() => setAllottingBooking(null)}
+        />
+      )}
+
+      {isImportModalOpen && (
+        <ImportBookingsModal
+          onClose={() => setIsImportModalOpen(false)}
         />
       )}
     </div>

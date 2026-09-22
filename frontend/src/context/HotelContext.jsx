@@ -25,10 +25,34 @@ export const HotelProvider = ({ children }) => {
 
   // Property Operational Data States
   const [roomsList, setRoomsList] = useState(ALL_PROPERTY_ROOMS);
+  const [roomsDetails, setRoomsDetails] = useState([]);
+  const [featureToggles, setFeatureToggles] = useState({
+    Admin: { bookings: true, expenses: true, bills: true, guest_ids: true, reports: true, edit_rooms: true, shift_register: true },
+    Manager: { bookings: true, guest_ids: true, expenses: false, bills: false, reports: false, edit_rooms: false, shift_register: false }
+  });
+  const [isImpersonating, setIsImpersonating] = useState(() => {
+    return typeof window !== 'undefined' && Boolean(localStorage.getItem('super_admin_original_token'));
+  });
   const [bookings, setBookings] = useState([]);
   const [expenses, setExpenses] = useState([]);
   const [bills, setBills] = useState([]);
   const [isRegisterOpen, setIsRegisterOpen] = useState(true);
+  const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
+  const [bookingModalInitialData, setBookingModalInitialData] = useState(null);
+
+  const openNewBookingModal = useCallback((initialData = null) => {
+    if (!isRegisterOpen) {
+      alert('Shift Register is Closed. Please open the shift register to add a new booking.');
+      return;
+    }
+    setBookingModalInitialData(initialData);
+    setIsBookingModalOpen(true);
+  }, [isRegisterOpen]);
+
+  const closeBookingModal = useCallback(() => {
+    setIsBookingModalOpen(false);
+    setBookingModalInitialData(null);
+  }, []);
 
   // Derived current active property
   const activeProperty = useMemo(() => {
@@ -39,21 +63,34 @@ export const HotelProvider = ({ children }) => {
   const currentUser = useMemo(() => {
     if (!manager) return null;
     const isSuper = manager.role === 'Overall Admin' || manager.role === 'Super Admin';
-    const computedInitials = manager.name
-      ? manager.name.trim().split(/\s+/).map(n => n[0]).join('').substring(0, 2).toUpperCase()
-      : (isSuper ? 'SA' : 'PM');
+    const isAdmin = manager.role === 'Admin';
+    let computedInitials = 'PM';
+    if (isSuper) {
+      computedInitials = 'SA';
+    } else if (isAdmin) {
+      computedInitials = 'AD';
+    } else if (manager.name) {
+      computedInitials = manager.name.trim().split(/\s+/).map(n => n[0]).join('').substring(0, 2).toUpperCase();
+    }
+
+    const effectiveRole = isSuper ? 'Super Admin' : (isAdmin ? 'Admin' : 'Manager');
 
     return {
       id: manager.id,
       name: manager.name,
       email: manager.email,
-      role: manager.role || (isSuper ? 'Super Admin' : 'Property Manager'),
+      role: effectiveRole,
       firmId: activeProperty?.firmId || '',
+      propertyCode: activeProperty?.propertyCode || '',
       firmName: activeProperty?.firmName || (propertiesList.length === 0 ? 'Initial Setup Required' : 'Select Property'),
       firmLogo: activeProperty?.firmLogo || null,
       firmAddress: activeProperty?.address || '',
       firmPhone: activeProperty?.phone || '',
       firmEmail: activeProperty?.email || '',
+      ownerName: activeProperty?.ownerName || '',
+      ownerPhone: activeProperty?.ownerPhone || '',
+      tnebNumber: activeProperty?.tnebNumber || '',
+      managerId: activeProperty?.managerId || '',
       assignedManagerName: activeProperty?.name || '',
       eSignature: activeProperty?.eSignature || null,
       sessionTimeoutMinutes: activeProperty?.sessionTimeoutMinutes || 15,
@@ -108,6 +145,9 @@ export const HotelProvider = ({ children }) => {
         if (Array.isArray(data.rooms) && data.rooms.length > 0) {
           setRoomsList(data.rooms);
         }
+        if (Array.isArray(data.roomDetails)) {
+          setRoomsDetails(data.roomDetails);
+        }
         if (Array.isArray(data.bookings)) {
           setBookings(data.bookings);
         }
@@ -119,6 +159,9 @@ export const HotelProvider = ({ children }) => {
         }
         if (data.registerStatus && typeof data.registerStatus.isOpen === 'boolean') {
           setIsRegisterOpen(data.registerStatus.isOpen);
+        }
+        if (data.featureToggles) {
+          setFeatureToggles(data.featureToggles);
         }
         setIsServerConnected(true);
       }
@@ -139,12 +182,24 @@ export const HotelProvider = ({ children }) => {
           setIsAdminRegistered(sysStatus?.isAdminRegistered ?? true);
         }
 
+        if (!sysStatus?.isAdminRegistered) {
+          localStorage.removeItem('frontdesk_jwt_token');
+          localStorage.removeItem('frontdesk_active_firm_id');
+          if (isMounted) {
+            setManager(null);
+            setPropertiesList([]);
+            setActivePropertyIdState('');
+          }
+          return;
+        }
+
         const mgrMe = await api.getManagerMe();
         if (mgrMe && isMounted) {
           setManager({
             id: mgrMe.id,
             name: mgrMe.name,
             email: mgrMe.email,
+            phone: mgrMe.phone || '',
             role: mgrMe.role
           });
           setPropertiesList(mgrMe.properties || []);
@@ -255,9 +310,9 @@ export const HotelProvider = ({ children }) => {
   const isAuthenticated = Boolean(manager);
 
   // Auth Action: Register Overall Admin (One-Time Setup)
-  const adminRegister = async (name, email, password) => {
+  const adminRegister = async (name, phone, email, password) => {
     try {
-      const res = await api.adminRegister(name, email, password);
+      const res = await api.adminRegister(name, phone, email, password);
       if (res.manager) {
         setManager(res.manager);
         setPropertiesList([]);
@@ -307,9 +362,12 @@ export const HotelProvider = ({ children }) => {
         const props = res.manager.properties || [];
         setPropertiesList(props);
         if (props.length > 0) {
-          const firstPropId = props[0].firmId;
-          setActivePropertyIdState(firstPropId);
-          localStorage.setItem('frontdesk_active_firm_id', firstPropId);
+          const savedPropId = localStorage.getItem('frontdesk_active_firm_id');
+          const targetPropId = savedPropId && props.some(p => p.firmId === savedPropId)
+            ? savedPropId
+            : props[0].firmId;
+          setActivePropertyIdState(targetPropId);
+          localStorage.setItem('frontdesk_active_firm_id', targetPropId);
         }
         setActiveTab('overview', true);
         setAuthNotice('');
@@ -321,10 +379,16 @@ export const HotelProvider = ({ children }) => {
     return { success: false, message: 'Invalid credentials.' };
   };
 
-  // Add New Property under Manager
-  const addProperty = async ({ firmName, firmLogo, eSignature, address, phone, email }) => {
+  // Add New Property under Manager (Super Admin Only)
+  const addProperty = async (propData) => {
+    if (!isSuperAdmin) {
+      return { success: false, message: 'Only Super Admin is authorized to add properties. Admin accounts cannot add properties.' };
+    }
     try {
-      const newProp = await api.createProperty({ firmName, firmLogo, eSignature, address, phone, email });
+      const payload = typeof propData === 'object' && propData !== null
+        ? propData
+        : { firmName: arguments[0] };
+      const newProp = await api.createProperty(payload);
       if (newProp && newProp.firmId) {
         setPropertiesList((prev) => [...prev, newProp]);
         switchProperty(newProp.firmId);
@@ -336,17 +400,42 @@ export const HotelProvider = ({ children }) => {
     return { success: false, message: 'Failed to create property.' };
   };
 
-  // Direct Manager Creation by Super Admin
-  const createManager = async (name, email, propertyId, tempPassword) => {
+  // Delete Property (Super Admin Only)
+  const deleteProperty = async (firmId) => {
+    if (!isSuperAdmin) {
+      return { success: false, message: 'Only Super Admin is authorized to delete properties.' };
+    }
     try {
-      const res = await api.createManager(name, email, propertyId, tempPassword);
+      const res = await api.deleteProperty(firmId);
+      const remainingProps = propertiesList.filter((p) => p.firmId !== firmId);
+      setPropertiesList(remainingProps);
+
+      // If deleted property was the currently active property, switch to another or clear
+      if (activePropertyId === firmId) {
+        if (remainingProps.length > 0) {
+          switchProperty(remainingProps[0].firmId);
+        } else {
+          setActivePropertyId('');
+          localStorage.removeItem('frontdesk_active_firm_id');
+        }
+      }
+      return { success: true, message: res.message || 'Property deleted successfully.' };
+    } catch (err) {
+      return { success: false, message: err.message || 'Failed to delete property.' };
+    }
+  };
+
+  // Direct User Creation by Super Admin (Admin/Manager) or Admin (Manager)
+  const createManager = async (name, email, propertyId, tempPassword, role = "Manager") => {
+    try {
+      const res = await api.createManager(name, email, propertyId, tempPassword, role);
       const mgrMe = await api.getManagerMe();
       if (mgrMe?.properties) {
         setPropertiesList(mgrMe.properties);
       }
       return { success: true, message: res.message, manager: res.manager };
     } catch (err) {
-      return { success: false, message: err.message || 'Failed to create manager.' };
+      return { success: false, message: err.message || 'Failed to create user.' };
     }
   };
 
@@ -428,7 +517,7 @@ export const HotelProvider = ({ children }) => {
 
 
   // Rooms Management Actions
-  const addCustomRoom = async (roomNum) => {
+  const addCustomRoom = async (roomNum, roomType = "Standard", isStaffRoom = false) => {
     if (!checkRegisterOpen()) return { success: false, message: 'Shift Register is Closed.' };
     const cleanNum = roomNum.trim();
     if (!cleanNum) return { success: false, message: 'Room identifier is required.' };
@@ -436,11 +525,26 @@ export const HotelProvider = ({ children }) => {
       return { success: false, message: `Room ${cleanNum} already exists in property inventory.` };
     }
     try {
-      await api.addRoom(cleanNum);
+      await api.addRoom(cleanNum, roomType, isStaffRoom);
       await refreshPropertyData();
       return { success: true };
     } catch (err) {
       return { success: false, message: err.message };
+    }
+  };
+
+  const editCustomRoom = async (oldRoomNum, newRoomNum, isStaffRoom = false, roomType = "Standard") => {
+    if (!checkRegisterOpen()) return { success: false, message: 'Shift Register is Closed.' };
+    try {
+      await api.updateRoom(oldRoomNum, {
+        roomNumber: newRoomNum.trim(),
+        isStaffRoom,
+        roomType
+      });
+      await refreshPropertyData();
+      return { success: true };
+    } catch (err) {
+      return { success: false, message: err.message || 'Failed to update room.' };
     }
   };
 
@@ -454,14 +558,87 @@ export const HotelProvider = ({ children }) => {
     }
   };
 
+  // Feature Toggles and RBAC permissions
+  const isSuperAdmin = currentUser?.role === 'Super Admin' || currentUser?.role === 'Overall Admin';
+  const isAdmin = currentUser?.role === 'Admin';
+  const isManager = currentUser?.role === 'Manager' || currentUser?.role === 'Property Manager';
+
+  const canAccess = useCallback((featureName) => {
+    if (!currentUser) return false;
+    if (currentUser.role === 'Super Admin' || currentUser.role === 'Overall Admin') return true;
+    const roleToggles = featureToggles[currentUser.role] || {};
+    if (typeof roleToggles[featureName] === 'boolean') {
+      return roleToggles[featureName];
+    }
+    if (currentUser.role === 'Admin') return true;
+    return ['bookings', 'guest_ids'].includes(featureName);
+  }, [currentUser, featureToggles]);
+
+  const updateRoleFeatureToggles = async (role, toggles) => {
+    try {
+      await api.updateFeatureToggles(role, toggles);
+      setFeatureToggles((prev) => ({ ...prev, [role]: toggles }));
+      return { success: true };
+    } catch (err) {
+      return { success: false, message: err.message || 'Failed to update feature toggles.' };
+    }
+  };
+
+  const impersonateUser = async (userId) => {
+    try {
+      const currentToken = localStorage.getItem('frontdesk_jwt_token');
+      localStorage.setItem('super_admin_original_token', currentToken);
+      const res = await api.impersonateUser(userId);
+      if (res.token) {
+        localStorage.setItem('frontdesk_jwt_token', res.token);
+        setIsImpersonating(true);
+        window.location.reload();
+      }
+    } catch (err) {
+      alert(err.message || 'Failed to switch view.');
+    }
+  };
+
+  const exitImpersonation = () => {
+    const originalToken = localStorage.getItem('super_admin_original_token');
+    if (originalToken) {
+      localStorage.setItem('frontdesk_jwt_token', originalToken);
+      localStorage.removeItem('super_admin_original_token');
+      setIsImpersonating(false);
+      window.location.reload();
+    }
+  };
+
   // Bookings Data Actions
   const addBooking = async (newBooking) => {
     if (!checkRegisterOpen()) return;
     try {
       const created = await api.createBooking(newBooking);
       setBookings((prev) => [created, ...prev]);
+      refreshPropertyData();
+      return created;
     } catch (err) {
       console.error('Failed to add booking:', err);
+      alert(err.message || 'Failed to add booking.');
+      throw err;
+    }
+  };
+
+  const bulkImportBookings = async (bookingsList) => {
+    if (!checkRegisterOpen()) return;
+    try {
+      const res = await api.bulkImportBookings(bookingsList);
+      if (res && res.success) {
+        if (res.importedBookings && res.importedBookings.length > 0) {
+          setBookings((prev) => [...res.importedBookings, ...prev]);
+        }
+        refreshPropertyData();
+      }
+      return res;
+    } catch (err) {
+      console.error('Failed to bulk import bookings:', err);
+      alert(err.message || 'Failed to import external bookings.');
+      throw err;
     }
   };
 
@@ -484,6 +661,19 @@ export const HotelProvider = ({ children }) => {
     } catch (err) {
       console.error('Failed to check in booking:', err);
       alert(err.message || 'Failed to check in booking.');
+    }
+  };
+
+  const allotRoom = async (bookingId, room, status = null, isGuaranteed = true) => {
+    if (!checkRegisterOpen()) return;
+    try {
+      const updated = await api.allotRoom(bookingId, room, status, isGuaranteed);
+      setBookings((prev) => prev.map((b) => (b.id === bookingId ? updated : b)));
+      return updated;
+    } catch (err) {
+      console.error('Failed to allot room:', err);
+      alert(err.message || 'Failed to allot room.');
+      throw err;
     }
   };
 
@@ -522,9 +712,12 @@ export const HotelProvider = ({ children }) => {
     try {
       const updated = await api.updateBooking(id, updatedFields);
       setBookings((prev) => prev.map((b) => (b.id === id ? updated : b)));
+      refreshPropertyData();
+      return updated;
     } catch (err) {
       console.error('Failed to update booking:', err);
       alert(err.message || 'Failed to update booking.');
+      throw err;
     }
   };
 
@@ -658,6 +851,7 @@ export const HotelProvider = ({ children }) => {
         activePropertyId,
         switchProperty,
         addProperty,
+        deleteProperty,
         currentUser,
         isAuthenticated,
         isAuthLoading,
@@ -680,16 +874,29 @@ export const HotelProvider = ({ children }) => {
         isRegisterOpen,
         toggleRegisterStatus,
         roomsList,
+        roomsDetails,
         addCustomRoom,
+        editCustomRoom,
         removeCustomRoom,
+        featureToggles,
+        canAccess,
+        updateRoleFeatureToggles,
+        isSuperAdmin,
+        isAdmin,
+        isManager,
+        isImpersonating,
+        impersonateUser,
+        exitImpersonation,
         bookings,
         standardBookings,
         hiddenBookingsList,
         expenses,
         bills,
         addBooking,
+        bulkImportBookings,
         confirmBooking,
         checkInBooking,
+        allotRoom,
         checkOutBooking,
         earlyCheckOutBooking,
         updateBooking,
@@ -707,7 +914,12 @@ export const HotelProvider = ({ children }) => {
         netRevenue,
         totalBookingsCount,
         guestIDCards,
-        refreshPropertyData
+        refreshPropertyData,
+        isBookingModalOpen,
+        setIsBookingModalOpen,
+        bookingModalInitialData,
+        openNewBookingModal,
+        closeBookingModal
       }}
     >
       {children}

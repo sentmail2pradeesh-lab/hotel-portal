@@ -1,23 +1,61 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useHotel } from '../context/HotelContext';
-import { Building2, Upload, X, Plus, Info, MapPin, Phone, Mail } from 'lucide-react';
+import { api } from '../services/api';
+import { 
+  Building2, 
+  Upload, 
+  X, 
+  Plus, 
+  Info, 
+  MapPin, 
+  Phone, 
+  Mail, 
+  Hash, 
+  User, 
+  UserCheck, 
+  Zap 
+} from 'lucide-react';
 
 export const AddPropertyModal = ({ isOpen, onClose }) => {
-  const { addProperty } = useHotel();
+  const { addProperty, isSuperAdmin } = useHotel();
 
+  const [propertyCode, setPropertyCode] = useState('');
   const [firmName, setFirmName] = useState('');
+  const [managerId, setManagerId] = useState('');
+  const [ownerName, setOwnerName] = useState('');
+  const [ownerPhone, setOwnerPhone] = useState('');
+  const [tnebNumber, setTnebNumber] = useState('');
   const [address, setAddress] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [firmLogo, setFirmLogo] = useState(null);
+  const [managersList, setManagersList] = useState([]);
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  if (!isOpen) return null;
+  useEffect(() => {
+    if (isOpen) {
+      api.getManagers()
+        .then((data) => {
+          if (Array.isArray(data)) {
+            setManagersList(data);
+          }
+        })
+        .catch((err) => {
+          console.warn('Could not load managers for dropdown:', err);
+        });
+    }
+  }, [isOpen]);
+
+  if (!isOpen || !isSuperAdmin) return null;
 
   const handleLogoUpload = (e) => {
     const file = e.target.files[0];
     if (file) {
+      if (file.size > 2 * 1024 * 1024) {
+        setError('Logo file size must be less than 2MB.');
+        return;
+      }
       const reader = new FileReader();
       reader.onloadend = () => {
         setFirmLogo(reader.result);
@@ -28,18 +66,27 @@ export const AddPropertyModal = ({ isOpen, onClose }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!propertyCode.trim()) {
+      setError('Please enter a unique property code (e.g. PR001).');
+      return;
+    }
     if (!firmName.trim()) {
-      setError('Please enter the property name.');
+      setError('Please enter the property or hotel name.');
       return;
     }
     setError('');
     setIsSubmitting(true);
     try {
       const res = await addProperty({
+        propertyCode: propertyCode.trim().toUpperCase(),
         firmName: firmName.trim(),
-        address: address.trim(),
-        phone: phone.trim(),
-        email: email.trim(),
+        managerId: managerId || null,
+        ownerName: ownerName.trim() || null,
+        ownerPhone: ownerPhone.trim() || null,
+        tnebNumber: tnebNumber.trim() || null,
+        address: address.trim() || null,
+        phone: phone.trim() || null,
+        email: email.trim() || null,
         firmLogo,
         eSignature: null
       });
@@ -55,9 +102,11 @@ export const AddPropertyModal = ({ isOpen, onClose }) => {
     }
   };
 
+  if (!isOpen || !isSuperAdmin) return null;
+
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '520px' }}>
+      <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '580px', maxHeight: '90vh', overflowY: 'auto' }}>
         
         {/* Modal Header */}
         <div className="modal-header-row">
@@ -76,7 +125,7 @@ export const AddPropertyModal = ({ isOpen, onClose }) => {
             <div>
               <h3 className="modal-heading">Add New Property</h3>
               <p style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                Create & configure a separate property in your Super Admin portfolio.
+                Configure a new hotel property with manager, ownership, and TNEB details.
               </p>
             </div>
           </div>
@@ -87,27 +136,124 @@ export const AddPropertyModal = ({ isOpen, onClose }) => {
 
         {error && <div className="auth-error-banner" style={{ marginTop: '12px' }}>{error}</div>}
 
-        <form onSubmit={handleSubmit} style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <form onSubmit={handleSubmit} style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
           
-          {/* Property Name */}
+          {/* Row 1: Property Code & Property Name */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '12px' }}>
+            <div className="form-group">
+              <label className="form-label" style={{ fontWeight: 700 }}>
+                Property Code <span style={{ color: '#be123c' }}>*</span>
+              </label>
+              <div className="input-icon-wrapper">
+                <Hash size={16} className="input-icon" />
+                <input
+                  type="text"
+                  className="form-input icon-padded"
+                  placeholder="e.g. PR001"
+                  value={propertyCode}
+                  onChange={(e) => setPropertyCode(e.target.value.toUpperCase())}
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label" style={{ fontWeight: 700 }}>
+                Property / Hotel Name <span style={{ color: '#be123c' }}>*</span>
+              </label>
+              <div className="input-icon-wrapper">
+                <Building2 size={16} className="input-icon" />
+                <input
+                  type="text"
+                  className="form-input icon-padded"
+                  placeholder="e.g. Royal Crown Hotel & Suites"
+                  value={firmName}
+                  onChange={(e) => setFirmName(e.target.value)}
+                  required
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Row 2: Assigned Property Manager Dropdown */}
           <div className="form-group">
             <label className="form-label" style={{ fontWeight: 700 }}>
-              Property / Hotel Name <span style={{ color: '#be123c' }}>*</span>
+              Assigned Property Manager
             </label>
             <div className="input-icon-wrapper">
-              <Building2 size={16} className="input-icon" />
+              <User size={16} className="input-icon" />
+              <select
+                className="form-input icon-padded"
+                value={managerId}
+                onChange={(e) => setManagerId(e.target.value)}
+                style={{ appearance: 'auto', background: '#ffffff', cursor: 'pointer' }}
+              >
+                <option value="">Unassigned / Default (Admin Managed)</option>
+                {managersList.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name} ({m.role || 'Manager'}) — {m.email}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+              Select a manager created by Super Admin/Admin, or leave unassigned to manage directly.
+            </div>
+          </div>
+
+          {/* Row 3: Owner Name & Owner Phone Number */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <div className="form-group">
+              <label className="form-label" style={{ fontWeight: 700 }}>
+                Property Owner Name
+              </label>
+              <div className="input-icon-wrapper">
+                <UserCheck size={16} className="input-icon" />
+                <input
+                  type="text"
+                  className="form-input icon-padded"
+                  placeholder="e.g. Mr. Rajesh Sharma"
+                  value={ownerName}
+                  onChange={(e) => setOwnerName(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label" style={{ fontWeight: 700 }}>
+                Owner Number / Phone
+              </label>
+              <div className="input-icon-wrapper">
+                <Phone size={16} className="input-icon" />
+                <input
+                  type="tel"
+                  className="form-input icon-padded"
+                  placeholder="e.g. +91 98765 43210"
+                  value={ownerPhone}
+                  onChange={(e) => setOwnerPhone(e.target.value)}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Row 4: TNEB Account Number */}
+          <div className="form-group">
+            <label className="form-label" style={{ fontWeight: 700 }}>
+              TNEB Account Number
+            </label>
+            <div className="input-icon-wrapper">
+              <Zap size={16} className="input-icon" color="#d97706" />
               <input
                 type="text"
                 className="form-input icon-padded"
-                placeholder="e.g. Royal Crown Hotel & Suites"
-                value={firmName}
-                onChange={(e) => setFirmName(e.target.value)}
-                required
+                placeholder="e.g. 04-123-456-7890 (EB Consumer No)"
+                value={tnebNumber}
+                onChange={(e) => setTnebNumber(e.target.value)}
               />
             </div>
           </div>
 
-          {/* Property Address */}
+          {/* Row 5: Property Location / Address */}
           <div className="form-group">
             <label className="form-label" style={{ fontWeight: 700 }}>
               Property Location / Address
@@ -124,11 +270,11 @@ export const AddPropertyModal = ({ isOpen, onClose }) => {
             </div>
           </div>
 
-          {/* Contact Phone & Email Grid */}
+          {/* Row 6: Contact Phone & Email Grid */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
             <div className="form-group">
               <label className="form-label" style={{ fontWeight: 700 }}>
-                Contact Phone
+                Front Desk Phone
               </label>
               <div className="input-icon-wrapper">
                 <Phone size={16} className="input-icon" />
@@ -144,7 +290,7 @@ export const AddPropertyModal = ({ isOpen, onClose }) => {
 
             <div className="form-group">
               <label className="form-label" style={{ fontWeight: 700 }}>
-                Contact Email
+                Front Desk Email
               </label>
               <div className="input-icon-wrapper">
                 <Mail size={16} className="input-icon" />
@@ -159,7 +305,7 @@ export const AddPropertyModal = ({ isOpen, onClose }) => {
             </div>
           </div>
 
-          {/* Property Logo */}
+          {/* Row 7: Property Header Logo */}
           <div className="form-group">
             <label className="form-label" style={{ fontWeight: 700 }}>
               Property Header Logo (Optional)
@@ -231,7 +377,7 @@ export const AddPropertyModal = ({ isOpen, onClose }) => {
           }}>
             <Info size={16} color="#16a34a" style={{ flexShrink: 0, marginTop: '2px' }} />
             <span>
-              <strong>Manager Assignment:</strong> As Super Admin, you can invite and assign a property manager anytime from <strong>Settings &gt; Properties Portfolio</strong>. Assigned managers upload their own digital signature upon login.
+              <strong>Management &amp; Staff:</strong> As Super Admin or Admin, you can assign existing managers now or update assignments anytime from <strong>Settings &gt; Properties Portfolio</strong>.
             </span>
           </div>
 
@@ -240,8 +386,8 @@ export const AddPropertyModal = ({ isOpen, onClose }) => {
             <button type="button" className="btn-sub" onClick={onClose} disabled={isSubmitting}>
               Cancel
             </button>
-            <button type="submit" className="btn-main" disabled={isSubmitting || !firmName.trim()}>
-              {isSubmitting ? 'Creating Property...' : <><Plus size={16} /> Add Property & Open Dashboard</>}
+            <button type="submit" className="btn-main" disabled={isSubmitting || !firmName.trim() || !propertyCode.trim()}>
+              {isSubmitting ? 'Creating Property...' : <><Plus size={16} /> Add Property &amp; Open Dashboard</>}
             </button>
           </div>
 

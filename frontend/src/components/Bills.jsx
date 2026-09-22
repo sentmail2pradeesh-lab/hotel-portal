@@ -37,6 +37,9 @@ export const Bills = () => {
     }
   };
 
+  const totalBilledVolume = safeBillsList.reduce((acc, curr) => acc + (curr.total || 0), 0);
+  const avgBillAmount = safeBillsList.length > 0 ? Math.round(totalBilledVolume / safeBillsList.length) : 0;
+
   return (
     <div className="bills-view">
       <div className="page-header-row">
@@ -61,6 +64,60 @@ export const Bills = () => {
         >
           <Plus size={17} /> New Bill Statement
         </button>
+      </div>
+
+      {/* Executive Metric Cards */}
+      <div className="metrics-row" style={{ gridTemplateColumns: 'repeat(3, 1fr)', marginBottom: '18px' }}>
+        <div className="metric-card">
+          <div className="metric-card-header">
+            <span className="metric-card-label">Total Invoices Issued</span>
+            <div className="metric-icon-badge blue">
+              <FileText size={15} />
+            </div>
+          </div>
+          <div className="metric-card-value-row">
+            <span className="metric-card-value">{safeBillsList.length}</span>
+            <span className="metric-tag-sub">Statements</span>
+          </div>
+          <div className="metric-card-footer">
+            <span className="metric-status-dot blue" />
+            <span>Official room folio receipts</span>
+          </div>
+        </div>
+
+        <div className="metric-card">
+          <div className="metric-card-header">
+            <span className="metric-card-label">Total Billed Volume</span>
+            <div className="metric-icon-badge emerald">
+              <FileText size={15} />
+            </div>
+          </div>
+          <div className="metric-card-value-row">
+            <span className="metric-card-value" style={{ color: '#047857' }}>
+              {formatCurrency(totalBilledVolume)}
+            </span>
+          </div>
+          <div className="metric-card-footer">
+            <span className="metric-status-dot emerald" />
+            <span>Cumulative room revenue billed</span>
+          </div>
+        </div>
+
+        <div className="metric-card">
+          <div className="metric-card-header">
+            <span className="metric-card-label">Average Folio Size</span>
+            <div className="metric-icon-badge teal">
+              <FileText size={15} />
+            </div>
+          </div>
+          <div className="metric-card-value-row">
+            <span className="metric-card-value">{formatCurrency(avgBillAmount)}</span>
+          </div>
+          <div className="metric-card-footer">
+            <span className="metric-status-dot teal" />
+            <span>Average checkout billing total</span>
+          </div>
+        </div>
       </div>
 
       <div className="toolbar-row">

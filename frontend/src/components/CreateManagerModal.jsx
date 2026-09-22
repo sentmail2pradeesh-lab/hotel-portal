@@ -13,21 +13,26 @@ import {
   User, 
   RefreshCw, 
   ShieldAlert,
-  Users
+  Users,
+  Shield,
+  Eye,
+  Briefcase
 } from 'lucide-react';
 
 export const CreateManagerModal = ({ isOpen, onClose }) => {
-  const { propertiesList, createManager } = useHotel();
+  const { propertiesList, createManager, currentUser, isSuperAdmin, impersonateUser } = useHotel();
 
   const [activeTab, setActiveTab] = useState('create'); // 'create' | 'list'
   const [selectedPropertyId, setSelectedPropertyId] = useState('');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [role, setRole] = useState('Manager'); // 'Manager' | 'Admin'
   const [tempPassword, setTempPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [successData, setSuccessData] = useState(null);
   const [copied, setCopied] = useState(false);
+  const [impersonatingId, setImpersonatingId] = useState(null);
 
   // Managers List
   const [managersList, setManagersList] = useState([]);
@@ -35,12 +40,12 @@ export const CreateManagerModal = ({ isOpen, onClose }) => {
 
   const generateRandomPassword = useCallback(() => {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
-    let pass = 'Mgr@';
+    let pass = role === 'Admin' ? 'Adm@' : 'Mgr@';
     for (let i = 0; i < 5; i++) {
       pass += chars.charAt(Math.floor(Math.random() * chars.length));
     }
     setTempPassword(pass);
-  }, []);
+  }, [role]);
 
   const fetchManagers = useCallback(async () => {
     setLoadingList(true);
@@ -69,11 +74,11 @@ export const CreateManagerModal = ({ isOpen, onClose }) => {
     setSuccessData(null);
 
     if (!effectivePropertyId) {
-      setError('Please select a property to assign this manager.');
+      setError('Please select a property to assign.');
       return;
     }
     if (!name.trim()) {
-      setError('Please enter the manager full name.');
+      setError('Please enter the full name.');
       return;
     }
     if (!email.trim() || !email.includes('@')) {
@@ -87,15 +92,19 @@ export const CreateManagerModal = ({ isOpen, onClose }) => {
 
     setLoading(true);
     try {
-      const res = await createManager(name.trim(), email.trim(), effectivePropertyId, tempPassword.trim());
+      const effectiveRole = isSuperAdmin ? role : 'Manager';
+      const res = await createManager(name.trim(), email.trim(), effectivePropertyId, tempPassword.trim(), effectiveRole);
       if (res.success) {
-        setSuccessData(res.manager);
+        setSuccessData({
+          ...res.manager,
+          role: effectiveRole
+        });
         setName('');
         setEmail('');
         generateRandomPassword();
         fetchManagers();
       } else {
-        setError(res.message || 'Failed to create manager.');
+        setError(res.message || 'Failed to create account.');
       }
     } catch (err) {
       setError(err.message || 'An unexpected error occurred.');
@@ -104,22 +113,34 @@ export const CreateManagerModal = ({ isOpen, onClose }) => {
     }
   };
 
-  const handleCopyCredentials = () => {
-    if (!successData) return;
+  const handleCopyCredentials = (data = successData) => {
+    if (!data) return;
     const loginUrl = window.location.origin;
     const text = 
-`🏨 *HOTEL PROPERTY MANAGER CREDENTIALS*
-Property: ${successData.propertyName}
-Manager Name: ${successData.name}
-Login Email: ${successData.email}
-Temporary Password: ${successData.tempPassword}
+`🏨 *HOTEL PROPERTY PORTAL CREDENTIALS*
+Assigned Role: ${data.role || 'Manager'}
+Property: ${data.propertyName || 'Hotel'}
+Full Name: ${data.name}
+Login Email: ${data.email}
+Initial / Temp Password: ${data.tempPassword}
 
 Login Portal: ${loginUrl}
-(You can change your password anytime after login from Settings)`;
+(Note: If you change your password later, both this password and your new password will remain valid for login)`;
 
     navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 3000);
+  };
+
+  const handleViewDashboard = async (userId) => {
+    setImpersonatingId(userId);
+    const res = await impersonateUser(userId);
+    setImpersonatingId(null);
+    if (res.success) {
+      onClose();
+    } else {
+      setError(res.message || 'Failed to switch to user dashboard.');
+    }
   };
 
   if (!isOpen) return null;
@@ -143,9 +164,13 @@ Login Portal: ${loginUrl}
               <UserPlus size={22} color="#047857" />
             </div>
             <div>
-              <h3 className="modal-heading" style={{ fontSize: '18px' }}>Create Property Manager</h3>
+              <h3 className="modal-heading" style={{ fontSize: '18px' }}>
+                {isSuperAdmin ? 'Create Admin or Manager' : 'Create Property Manager'}
+              </h3>
               <p style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                Set up manager login credentials and assign to a property
+                {isSuperAdmin 
+                  ? 'Provision Admin or Manager login credentials and assign to properties' 
+                  : 'Provision manager credentials for front-desk operations'}
               </p>
             </div>
           </div>
@@ -162,7 +187,7 @@ Login Portal: ${loginUrl}
             style={{ padding: '6px 14px', fontSize: '12px' }}
             onClick={() => setActiveTab('create')}
           >
-            <UserPlus size={14} /> New Manager
+            <UserPlus size={14} /> New Account
           </button>
           <button
             type="button"
@@ -173,7 +198,7 @@ Login Portal: ${loginUrl}
               fetchManagers();
             }}
           >
-            <Users size={14} /> Existing Managers ({managersList.length})
+            <Users size={14} /> Existing Accounts ({managersList.length})
           </button>
         </div>
 
@@ -202,10 +227,10 @@ Login Portal: ${loginUrl}
                   <CheckCircle2 size={24} color="#047857" />
                   <div>
                     <h4 style={{ margin: 0, fontSize: '15px', color: '#047857', fontWeight: 700 }}>
-                      Manager Account Created!
+                      {successData.role || 'User'} Account Created!
                     </h4>
                     <span style={{ fontSize: '12px', color: '#065f46' }}>
-                      Credentials are active immediately. Share them with the manager.
+                      Credentials are active immediately. Share them with the user.
                     </span>
                   </div>
                 </div>
@@ -221,11 +246,22 @@ Login Portal: ${loginUrl}
                   fontSize: '13px'
                 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>Assigned Role:</span>
+                    <strong style={{
+                      color: successData.role === 'Admin' ? '#4f46e5' : '#047857',
+                      background: successData.role === 'Admin' ? '#eef2ff' : '#ecfdf5',
+                      padding: '2px 8px',
+                      borderRadius: '4px'
+                    }}>
+                      {successData.role || 'Manager'}
+                    </strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <span style={{ color: 'var(--text-muted)' }}>Assigned Property:</span>
                     <strong style={{ color: 'var(--text-main)' }}>{successData.propertyName}</strong>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--text-muted)' }}>Manager Name:</span>
+                    <span style={{ color: 'var(--text-muted)' }}>Full Name:</span>
                     <strong style={{ color: 'var(--text-main)' }}>{successData.name}</strong>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -233,10 +269,16 @@ Login Portal: ${loginUrl}
                     <strong style={{ color: '#0284c7' }}>{successData.email}</strong>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--text-muted)' }}>Temporary Password:</span>
+                    <span style={{ color: 'var(--text-muted)' }}>Initial / Temp Password:</span>
                     <strong style={{ fontFamily: 'monospace', color: '#b45309', background: '#fef3c7', padding: '2px 8px', borderRadius: '4px' }}>
                       {successData.tempPassword}
                     </strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>Dual-Password Policy:</span>
+                    <span style={{ color: '#047857', fontSize: '11px', fontWeight: 600 }}>
+                      Both initial and future new passwords remain valid
+                    </span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <span style={{ color: 'var(--text-muted)' }}>Login URL:</span>
@@ -249,7 +291,7 @@ Login Portal: ${loginUrl}
                     type="button"
                     className="btn-main"
                     style={{ flex: 1, padding: '10px', fontSize: '13px', background: '#047857', borderColor: '#047857' }}
-                    onClick={handleCopyCredentials}
+                    onClick={() => handleCopyCredentials(successData)}
                   >
                     {copied ? <><Check size={16} /> Credentials Copied!</> : <><Copy size={16} /> Copy Login Credentials</>}
                   </button>
@@ -267,10 +309,76 @@ Login Portal: ${loginUrl}
               /* CREATION FORM */
               <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginTop: '10px' }}>
                 
+                {/* Role Selector (Super Admin only can choose Admin vs Manager) */}
+                {isSuperAdmin && (
+                  <div className="form-group">
+                    <label className="form-label" style={{ fontWeight: 700 }}>
+                      Account Role <span style={{ color: '#e11d48' }}>*</span>
+                    </label>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                      <label style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        padding: '10px 12px',
+                        borderRadius: 'var(--radius-md)',
+                        border: `1.5px solid ${role === 'Manager' ? '#047857' : '#e2e8f0'}`,
+                        background: role === 'Manager' ? '#ecfdf5' : '#ffffff',
+                        cursor: 'pointer'
+                      }}>
+                        <input
+                          type="radio"
+                          name="userRole"
+                          value="Manager"
+                          checked={role === 'Manager'}
+                          onChange={() => setRole('Manager')}
+                          style={{ accentColor: '#047857' }}
+                        />
+                        <div>
+                          <div style={{ fontSize: '13px', fontWeight: 700, color: role === 'Manager' ? '#047857' : 'var(--text-main)' }}>
+                            Manager
+                          </div>
+                          <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                            Front-desk & bookings operations
+                          </div>
+                        </div>
+                      </label>
+
+                      <label style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        padding: '10px 12px',
+                        borderRadius: 'var(--radius-md)',
+                        border: `1.5px solid ${role === 'Admin' ? '#4f46e5' : '#e2e8f0'}`,
+                        background: role === 'Admin' ? '#eef2ff' : '#ffffff',
+                        cursor: 'pointer'
+                      }}>
+                        <input
+                          type="radio"
+                          name="userRole"
+                          value="Admin"
+                          checked={role === 'Admin'}
+                          onChange={() => setRole('Admin')}
+                          style={{ accentColor: '#4f46e5' }}
+                        />
+                        <div>
+                          <div style={{ fontSize: '13px', fontWeight: 700, color: role === 'Admin' ? '#4f46e5' : 'var(--text-main)' }}>
+                            Admin
+                          </div>
+                          <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                            All properties oversight & staff
+                          </div>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+                )}
+
                 {/* Property Dropdown */}
                 <div className="form-group">
                   <label className="form-label">
-                    Assign Property <span style={{ color: '#e11d48' }}>*</span>
+                    Assign Primary Property <span style={{ color: '#e11d48' }}>*</span>
                   </label>
                   <div className="input-icon-wrapper">
                     <Building2 size={16} className="input-icon" />
@@ -288,21 +396,23 @@ Login Portal: ${loginUrl}
                     </select>
                   </div>
                   <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                    The manager will operate this hotel dashboard upon signing in.
+                    {role === 'Admin' 
+                      ? 'Admins can manage all properties, starting with this primary property.' 
+                      : 'The manager will operate this hotel dashboard upon signing in.'}
                   </span>
                 </div>
 
-                {/* Manager Name */}
+                {/* Name */}
                 <div className="form-group">
                   <label className="form-label">
-                    Manager Full Name <span style={{ color: '#e11d48' }}>*</span>
+                    Full Name <span style={{ color: '#e11d48' }}>*</span>
                   </label>
                   <div className="input-icon-wrapper">
                     <User size={16} className="input-icon" />
                     <input
                       type="text"
                       className="form-input icon-padded"
-                      placeholder="e.g. John Doe"
+                      placeholder={role === 'Admin' ? 'e.g. Operational Admin' : 'e.g. John Doe'}
                       value={name}
                       onChange={(e) => setName(e.target.value)}
                       required
@@ -310,17 +420,17 @@ Login Portal: ${loginUrl}
                   </div>
                 </div>
 
-                {/* Manager Email */}
+                {/* Email */}
                 <div className="form-group">
                   <label className="form-label">
-                    Manager Email ID (Login Username) <span style={{ color: '#e11d48' }}>*</span>
+                    Email ID (Login Username) <span style={{ color: '#e11d48' }}>*</span>
                   </label>
                   <div className="input-icon-wrapper">
                     <Mail size={16} className="input-icon" />
                     <input
                       type="email"
                       className="form-input icon-padded"
-                      placeholder="e.g. manager@hotel.com"
+                      placeholder={role === 'Admin' ? 'e.g. admin@hotel.com' : 'e.g. manager@hotel.com'}
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       required
@@ -332,7 +442,7 @@ Login Portal: ${loginUrl}
                 <div className="form-group">
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <label className="form-label">
-                      Temporary Password <span style={{ color: '#e11d48' }}>*</span>
+                      Initial Temporary Password <span style={{ color: '#e11d48' }}>*</span>
                     </label>
                     <button
                       type="button"
@@ -364,7 +474,7 @@ Login Portal: ${loginUrl}
                     />
                   </div>
                   <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                    The manager can change their password at any time in Settings.
+                    Even if the user updates this password in Settings, this initial password remains valid for login.
                   </span>
                 </div>
 
@@ -376,7 +486,7 @@ Login Portal: ${loginUrl}
                     disabled={loading || propertiesList.length === 0}
                     style={{ flex: 1, padding: '12px', fontSize: '14px' }}
                   >
-                    {loading ? 'Creating Manager...' : <><UserPlus size={16} /> Create Manager Account</>}
+                    {loading ? 'Creating Account...' : <><UserPlus size={16} /> Create {role} Account</>}
                   </button>
                   <button
                     type="button"
@@ -391,61 +501,116 @@ Login Portal: ${loginUrl}
             )}
           </div>
         ) : (
-          /* MANAGERS LIST TAB */
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '350px', overflowY: 'auto' }}>
+          /* MANAGERS & ADMINS LIST TAB */
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '380px', overflowY: 'auto' }}>
             {loadingList ? (
               <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)' }}>
-                Loading managers...
+                Loading accounts...
               </div>
             ) : managersList.length === 0 ? (
               <div style={{ padding: '28px', textAlign: 'center', color: 'var(--text-muted)' }}>
-                No property managers registered yet. Use the "New Manager" tab to create one.
+                No property staff registered yet. Use the "New Account" tab to create one.
               </div>
             ) : (
-              managersList.map((m) => (
-                <div
-                  key={m.id}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '12px 16px',
-                    borderRadius: 'var(--radius-md)',
-                    border: '1px solid #e2e8f0',
-                    background: '#f8fafc'
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <div style={{
-                      width: '36px',
-                      height: '36px',
-                      borderRadius: '50%',
-                      background: '#047857',
-                      color: '#ffffff',
+              managersList.map((m) => {
+                const isAdminUser = m.role === 'Admin';
+                return (
+                  <div
+                    key={m.id}
+                    style={{
                       display: 'flex',
                       alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: '13px',
-                      fontWeight: 700
-                    }}>
-                      {m.name.charAt(0).toUpperCase()}
+                      justifyContent: 'space-between',
+                      padding: '12px 14px',
+                      borderRadius: 'var(--radius-md)',
+                      border: '1px solid #e2e8f0',
+                      background: '#f8fafc',
+                      gap: '10px',
+                      flexWrap: 'wrap'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <div style={{
+                        width: '38px',
+                        height: '38px',
+                        borderRadius: '50%',
+                        background: isAdminUser ? '#4f46e5' : '#047857',
+                        color: '#ffffff',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '13px',
+                        fontWeight: 700
+                      }}>
+                        {m.name.charAt(0).toUpperCase()}
+                      </div>
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-main)' }}>{m.name}</span>
+                          <span style={{
+                            fontSize: '10px',
+                            fontWeight: 800,
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            background: isAdminUser ? '#eef2ff' : '#ecfdf5',
+                            color: isAdminUser ? '#4f46e5' : '#047857',
+                            border: `1px solid ${isAdminUser ? '#c7d2fe' : '#a7f3d0'}`
+                          }}>
+                            {m.role ? m.role.toUpperCase() : 'MANAGER'}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{m.email}</div>
+                        <div style={{ fontSize: '11px', color: '#64748b' }}>
+                          Property: <strong>{m.propertyName || 'All Properties'}</strong>
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-main)' }}>{m.name}</div>
-                      <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{m.email}</div>
-                    </div>
-                  </div>
 
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: '12px', fontWeight: 600, color: '#0f172a' }}>
-                      {m.propertyName || 'No property assigned'}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: 'auto' }}>
+                      {/* Super Admin Credential & Impersonate Controls */}
+                      {m.tempPassword && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', background: '#fef3c7', padding: '3px 8px', borderRadius: '4px', border: '1px solid #fde68a' }}>
+                          <span style={{ fontSize: '10px', color: '#92400e', fontWeight: 600 }}>Pwd:</span>
+                          <span className="mono" style={{ fontSize: '11px', fontWeight: 700, color: '#b45309' }}>
+                            {m.tempPassword}
+                          </span>
+                          <button
+                            type="button"
+                            className="icon-btn"
+                            style={{ padding: '2px', color: '#b45309' }}
+                            title="Copy Password"
+                            onClick={() => handleCopyCredentials(m)}
+                          >
+                            <Copy size={12} />
+                          </button>
+                        </div>
+                      )}
+
+                      {isSuperAdmin && (
+                        <button
+                          type="button"
+                          className="btn-sub"
+                          disabled={impersonatingId === m.id}
+                          style={{
+                            padding: '5px 10px',
+                            fontSize: '11px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            background: '#0284c7',
+                            color: '#ffffff',
+                            borderColor: '#0284c7'
+                          }}
+                          onClick={() => handleViewDashboard(m.id)}
+                          title={`Log in and view dashboard as ${m.name}`}
+                        >
+                          <Eye size={12} /> {impersonatingId === m.id ? 'Switching...' : 'View Dashboard'}
+                        </button>
+                      )}
                     </div>
-                    <span style={{ fontSize: '10px', background: '#ecfdf5', color: '#047857', padding: '2px 8px', borderRadius: '10px', fontWeight: 600 }}>
-                      Active
-                    </span>
                   </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         )}

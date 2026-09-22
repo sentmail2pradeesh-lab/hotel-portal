@@ -35,6 +35,7 @@ env/
 *.sqlite3
 *.db-wal
 *.db-shm
+*.backup
 
 # Editor directories and files
 .vscode/*

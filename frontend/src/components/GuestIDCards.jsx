@@ -50,6 +50,62 @@ export const GuestIDCards = () => {
         </div>
       </div>
 
+      {/* Executive Metric Cards */}
+      <div className="metrics-row" style={{ gridTemplateColumns: 'repeat(3, 1fr)', marginBottom: '18px' }}>
+        <div className="metric-card">
+          <div className="metric-card-header">
+            <span className="metric-card-label">Verified Documents</span>
+            <div className="metric-icon-badge emerald">
+              <CheckCircle2 size={15} />
+            </div>
+          </div>
+          <div className="metric-card-value-row">
+            <span className="metric-card-value" style={{ color: '#047857' }}>{totalUploadedIDs}</span>
+            <span className="metric-tag-sub">Files</span>
+          </div>
+          <div className="metric-card-footer">
+            <span className="metric-status-dot emerald" />
+            <span>Government IDs & photo scans on file</span>
+          </div>
+        </div>
+
+        <div className="metric-card">
+          <div className="metric-card-header">
+            <span className="metric-card-label">Pending Uploads</span>
+            <div className="metric-icon-badge amber">
+              <AlertCircle size={15} />
+            </div>
+          </div>
+          <div className="metric-card-value-row">
+            <span className="metric-card-value" style={{ color: bookings.length - totalUploadedIDs > 0 ? '#b45309' : 'inherit' }}>
+              {Math.max(0, bookings.length - totalUploadedIDs)}
+            </span>
+            <span className="metric-tag-sub">Missing</span>
+          </div>
+          <div className="metric-card-footer">
+            <span className="metric-status-dot amber" />
+            <span>Stays requiring document upload</span>
+          </div>
+        </div>
+
+        <div className="metric-card">
+          <div className="metric-card-header">
+            <span className="metric-card-label">Total Registered Stays</span>
+            <div className="metric-icon-badge blue">
+              <IdCard size={15} />
+            </div>
+          </div>
+          <div className="metric-card-value-row">
+            <span className="metric-card-value">{bookings.length}</span>
+            <span className="metric-tag-sub">Profiles</span>
+          </div>
+          <div className="metric-card-footer">
+            <span className="metric-status-dot blue" />
+            <span>All guest profiles tracked in registry</span>
+          </div>
+        </div>
+      </div>
+
       <div className="toolbar-row">
         <div className="search-box">
           <Search size={16} color="var(--text-muted)" />
@@ -59,15 +115,6 @@ export const GuestIDCards = () => {
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
-        </div>
-
-        <div style={{ fontSize: '13px', color: 'var(--text-secondary)', display: 'flex', gap: '20px' }}>
-          <span>
-            Verified Documents: <strong style={{ color: '#047857' }}>{totalUploadedIDs}</strong>
-          </span>
-          <span>
-            Total Registered Stays: <strong>{bookings.length}</strong>
-          </span>
         </div>
       </div>
 

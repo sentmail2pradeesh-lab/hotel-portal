@@ -1,4 +1,4 @@
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:8000/api' : '/api');
 
 const getAuthHeaders = () => {
   const token = localStorage.getItem('frontdesk_jwt_token');
@@ -17,14 +17,24 @@ export const api = {
     return await res.json();
   },
 
-  async adminRegister(name, email, password) {
+  async adminRegister(name, phone, email, password) {
+    let payload = {};
+    if (typeof name === 'object' && name !== null) {
+      payload = name;
+    } else if (arguments.length === 3) {
+      // Backward compatibility: (name, email, password)
+      payload = { name: arguments[0], email: arguments[1], password: arguments[2] };
+    } else {
+      payload = { name, phone, email, password };
+    }
+
     const res = await fetch(`${API_BASE_URL}/auth/admin/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, email, password })
+      body: JSON.stringify(payload)
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Overall Admin registration failed.');
+    if (!res.ok) throw new Error(data.detail || 'Super Admin registration failed.');
     if (data.token) localStorage.setItem('frontdesk_jwt_token', data.token);
     return data;
   },
@@ -89,6 +99,16 @@ export const api = {
     return data;
   },
 
+  async deleteProperty(firmId) {
+    const res = await fetch(`${API_BASE_URL}/properties/${firmId}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders()
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to delete property.');
+    return data;
+  },
+
   async register(firmName, name, email, password) {
     const res = await fetch(`${API_BASE_URL}/auth/register`, {
       method: 'POST',
@@ -140,14 +160,36 @@ export const api = {
     return await res.json();
   },
 
-  async addRoom(roomNumber) {
+  async getAvailableRooms(checkIn, checkOut, excludeBookingId) {
+    const params = new URLSearchParams();
+    if (checkIn) params.append('checkIn', checkIn);
+    if (checkOut) params.append('checkOut', checkOut);
+    if (excludeBookingId) params.append('excludeBookingId', excludeBookingId);
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    const res = await fetch(`${API_BASE_URL}/rooms/available${qs}`, { headers: getAuthHeaders() });
+    if (!res.ok) throw new Error('Failed to fetch available rooms.');
+    return await res.json();
+  },
+
+  async addRoom(roomNumber, roomType = "Standard", isStaffRoom = false) {
     const res = await fetch(`${API_BASE_URL}/rooms`, {
       method: 'POST',
       headers: getAuthHeaders(),
-      body: JSON.stringify({ roomNumber })
+      body: JSON.stringify({ roomNumber, roomType, isStaffRoom })
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || 'Failed to add room.');
+    return data;
+  },
+
+  async updateRoom(roomNumber, updateData) {
+    const res = await fetch(`${API_BASE_URL}/rooms/${encodeURIComponent(roomNumber)}`, {
+      method: 'PUT',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(updateData)
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to update room.');
     return data;
   },
 
@@ -174,6 +216,17 @@ export const api = {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || 'Failed to create booking.');
+    return data;
+  },
+
+  async bulkImportBookings(bookingsList) {
+    const res = await fetch(`${API_BASE_URL}/bookings/bulk-import`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ bookings: bookingsList })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to import external bookings.');
     return data;
   },
 
@@ -205,6 +258,17 @@ export const api = {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || 'Failed to check in booking.');
+    return data;
+  },
+
+  async allotRoom(bookingId, room, status = null, isGuaranteed = true) {
+    const res = await fetch(`${API_BASE_URL}/bookings/${encodeURIComponent(bookingId)}/allot-room`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ room, status, isGuaranteed })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to allot room.');
     return data;
   },
 
@@ -353,14 +417,14 @@ export const api = {
     return await res.json();
   },
 
-  async createManager(name, email, propertyId, tempPassword) {
+  async createManager(name, email, propertyId, tempPassword, role = "Manager") {
     const res = await fetch(`${API_BASE_URL}/managers/create`, {
       method: 'POST',
       headers: getAuthHeaders(),
-      body: JSON.stringify({ name, email, propertyId, tempPassword })
+      body: JSON.stringify({ name, email, propertyId, tempPassword, role })
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Failed to create manager account.');
+    if (!res.ok) throw new Error(data.detail || 'Failed to create user account.');
     return data;
   },
 
@@ -368,7 +432,7 @@ export const api = {
     const res = await fetch(`${API_BASE_URL}/managers`, {
       headers: getAuthHeaders()
     });
-    if (!res.ok) throw new Error('Failed to fetch managers list.');
+    if (!res.ok) throw new Error('Failed to fetch user list.');
     return await res.json();
   },
 
@@ -381,5 +445,36 @@ export const api = {
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || 'Failed to change password.');
     return data;
+  },
+
+  async getFeatureToggles() {
+    const res = await fetch(`${API_BASE_URL}/system/feature-toggles`, {
+      headers: getAuthHeaders()
+    });
+    if (!res.ok) throw new Error('Failed to fetch feature toggles.');
+    return await res.json();
+  },
+
+  async updateFeatureToggles(role, features) {
+    const res = await fetch(`${API_BASE_URL}/system/feature-toggles`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ role, features })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to update feature toggles.');
+    return data;
+  },
+
+  async impersonateUser(userId) {
+    const res = await fetch(`${API_BASE_URL}/auth/impersonate/${encodeURIComponent(userId)}`, {
+      method: 'POST',
+      headers: getAuthHeaders()
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to impersonate user.');
+    return data;
   }
 };
+
+export default api;

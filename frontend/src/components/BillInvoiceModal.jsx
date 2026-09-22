@@ -70,7 +70,7 @@ export const BillInvoiceModal = ({ bill, onClose, onEditBill }) => {
                 )}
               </div>
               <div>
-                <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: '22px', fontWeight: 700, color: '#0f172a', margin: 0, letterSpacing: '-0.02em' }}>
+                <h1 style={{ fontFamily: 'var(--font-sans)', fontSize: '22px', fontWeight: 800, color: '#0f172a', margin: 0, letterSpacing: '-0.02em' }}>
                   {currentUser?.firmName || 'Property Receipt Statement'}
                 </h1>
                 <p style={{ fontSize: '11px', color: '#d97706', fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase' }}>

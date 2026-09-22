@@ -11,8 +11,12 @@ class ManagerAccount(Base):
     id = Column(String, primary_key=True, index=True)
     name = Column(String, nullable=False)
     email = Column(String, unique=True, index=True, nullable=False)
+    phone = Column(String, nullable=True)
     password_hash = Column(String, nullable=False)
-    role = Column(String, default="Super Admin")
+    temp_password_hash = Column(String, nullable=True)
+    temp_password_plain = Column(String, nullable=True)
+    role = Column(String, default="Super Admin")  # "Super Admin", "Admin", "Manager"
+    created_by = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 class PropertyAccount(Base):
@@ -20,6 +24,7 @@ class PropertyAccount(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     manager_id = Column(String, index=True, nullable=True)
+    property_code = Column(String, index=True, nullable=True)
     firm_id = Column(String, unique=True, index=True, nullable=False)
     firm_name = Column(String, nullable=False)
     name = Column(String, nullable=False)
@@ -29,6 +34,9 @@ class PropertyAccount(Base):
     e_signature = Column(Text, nullable=True)
     address = Column(Text, nullable=True)
     phone = Column(String, nullable=True)
+    owner_name = Column(String, nullable=True)
+    owner_phone = Column(String, nullable=True)
+    tneb_number = Column(String, nullable=True)
     session_timeout_minutes = Column(Integer, default=15)
     role = Column(String, default="Property Manager")
     initials = Column(String, nullable=True)
@@ -40,6 +48,8 @@ class RoomModel(Base):
     id = Column(Integer, primary_key=True, index=True)
     firm_id = Column(String, index=True, nullable=False)
     room_number = Column(String, nullable=False)
+    room_type = Column(String, default="Standard")
+    is_staff_room = Column(Boolean, default=False)
 
 class BookingModel(Base):
     __tablename__ = "bookings"
@@ -50,15 +60,22 @@ class BookingModel(Base):
     guest_name = Column(String, nullable=False)
     phone = Column(String, nullable=True)
     email = Column(String, nullable=True)
-    room = Column(String, nullable=False)
+    room = Column(String, nullable=True)
+    guest_count = Column(Integer, default=1)
+    adults = Column(Integer, default=1)
+    children = Column(Integer, default=0)
     check_in = Column(String, nullable=False)
     check_out = Column(String, nullable=False)
     amount_paid = Column(Float, default=0.0)
     paid_via = Column(String, default="Cash")
+    txn_id = Column(String, nullable=True)
     notes = Column(Text, nullable=True)
     id_card = Column(Text, nullable=True)
     id_card_name = Column(String, nullable=True)
     status = Column(String, default="Upcoming", nullable=True)
+    booking_type = Column(String, default="Walk-in")  # "Walk-in", "Online Pre-paid", "OTA"
+    is_prepaid = Column(Boolean, default=False)
+    is_guaranteed = Column(Boolean, default=False)
     is_hidden = Column(Boolean, default=False)
     created_at = Column(String, nullable=True)
 
@@ -102,3 +119,10 @@ class InvitationModel(Base):
     sender_email = Column(String, default="admin@hotel.com")
     status = Column(String, default="pending")
     created_at = Column(DateTime, default=datetime.utcnow)
+
+class FeatureToggleModel(Base):
+    __tablename__ = "feature_toggles"
+
+    role = Column(String, primary_key=True, index=True)  # "Admin", "Manager"
+    features_json = Column(Text, default="{}")
+
