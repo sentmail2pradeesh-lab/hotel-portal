@@ -185,6 +185,7 @@ if engine.name == "sqlite":
 else:
     try:
         with engine.connect() as conn:
+            # Property accounts
             conn.execute(text("ALTER TABLE property_accounts ADD COLUMN IF NOT EXISTS manager_id VARCHAR"))
             conn.execute(text("ALTER TABLE property_accounts ADD COLUMN IF NOT EXISTS property_code VARCHAR"))
             conn.execute(text("ALTER TABLE property_accounts ADD COLUMN IF NOT EXISTS address TEXT"))
@@ -192,22 +193,46 @@ else:
             conn.execute(text("ALTER TABLE property_accounts ADD COLUMN IF NOT EXISTS owner_name VARCHAR"))
             conn.execute(text("ALTER TABLE property_accounts ADD COLUMN IF NOT EXISTS owner_phone VARCHAR"))
             conn.execute(text("ALTER TABLE property_accounts ADD COLUMN IF NOT EXISTS tneb_number VARCHAR"))
+            conn.execute(text("ALTER TABLE property_accounts ADD COLUMN IF NOT EXISTS firm_logo TEXT"))
+            conn.execute(text("ALTER TABLE property_accounts ADD COLUMN IF NOT EXISTS e_signature TEXT"))
+            conn.execute(text("ALTER TABLE property_accounts ADD COLUMN IF NOT EXISTS session_timeout_minutes INTEGER DEFAULT 15"))
+            conn.execute(text("ALTER TABLE property_accounts ADD COLUMN IF NOT EXISTS initials VARCHAR"))
+
+            # Manager accounts
             conn.execute(text("ALTER TABLE manager_accounts ADD COLUMN IF NOT EXISTS temp_password_hash VARCHAR"))
             conn.execute(text("ALTER TABLE manager_accounts ADD COLUMN IF NOT EXISTS temp_password_plain VARCHAR"))
             conn.execute(text("ALTER TABLE manager_accounts ADD COLUMN IF NOT EXISTS created_by VARCHAR"))
             conn.execute(text("ALTER TABLE manager_accounts ADD COLUMN IF NOT EXISTS phone VARCHAR"))
+
+            # Rooms
             conn.execute(text("ALTER TABLE rooms ADD COLUMN IF NOT EXISTS room_type VARCHAR DEFAULT 'Standard'"))
             conn.execute(text("ALTER TABLE rooms ADD COLUMN IF NOT EXISTS is_staff_room BOOLEAN DEFAULT FALSE"))
+
+            # Bookings
             conn.execute(text("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS status VARCHAR DEFAULT 'Upcoming'"))
             conn.execute(text("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS manual_id VARCHAR"))
             conn.execute(text("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS email VARCHAR"))
             conn.execute(text("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS is_hidden BOOLEAN DEFAULT FALSE"))
             conn.execute(text("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS booking_type VARCHAR DEFAULT 'Walk-in'"))
             conn.execute(text("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS is_prepaid BOOLEAN DEFAULT FALSE"))
+            conn.execute(text("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS txn_id VARCHAR"))
             conn.execute(text("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS guest_count INTEGER DEFAULT 1"))
             conn.execute(text("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS adults INTEGER DEFAULT 1"))
             conn.execute(text("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS children INTEGER DEFAULT 0"))
             conn.execute(text("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS is_guaranteed BOOLEAN DEFAULT FALSE"))
+            conn.execute(text("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS notes TEXT"))
+            conn.execute(text("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS id_card TEXT"))
+            conn.execute(text("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS id_card_name VARCHAR"))
+            conn.execute(text("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS created_at VARCHAR"))
+
+            # Initialize default feature toggles if empty
+            ft_res = conn.execute(text("SELECT COUNT(*) FROM feature_toggles")).scalar()
+            if ft_res == 0:
+                conn.execute(
+                    text("INSERT INTO feature_toggles (role, features_json) VALUES (:r1, :j1), (:r2, :j2)"),
+                    {"r1": "Admin", "j1": json.dumps(DEFAULT_ADMIN_FEATURES), "r2": "Manager", "j2": json.dumps(DEFAULT_MANAGER_FEATURES)}
+                )
+
             conn.commit()
     except Exception as e:
         print("PostgreSQL auto-migration info:", e)
