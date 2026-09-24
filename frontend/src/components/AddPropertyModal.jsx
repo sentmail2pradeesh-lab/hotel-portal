@@ -109,17 +109,14 @@ export const AddPropertyModal = ({ isOpen, onClose }) => {
       setError('Please enter a unique property code (e.g. PR001).');
       return;
     }
-    if (!firmName.trim()) {
-      setError('Please enter the property or hotel name.');
-      return;
-    }
+    const cleanFirm = firmName.trim() || propertyCode.trim().toUpperCase();
     setError('');
     setIsSubmitting(true);
     try {
       const initialRooms = getComputedInitialRooms();
       const res = await addProperty({
         propertyCode: propertyCode.trim().toUpperCase(),
-        firmName: firmName.trim(),
+        firmName: cleanFirm,
         managerId: managerId || null,
         ownerName: ownerName.trim() || null,
         ownerPhone: ownerPhone.trim() || null,
@@ -200,17 +197,16 @@ export const AddPropertyModal = ({ isOpen, onClose }) => {
 
             <div className="form-group">
               <label className="form-label" style={{ fontWeight: 700 }}>
-                Property / Hotel Name <span style={{ color: '#be123c' }}>*</span>
+                Property / Hotel Name <span style={{ fontSize: '11px', fontWeight: 500, color: 'var(--text-secondary)' }}>(Optional)</span>
               </label>
               <div className="input-icon-wrapper">
                 <Building2 size={16} className="input-icon" />
                 <input
                   type="text"
                   className="form-input icon-padded"
-                  placeholder="e.g. Royal Crown Hotel & Suites"
+                  placeholder="Defaults to Property Code if left blank"
                   value={firmName}
                   onChange={(e) => setFirmName(e.target.value)}
-                  required
                 />
               </div>
             </div>
@@ -232,7 +228,7 @@ export const AddPropertyModal = ({ isOpen, onClose }) => {
                 <option value="">Unassigned / Default (Admin Managed)</option>
                 {managersList.map((m) => (
                   <option key={m.id} value={m.id}>
-                    {m.name} ({m.role || 'Manager'}) — {m.email}
+                    {m.propertyCode ? `[${m.propertyCode}] ` : ''}{m.name} ({m.role || 'Manager'}) — {m.email}
                   </option>
                 ))}
               </select>
@@ -558,7 +554,7 @@ export const AddPropertyModal = ({ isOpen, onClose }) => {
             <button type="button" className="btn-sub" onClick={onClose} disabled={isSubmitting}>
               Cancel
             </button>
-            <button type="submit" className="btn-main" disabled={isSubmitting || !firmName.trim() || !propertyCode.trim()}>
+            <button type="submit" className="btn-main" disabled={isSubmitting || !propertyCode.trim()}>
               {isSubmitting ? 'Creating Property...' : <><Plus size={16} /> Add Property &amp; Open Dashboard</>}
             </button>
           </div>

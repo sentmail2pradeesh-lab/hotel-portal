@@ -60,7 +60,25 @@ export const Sidebar = () => {
             }}>
               {currentUser?.role || 'Portal User'}
             </span>
-            <span className="user-email" style={{ color: 'rgba(255, 255, 255, 0.65)', fontSize: '11px', marginTop: '2px' }}>
+            {currentUser?.propertyCode && (
+              <span style={{
+                fontFamily: 'monospace',
+                fontSize: '10px',
+                fontWeight: 800,
+                color: '#fef08a',
+                background: 'rgba(254, 240, 138, 0.15)',
+                border: '1px solid rgba(254, 240, 138, 0.3)',
+                borderRadius: '3px',
+                padding: '1px 5px',
+                marginTop: '3px',
+                letterSpacing: '0.5px',
+                display: 'inline-block',
+                width: 'fit-content'
+              }}>
+                CODE: {currentUser.propertyCode}
+              </span>
+            )}
+            <span className="user-email" style={{ color: 'rgba(255, 255, 255, 0.75)', fontSize: '11px', marginTop: currentUser?.propertyCode ? '1px' : '2px', fontWeight: 500 }}>
               {currentUser?.firmName || 'Property Dashboard'}
             </span>
           </div>

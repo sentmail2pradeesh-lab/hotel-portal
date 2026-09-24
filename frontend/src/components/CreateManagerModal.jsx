@@ -115,11 +115,13 @@ export const CreateManagerModal = ({ isOpen, onClose }) => {
 
   const handleCopyCredentials = (data = successData) => {
     if (!data) return;
+    const propCode = data.propertyCode || propertiesList.find(p => p.firmId === data.propertyId)?.propertyCode || '';
     const loginUrl = window.location.origin;
     const text = 
 `🏨 *HOTEL PROPERTY PORTAL CREDENTIALS*
 Assigned Role: ${data.role || 'Manager'}
-Property: ${data.propertyName || 'Hotel'}
+Property Code: ${propCode || 'N/A'}
+Property: ${propCode ? `[${propCode}] ` : ''}${data.propertyName || 'Hotel'}
 Full Name: ${data.name}
 Login Username / Email: ${data.email}
 Initial / Temp Password: ${data.tempPassword}
@@ -256,6 +258,21 @@ Login Portal: ${loginUrl}
                       {successData.role || 'Manager'}
                     </strong>
                   </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>Assigned Property Code:</span>
+                    <strong style={{
+                      fontFamily: 'monospace',
+                      fontWeight: 700,
+                      color: '#0f766e',
+                      background: '#ccfbf1',
+                      border: '1px solid #99f6e4',
+                      padding: '2px 8px',
+                      borderRadius: '4px',
+                      fontSize: '12px'
+                    }}>
+                      {successData.propertyCode || propertiesList.find(p => p.firmId === (successData.propertyId || effectivePropertyId))?.propertyCode || 'N/A'}
+                    </strong>
+                  </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <span style={{ color: 'var(--text-muted)' }}>Assigned Property:</span>
                     <strong style={{ color: 'var(--text-main)' }}>{successData.propertyName}</strong>
@@ -390,7 +407,7 @@ Login Portal: ${loginUrl}
                     >
                       {propertiesList.map((p) => (
                         <option key={p.firmId} value={p.firmId}>
-                          {p.firmName} ({p.firmId})
+                          {p.propertyCode ? `[${p.propertyCode}] ` : ''}{p.firmName}
                         </option>
                       ))}
                     </select>
@@ -563,8 +580,23 @@ Login Portal: ${loginUrl}
                           </span>
                         </div>
                         <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{m.email}</div>
-                        <div style={{ fontSize: '11px', color: '#64748b' }}>
-                          Property: <strong>{m.propertyName || 'All Properties'}</strong>
+                        <div style={{ fontSize: '11px', color: '#64748b', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
+                          <span>Property:</span>
+                          {m.propertyCode && (
+                            <span style={{
+                              fontFamily: 'monospace',
+                              fontWeight: 700,
+                              background: '#ccfbf1',
+                              color: '#0f766e',
+                              padding: '1px 5px',
+                              borderRadius: '3px',
+                              fontSize: '10px',
+                              border: '1px solid #99f6e4'
+                            }}>
+                              {m.propertyCode}
+                            </span>
+                          )}
+                          <strong style={{ color: 'var(--text-main)' }}>{m.propertyName || 'All Properties'}</strong>
                         </div>
                       </div>
                     </div>

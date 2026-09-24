@@ -12,7 +12,7 @@ class ManagerLoginRequest(BaseModel):
     password: str
 
 class PropertyCreateRequest(BaseModel):
-    firmName: str
+    firmName: Optional[str] = None
     propertyCode: Optional[str] = None
     managerId: Optional[str] = None
     managerName: Optional[str] = None

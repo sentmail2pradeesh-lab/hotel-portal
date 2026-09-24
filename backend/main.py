@@ -775,15 +775,18 @@ def create_property(
     if mgr.role not in ["Overall Admin", "Super Admin"]:
         raise HTTPException(status_code=403, detail="Only Super Admin is authorized to create properties. Admin accounts cannot create properties.")
 
-    clean_firm = req.firmName.strip()
-    if not clean_firm:
-        raise HTTPException(status_code=400, detail="Property name is required.")
-
     clean_code = (req.propertyCode or "").strip().upper()
+    clean_firm = (req.firmName or "").strip()
+    if not clean_code and not clean_firm:
+        raise HTTPException(status_code=400, detail="Property code or name is required.")
+
     if not clean_code:
         words = clean_firm.split()
         prefix = "".join(w[0] for w in words if w.isalnum())[:4].upper() or "PR"
         clean_code = f"{prefix}-{uuid.uuid4().hex[:4].upper()}"
+
+    if not clean_firm:
+        clean_firm = clean_code
 
     # Assigned manager resolution
     assigned_mgr_id = None
@@ -2803,6 +2806,7 @@ def create_manager_account(
             "email": mgr_user.email,
             "role": target_role,
             "propertyId": prop.firm_id if prop else "All",
+            "propertyCode": prop.property_code if prop else ("ALL" if target_role == "Admin" else ""),
             "propertyName": prop.firm_name if prop else "All Super Admin Properties",
             "tempPassword": clean_pass
         }
@@ -2837,6 +2841,7 @@ def list_managers(
             "role": role_label,
             "createdAt": m.created_at.isoformat() if m.created_at else None,
             "propertyId": assigned_prop.firm_id if assigned_prop else None,
+            "propertyCode": assigned_prop.property_code if assigned_prop else ("ALL" if role_label == "Admin" else None),
             "propertyName": assigned_prop.firm_name if assigned_prop else ("All Properties" if role_label == "Admin" else "Unassigned"),
             "tempPassword": m.temp_password_plain if caller_role in ["Overall Admin", "Super Admin"] else None
         })

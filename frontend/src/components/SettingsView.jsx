@@ -185,13 +185,15 @@ export const SettingsView = () => {
 
   const handleCopyStaffCredentials = (m) => {
     const loginUrl = window.location.origin;
+    const propCode = m.propertyCode || propertiesList.find(p => p.firmId === m.propertyId)?.propertyCode || '';
     const text = 
 `🏨 *STAFF CREDENTIALS & ACCESS VAULT*
 Role: ${m.role || 'Manager'}
 Full Name: ${m.name}
-Login Email: ${m.email}
+Login ID / Email: ${m.email}
 Initial / Temp Password: ${m.tempPassword}
-Primary Property: ${m.propertyName || 'Hotel'}
+Property Code: ${propCode || 'N/A'}
+Primary Property: ${propCode ? `[${propCode}] ` : ''}${m.propertyName || 'Hotel'}
 
 Login Portal: ${loginUrl}
 (Dual-password policy: Both initial password and any new password chosen by the user remain active for sign-in)`;
@@ -1068,13 +1070,26 @@ Login Portal: ${loginUrl}
                         )}
                       </div>
                       <div className="prop-info-col">
+                        {p.propertyCode && (
+                          <div style={{ marginBottom: '3px' }}>
+                            <span className="prop-code-badge" style={{
+                              fontFamily: 'monospace',
+                              fontWeight: 800,
+                              fontSize: '11px',
+                              letterSpacing: '0.5px',
+                              background: '#ccfbf1',
+                              color: '#0f766e',
+                              border: '1px solid #99f6e4',
+                              padding: '2px 8px',
+                              borderRadius: '4px',
+                              display: 'inline-block'
+                            }}>
+                              PROPERTY CODE: {p.propertyCode}
+                            </span>
+                          </div>
+                        )}
                         <div className="prop-name-row">
                           <span className="prop-main-name">{p.firmName}</span>
-                          {p.propertyCode && (
-                            <span className="prop-code-badge">
-                              {p.propertyCode}
-                            </span>
-                          )}
                         </div>
                         <div className="prop-firmid-tag">
                           Firm ID: <code>{p.firmId}</code>
@@ -1990,8 +2005,23 @@ Login Portal: ${loginUrl}
                           <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
                             Login: <span style={{ color: '#0284c7', fontWeight: 600 }}>{m.email}</span>
                           </div>
-                          <div style={{ fontSize: '11px', color: '#64748b' }}>
-                            Assigned Property: <strong>{m.propertyName || 'All Properties'}</strong>
+                          <div style={{ fontSize: '11px', color: '#64748b', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
+                            <span>Assigned Property:</span>
+                            {m.propertyCode && (
+                              <span style={{
+                                fontFamily: 'monospace',
+                                fontWeight: 700,
+                                background: '#ccfbf1',
+                                color: '#0f766e',
+                                padding: '1px 5px',
+                                borderRadius: '3px',
+                                fontSize: '10px',
+                                border: '1px solid #99f6e4'
+                              }}>
+                                {m.propertyCode}
+                              </span>
+                            )}
+                            <strong style={{ color: 'var(--text-main)' }}>{m.propertyName || 'All Properties'}</strong>
                           </div>
                         </div>
                       </div>

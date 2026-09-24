@@ -174,11 +174,27 @@ export const Navbar = () => {
                         )}
                       </div>
                       <div className="prop-item-info">
-                        <div className="prop-item-name">
-                          {p.propertyCode ? p.propertyCode : p.firmName}
+                        {p.propertyCode && (
+                          <div style={{
+                            fontFamily: 'monospace',
+                            fontSize: '11px',
+                            fontWeight: 800,
+                            color: '#0f766e',
+                            background: '#ccfbf1',
+                            border: '1px solid #99f6e4',
+                            padding: '1px 5px',
+                            borderRadius: '3px',
+                            width: 'fit-content',
+                            marginBottom: '2px'
+                          }}>
+                            {p.propertyCode}
+                          </div>
+                        )}
+                        <div className="prop-item-name" style={{ fontWeight: 600 }}>
+                          {p.firmName}
                         </div>
                         <div className="prop-item-sub">
-                          {p.propertyCode ? p.firmName : `Firm ID: ${p.firmId}`}
+                          Firm ID: {p.firmId}
                         </div>
                       </div>
                     </div>

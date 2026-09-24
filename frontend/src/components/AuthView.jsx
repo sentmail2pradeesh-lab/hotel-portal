@@ -173,10 +173,7 @@ export const AuthView = () => {
       setError('Please enter a property code (e.g. PR001).');
       return;
     }
-    if (!firmName.trim()) {
-      setError('Please enter your initial property or hotel name.');
-      return;
-    }
+    const cleanFirm = firmName.trim() || firstPropCode.trim().toUpperCase();
     setError('');
     setLoading(true);
     setLoadingMessage('Creating property & generating initial rooms...');
@@ -184,7 +181,7 @@ export const AuthView = () => {
       const initialRooms = getComputedInitialRooms();
       const res = await addProperty({
         propertyCode: firstPropCode.trim().toUpperCase(),
-        firmName: firmName.trim(),
+        firmName: cleanFirm,
         ownerName: firstOwnerName.trim() || null,
         ownerPhone: firstOwnerPhone.trim() || null,
         tnebNumber: firstTnebNumber.trim() || null,
@@ -255,16 +252,15 @@ export const AuthView = () => {
               </div>
 
               <div className="form-group">
-                <label className="form-label">Property / Hotel Name <span style={{ color: '#e11d48' }}>*</span></label>
+                <label className="form-label">Property / Hotel Name <span style={{ fontSize: '11px', fontWeight: 500, color: 'var(--text-secondary)' }}>(Optional)</span></label>
                 <div className="input-icon-wrapper">
                   <Building2 size={16} className="input-icon" />
                   <input
                     type="text"
                     className="form-input icon-padded"
-                    placeholder="e.g. Grand Horizon Hotel & Suites"
+                    placeholder="Defaults to Property Code if blank"
                     value={firmName}
                     onChange={(e) => setFirmName(e.target.value)}
-                    required
                   />
                 </div>
               </div>
