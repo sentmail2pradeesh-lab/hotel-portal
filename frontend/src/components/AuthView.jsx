@@ -45,8 +45,16 @@ export const AuthView = () => {
   const [firstTnebNumber, setFirstTnebNumber] = useState('');
   const [firmLogo, setFirmLogo] = useState(null);
 
+  // Initial Rooms Setup State
+  const [firstRoomMode, setFirstRoomMode] = useState('range'); // 'range' | 'custom' | 'default' | 'none'
+  const [firstStartRoom, setFirstStartRoom] = useState('101');
+  const [firstEndRoom, setFirstEndRoom] = useState('110');
+  const [firstRoomType, setFirstRoomType] = useState('Standard Room');
+  const [firstCustomRoomsText, setFirstCustomRoomsText] = useState('');
+
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState('');
 
   // Handle Super Admin Registration (One-Time First Run Setup)
   const handleAdminRegisterSubmit = async (e) => {
@@ -54,15 +62,15 @@ export const AuthView = () => {
     setError('');
 
     if (!regName.trim() || !regPhone.trim() || !regEmail.trim() || !regPassword) {
-      setError('Please fill out all registration fields: Name, Phone Number, Email, and Password.');
+      setError('Please fill out all registration fields: Name, Phone Number, Username/Email, and Password.');
       return;
     }
     if (regPhone.trim().replace(/[^0-9]/g, '').length < 7) {
       setError('Please enter a valid contact phone number.');
       return;
     }
-    if (!regEmail.includes('@') || !regEmail.includes('.')) {
-      setError('Please enter a valid email address.');
+    if (regEmail.trim().length < 3) {
+      setError('Username or Email must be at least 3 characters.');
       return;
     }
     if (regPassword.length < 6) {
@@ -75,6 +83,7 @@ export const AuthView = () => {
     }
 
     setLoading(true);
+    setLoadingMessage('Registering Super Admin...');
     try {
       const res = await adminRegister(regName.trim(), regPhone.trim(), regEmail.trim(), regPassword);
       if (res && !res.success) {
@@ -84,6 +93,7 @@ export const AuthView = () => {
       setError(err.message || 'Failed to register Super Admin. Please ensure backend server is reachable.');
     } finally {
       setLoading(false);
+      setLoadingMessage('');
     }
   };
 
@@ -91,21 +101,69 @@ export const AuthView = () => {
   const handleLoginSubmit = async (e) => {
     e.preventDefault();
     if (!loginIdentity.trim() || !loginPassword) {
-      setError('Please enter your email/username and password.');
+      setError('Please enter your username/email and password.');
       return;
     }
     setError('');
     setLoading(true);
+    setLoadingMessage('Signing in...');
+
+    // If server was asleep (Render/Railway cold start), give friendly live feedback after 2.5s
+    const coldStartTimer = setTimeout(() => {
+      setLoadingMessage('Connecting to secure cloud server... (waking up service, please hold on)');
+    }, 2500);
+
     try {
       const res = await managerLogin(loginIdentity.trim(), loginPassword);
+      clearTimeout(coldStartTimer);
       if (res && !res.success) {
-        setError(res.message || 'Sign in failed. Check your email and password.');
+        setError(res.message || 'Sign in failed. Check your username and password.');
       }
     } catch (err) {
+      clearTimeout(coldStartTimer);
       setError(err.message || 'Failed to connect to backend server. Make sure server is running.');
     } finally {
+      clearTimeout(coldStartTimer);
       setLoading(false);
+      setLoadingMessage('');
     }
+  };
+
+  // Helper to compute initial rooms to pass
+  const getComputedInitialRooms = () => {
+    if (firstRoomMode === 'default') {
+      return null; // Signals backend to use DEFAULT_ROOMS
+    }
+    if (firstRoomMode === 'none') {
+      return []; // Explicit empty array means 0 initial rooms
+    }
+    if (firstRoomMode === 'range') {
+      const start = parseInt(firstStartRoom, 10);
+      const end = parseInt(firstEndRoom, 10);
+      if (isNaN(start) || isNaN(end) || start > end) return null;
+      const count = Math.min(Math.max(end - start + 1, 0), 200);
+      const generated = [];
+      for (let i = 0; i < count; i++) {
+        generated.push({
+          roomNumber: String(start + i),
+          roomType: firstRoomType,
+          isStaffRoom: false
+        });
+      }
+      return generated;
+    }
+    if (firstRoomMode === 'custom') {
+      const nums = firstCustomRoomsText
+        .split(/[,\n]+/)
+        .map(s => s.trim())
+        .filter(Boolean);
+      return nums.map(num => ({
+        roomNumber: num,
+        roomType: firstRoomType,
+        isStaffRoom: false
+      }));
+    }
+    return null;
   };
 
   // Handle First Property Creation (If Super Admin has 0 properties)
@@ -121,7 +179,9 @@ export const AuthView = () => {
     }
     setError('');
     setLoading(true);
+    setLoadingMessage('Creating property & generating initial rooms...');
     try {
+      const initialRooms = getComputedInitialRooms();
       const res = await addProperty({
         propertyCode: firstPropCode.trim().toUpperCase(),
         firmName: firmName.trim(),
@@ -129,7 +189,8 @@ export const AuthView = () => {
         ownerPhone: firstOwnerPhone.trim() || null,
         tnebNumber: firstTnebNumber.trim() || null,
         firmLogo: firmLogo,
-        eSignature: null
+        eSignature: null,
+        initialRooms
       });
       if (!res.success) {
         setError(res.message || 'Failed to create initial property.');
@@ -138,6 +199,7 @@ export const AuthView = () => {
       setError(err.message || 'Error creating property.');
     } finally {
       setLoading(false);
+      setLoadingMessage('');
     }
   };
 
@@ -308,8 +370,147 @@ export const AuthView = () => {
               </div>
             </div>
 
+            {/* Initial Rooms Configuration (Bulk Add) */}
+            <div className="form-group" style={{ background: '#f8fafc', padding: '14px', borderRadius: 'var(--radius-md)', border: '1px solid #e2e8f0', marginTop: '4px' }}>
+              <label className="form-label" style={{ fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                <span>Initial Rooms Setup (Bulk Add)</span>
+                <span style={{ fontSize: '11px', fontWeight: 600, color: '#d97706', background: '#fef3c7', padding: '2px 8px', borderRadius: '4px' }}>
+                  {firstRoomMode === 'default' ? '20 Standard Rooms' : firstRoomMode === 'range' ? `${Math.max(0, parseInt(firstEndRoom || 0) - parseInt(firstStartRoom || 0) + 1)} Rooms` : firstRoomMode === 'custom' ? 'Custom Rooms' : '0 Rooms'}
+                </span>
+              </label>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px', margin: '4px 0 10px' }}>
+                {[
+                  { id: 'range', label: 'By Range' },
+                  { id: 'custom', label: 'Custom List' },
+                  { id: 'default', label: 'Preset (20)' },
+                  { id: 'none', label: 'Add Later' }
+                ].map((mode) => (
+                  <button
+                    key={mode.id}
+                    type="button"
+                    onClick={() => setFirstRoomMode(mode.id)}
+                    style={{
+                      padding: '6px 8px',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      borderRadius: '6px',
+                      border: '1px solid',
+                      borderColor: firstRoomMode === mode.id ? '#0f172a' : '#cbd5e1',
+                      background: firstRoomMode === mode.id ? '#0f172a' : '#ffffff',
+                      color: firstRoomMode === mode.id ? '#ffffff' : '#475569',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {mode.label}
+                  </button>
+                ))}
+              </div>
+
+              {firstRoomMode === 'range' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.2fr', gap: '8px' }}>
+                    <div>
+                      <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Start Room No</span>
+                      <input
+                        type="text"
+                        className="form-input"
+                        placeholder="e.g. 101"
+                        value={firstStartRoom}
+                        onChange={(e) => setFirstStartRoom(e.target.value)}
+                        style={{ marginTop: '2px', padding: '6px 10px', fontSize: '13px' }}
+                      />
+                    </div>
+                    <div>
+                      <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>End Room No</span>
+                      <input
+                        type="text"
+                        className="form-input"
+                        placeholder="e.g. 120"
+                        value={firstEndRoom}
+                        onChange={(e) => setFirstEndRoom(e.target.value)}
+                        style={{ marginTop: '2px', padding: '6px 10px', fontSize: '13px' }}
+                      />
+                    </div>
+                    <div>
+                      <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Room Category</span>
+                      <select
+                        className="form-select"
+                        value={firstRoomType}
+                        onChange={(e) => setFirstRoomType(e.target.value)}
+                        style={{ marginTop: '2px', padding: '6px 10px', fontSize: '13px' }}
+                      >
+                        <option value="Standard Room">Standard Room</option>
+                        <option value="Deluxe Suite">Deluxe Suite</option>
+                        <option value="Executive Room">Executive Room</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#166534', background: '#f0fdf4', padding: '6px 10px', borderRadius: '4px' }}>
+                    Will automatically generate rooms from <strong>{firstStartRoom || '?'}</strong> to <strong>{firstEndRoom || '?'}</strong>.
+                  </div>
+                </div>
+              )}
+
+              {firstRoomMode === 'custom' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <textarea
+                    className="form-input"
+                    placeholder="Enter room numbers separated by commas (e.g. 101, 102, 103, 104, 201, 202)"
+                    value={firstCustomRoomsText}
+                    onChange={(e) => setFirstCustomRoomsText(e.target.value)}
+                    rows={2}
+                    style={{ fontSize: '12px', padding: '8px 10px' }}
+                  />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Category:</span>
+                    <select
+                      className="form-select"
+                      value={firstRoomType}
+                      onChange={(e) => setFirstRoomType(e.target.value)}
+                      style={{ padding: '4px 8px', fontSize: '12px' }}
+                    >
+                      <option value="Standard Room">Standard Room</option>
+                      <option value="Deluxe Suite">Deluxe Suite</option>
+                      <option value="Executive Room">Executive Room</option>
+                    </select>
+                  </div>
+                </div>
+              )}
+
+              {firstRoomMode === 'default' && (
+                <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                  Generates default 20 rooms: 101-105, 201-205, 301-305, 401-405 (Standard).
+                </div>
+              )}
+
+              {firstRoomMode === 'none' && (
+                <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                  No rooms will be created now. You can add rooms anytime from Settings &gt; Rooms Inventory.
+                </div>
+              )}
+            </div>
+
+            {loading && loadingMessage && (
+              <div style={{
+                background: '#eff6ff',
+                border: '1px solid #bfdbfe',
+                color: '#1d4ed8',
+                padding: '10px 14px',
+                borderRadius: 'var(--radius-md)',
+                fontSize: '12px',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}>
+                <span style={{ width: '12px', height: '12px', border: '2px solid #3b82f6', borderTopColor: 'transparent', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.8s linear infinite' }}></span>
+                <span>{loadingMessage}</span>
+              </div>
+            )}
+
             <button type="submit" className="btn-main" disabled={loading} style={{ width: '100%', padding: '12px', fontSize: '15px', marginTop: '6px' }}>
-              {loading ? 'Creating Property...' : <><Plus size={16} /> Create Property & Launch Dashboard</>}
+              {loading ? (loadingMessage || 'Creating Property...') : <><Plus size={16} /> Create Property & Launch Dashboard</>}
             </button>
           </form>
         </div>
@@ -412,17 +613,20 @@ export const AuthView = () => {
             </div>
 
             <div className="form-group">
-              <label className="form-label">Master Admin Email <span style={{ color: '#e11d48' }}>*</span></label>
+              <label className="form-label">Master Admin Username or Email <span style={{ color: '#e11d48' }}>*</span></label>
               <div className="input-icon-wrapper">
-                <Mail size={16} className="input-icon" />
+                <User size={16} className="input-icon" />
                 <input
-                  type="email"
+                  type="text"
                   className="form-input icon-padded"
-                  placeholder="admin@aszenventures.com"
+                  placeholder="e.g. admin or myname@hotel.com"
                   value={regEmail}
                   onChange={(e) => setRegEmail(e.target.value)}
                   required
                 />
+              </div>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                Can be any username (e.g. admin, superadmin) or an email address.
               </div>
             </div>
 
@@ -510,16 +714,17 @@ export const AuthView = () => {
           /* STANDARD LOGIN FORM */
           <form onSubmit={handleLoginSubmit} className="auth-form">
             <div className="form-group">
-              <label className="form-label">Email ID or Username</label>
+              <label className="form-label">Username or Email</label>
               <div className="input-icon-wrapper">
                 <User size={16} className="input-icon" />
                 <input
                   type="text"
                   className="form-input icon-padded"
-                  placeholder="Enter email address or username"
+                  placeholder="Enter your username or email"
                   value={loginIdentity}
                   onChange={(e) => setLoginIdentity(e.target.value)}
                   required
+                  autoFocus
                 />
               </div>
             </div>
@@ -562,8 +767,27 @@ export const AuthView = () => {
               </div>
             </div>
 
+            {loading && loadingMessage && (
+              <div style={{
+                background: '#eff6ff',
+                border: '1px solid #bfdbfe',
+                color: '#1d4ed8',
+                padding: '10px 14px',
+                borderRadius: 'var(--radius-md)',
+                fontSize: '12px',
+                fontWeight: 600,
+                marginBottom: '8px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}>
+                <span style={{ width: '12px', height: '12px', border: '2px solid #3b82f6', borderTopColor: 'transparent', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.8s linear infinite' }}></span>
+                <span>{loadingMessage}</span>
+              </div>
+            )}
+
             <button type="submit" className="btn-main" disabled={loading} style={{ width: '100%', padding: '12px', fontSize: '15px', marginTop: '6px' }}>
-              {loading ? 'Signing In...' : <><ArrowRight size={16} /> Sign In to Portal</>}
+              {loading ? (loadingMessage || 'Signing In...') : <><ArrowRight size={16} /> Sign In to Portal</>}
             </button>
           </form>
         )}

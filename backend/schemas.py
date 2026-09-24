@@ -24,6 +24,7 @@ class PropertyCreateRequest(BaseModel):
     address: Optional[str] = None
     phone: Optional[str] = None
     email: Optional[str] = None
+    initialRooms: Optional[List[Any]] = None
 
 class PropertyResponse(BaseModel):
     firmId: str
@@ -252,6 +253,9 @@ class RoomUpdate(BaseModel):
     roomNumber: str
     roomType: Optional[str] = "Standard"
     isStaffRoom: Optional[bool] = False
+
+class BulkRoomsCreate(BaseModel):
+    rooms: List[RoomCreate]
 
 class RoomDetailResponse(BaseModel):
     roomNumber: str

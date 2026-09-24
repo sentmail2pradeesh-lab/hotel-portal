@@ -1,5 +1,36 @@
 const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:8000/api' : '/api');
 
+// Pre-warm backend immediately to eliminate cold start latency on sleeping instances
+try {
+  const rootUrl = API_BASE_URL.endsWith('/api') ? API_BASE_URL.slice(0, -4) : API_BASE_URL;
+  fetch(`${rootUrl}/`, { method: 'GET', keepalive: true }).catch(() => {});
+} catch (_) {}
+
+export async function fetchWithRetry(url, options = {}, retries = 2, delayMs = 1500) {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch(url, options);
+      // If cloud server is waking up and returns 502/503/504 Bad Gateway, retry automatically
+      if ((res.status === 502 || res.status === 503 || res.status === 504) && attempt < retries) {
+        await new Promise(r => setTimeout(r, delayMs * (attempt + 1)));
+        continue;
+      }
+      return res;
+    } catch (err) {
+      // Browser network glitch, cold start socket timeout, or "Failed to fetch"
+      const isNetworkErr = err?.name === 'TypeError' || 
+                           err?.message?.includes('Failed to fetch') || 
+                           err?.message?.includes('NetworkError') ||
+                           err?.message?.includes('Load failed');
+      if (isNetworkErr && attempt < retries) {
+        await new Promise(r => setTimeout(r, delayMs * (attempt + 1)));
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
 const getAuthHeaders = () => {
   const token = localStorage.getItem('frontdesk_jwt_token');
   const activeFirmId = localStorage.getItem('frontdesk_active_firm_id');
@@ -12,8 +43,8 @@ const getAuthHeaders = () => {
 
 export const api = {
   async getSystemStatus() {
-    const res = await fetch(`${API_BASE_URL}/auth/system-status`);
-    if (!res.ok) return { isAdminRegistered: true };
+    const res = await fetchWithRetry(`${API_BASE_URL}/auth/system-status`, {}, 2, 1000).catch(() => null);
+    if (!res || !res.ok) return { isAdminRegistered: true };
     return await res.json();
   },
 
@@ -28,7 +59,7 @@ export const api = {
       payload = { name, phone, email, password };
     }
 
-    const res = await fetch(`${API_BASE_URL}/auth/admin/register`, {
+    const res = await fetchWithRetry(`${API_BASE_URL}/auth/admin/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -40,7 +71,7 @@ export const api = {
   },
 
   async managerRegister(name, email, password) {
-    const res = await fetch(`${API_BASE_URL}/auth/manager/register`, {
+    const res = await fetchWithRetry(`${API_BASE_URL}/auth/manager/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, email, password })
@@ -52,11 +83,11 @@ export const api = {
   },
 
   async managerLogin(identity, password) {
-    const res = await fetch(`${API_BASE_URL}/auth/manager/login`, {
+    const res = await fetchWithRetry(`${API_BASE_URL}/auth/manager/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ identity, password })
-    });
+    }, 2, 1500);
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || 'Manager sign in failed.');
     if (data.token) localStorage.setItem('frontdesk_jwt_token', data.token);
@@ -179,6 +210,17 @@ export const api = {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || 'Failed to add room.');
+    return data;
+  },
+
+  async addRoomsBulk(rooms) {
+    const res = await fetchWithRetry(`${API_BASE_URL}/rooms/bulk`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ rooms })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to bulk add rooms.');
     return data;
   },
 

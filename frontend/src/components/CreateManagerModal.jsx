@@ -81,8 +81,8 @@ export const CreateManagerModal = ({ isOpen, onClose }) => {
       setError('Please enter the full name.');
       return;
     }
-    if (!email.trim() || !email.includes('@')) {
-      setError('Please enter a valid email address.');
+    if (!email.trim() || email.trim().length < 3) {
+      setError('Please enter a valid username or email (at least 3 characters).');
       return;
     }
     if (!tempPassword.trim() || tempPassword.trim().length < 6) {
@@ -121,7 +121,7 @@ export const CreateManagerModal = ({ isOpen, onClose }) => {
 Assigned Role: ${data.role || 'Manager'}
 Property: ${data.propertyName || 'Hotel'}
 Full Name: ${data.name}
-Login Email: ${data.email}
+Login Username / Email: ${data.email}
 Initial / Temp Password: ${data.tempPassword}
 
 Login Portal: ${loginUrl}
@@ -265,7 +265,7 @@ Login Portal: ${loginUrl}
                     <strong style={{ color: 'var(--text-main)' }}>{successData.name}</strong>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--text-muted)' }}>Login Email:</span>
+                    <span style={{ color: 'var(--text-muted)' }}>Username / Email:</span>
                     <strong style={{ color: '#0284c7' }}>{successData.email}</strong>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -420,21 +420,24 @@ Login Portal: ${loginUrl}
                   </div>
                 </div>
 
-                {/* Email */}
+                {/* Username / Email */}
                 <div className="form-group">
                   <label className="form-label">
-                    Email ID (Login Username) <span style={{ color: '#e11d48' }}>*</span>
+                    Username or Email (Login ID) <span style={{ color: '#e11d48' }}>*</span>
                   </label>
                   <div className="input-icon-wrapper">
-                    <Mail size={16} className="input-icon" />
+                    <User size={16} className="input-icon" />
                     <input
-                      type="email"
+                      type="text"
                       className="form-input icon-padded"
-                      placeholder={role === 'Admin' ? 'e.g. admin@hotel.com' : 'e.g. manager@hotel.com'}
+                      placeholder={role === 'Admin' ? 'e.g. admin_branch or admin@hotel.com' : 'e.g. manager1 or manager@hotel.com'}
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       required
                     />
+                  </div>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                    Can be any username (e.g. manager1, frontdesk) or an email address.
                   </div>
                 </div>
 

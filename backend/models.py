@@ -9,9 +9,9 @@ class ManagerAccount(Base):
     __tablename__ = "manager_accounts"
 
     id = Column(String, primary_key=True, index=True)
-    name = Column(String, nullable=False)
+    name = Column(String, nullable=False, index=True)
     email = Column(String, unique=True, index=True, nullable=False)
-    phone = Column(String, nullable=True)
+    phone = Column(String, nullable=True, index=True)
     password_hash = Column(String, nullable=False)
     temp_password_hash = Column(String, nullable=True)
     temp_password_plain = Column(String, nullable=True)
@@ -26,8 +26,8 @@ class PropertyAccount(Base):
     manager_id = Column(String, index=True, nullable=True)
     property_code = Column(String, index=True, nullable=True)
     firm_id = Column(String, unique=True, index=True, nullable=False)
-    firm_name = Column(String, nullable=False)
-    name = Column(String, nullable=False)
+    firm_name = Column(String, nullable=False, index=True)
+    name = Column(String, nullable=False, index=True)
     email = Column(String, index=True, nullable=False)
     password_hash = Column(String, nullable=False)
     firm_logo = Column(Text, nullable=True)

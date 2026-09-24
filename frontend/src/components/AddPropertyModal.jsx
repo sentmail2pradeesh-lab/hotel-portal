@@ -33,6 +33,13 @@ export const AddPropertyModal = ({ isOpen, onClose }) => {
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Bulk Rooms Setup State
+  const [roomMode, setRoomMode] = useState('range'); // 'range' | 'custom' | 'default' | 'none'
+  const [startRoom, setStartRoom] = useState('101');
+  const [endRoom, setEndRoom] = useState('120');
+  const [roomType, setRoomType] = useState('Standard Room');
+  const [customRoomsText, setCustomRoomsText] = useState('');
+
   useEffect(() => {
     if (isOpen) {
       api.getManagers()
@@ -64,6 +71,38 @@ export const AddPropertyModal = ({ isOpen, onClose }) => {
     }
   };
 
+  const getComputedInitialRooms = () => {
+    if (roomMode === 'default') return null; // Uses backend DEFAULT_ROOMS
+    if (roomMode === 'none') return []; // Explicit empty array means 0 initial rooms
+    if (roomMode === 'range') {
+      const start = parseInt(startRoom, 10);
+      const end = parseInt(endRoom, 10);
+      if (isNaN(start) || isNaN(end) || start > end) return null;
+      const count = Math.min(Math.max(end - start + 1, 0), 200);
+      const list = [];
+      for (let i = 0; i < count; i++) {
+        list.push({
+          roomNumber: String(start + i),
+          roomType: roomType,
+          isStaffRoom: false
+        });
+      }
+      return list;
+    }
+    if (roomMode === 'custom') {
+      const nums = customRoomsText
+        .split(/[,\n]+/)
+        .map(s => s.trim())
+        .filter(Boolean);
+      return nums.map(num => ({
+        roomNumber: num,
+        roomType: roomType,
+        isStaffRoom: false
+      }));
+    }
+    return null;
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!propertyCode.trim()) {
@@ -77,6 +116,7 @@ export const AddPropertyModal = ({ isOpen, onClose }) => {
     setError('');
     setIsSubmitting(true);
     try {
+      const initialRooms = getComputedInitialRooms();
       const res = await addProperty({
         propertyCode: propertyCode.trim().toUpperCase(),
         firmName: firmName.trim(),
@@ -88,7 +128,8 @@ export const AddPropertyModal = ({ isOpen, onClose }) => {
         phone: phone.trim() || null,
         email: email.trim() || null,
         firmLogo,
-        eSignature: null
+        eSignature: null,
+        initialRooms
       });
       setIsSubmitting(false);
       if (res.success) {
@@ -360,6 +401,137 @@ export const AddPropertyModal = ({ isOpen, onClose }) => {
                 )}
               </div>
             </div>
+          </div>
+
+          {/* Row 8: Initial Rooms Setup (Bulk Add) */}
+          <div className="form-group" style={{
+            background: '#f8fafc',
+            border: '1px solid #e2e8f0',
+            borderRadius: 'var(--radius-md)',
+            padding: '14px'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+              <label className="form-label" style={{ fontWeight: 700, margin: 0 }}>
+                Initial Room Inventory (Bulk Addition)
+              </label>
+              <span style={{ fontSize: '11px', fontWeight: 600, color: '#d97706', background: '#fef3c7', padding: '2px 8px', borderRadius: '4px' }}>
+                {roomMode === 'default' ? '20 Standard Rooms' : roomMode === 'range' ? `${Math.max(0, parseInt(endRoom || 0) - parseInt(startRoom || 0) + 1)} Rooms` : roomMode === 'custom' ? 'Custom Rooms' : '0 Rooms'}
+              </span>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px', marginBottom: '10px' }}>
+              {[
+                { id: 'range', label: 'By Range' },
+                { id: 'custom', label: 'Custom List' },
+                { id: 'default', label: 'Preset (20)' },
+                { id: 'none', label: 'Add Later' }
+              ].map((mode) => (
+                <button
+                  key={mode.id}
+                  type="button"
+                  onClick={() => setRoomMode(mode.id)}
+                  style={{
+                    padding: '6px 8px',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    borderRadius: '6px',
+                    border: '1px solid',
+                    borderColor: roomMode === mode.id ? '#0f172a' : '#cbd5e1',
+                    background: roomMode === mode.id ? '#0f172a' : '#ffffff',
+                    color: roomMode === mode.id ? '#ffffff' : '#475569',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {mode.label}
+                </button>
+              ))}
+            </div>
+
+            {roomMode === 'range' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.2fr', gap: '8px' }}>
+                  <div>
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Start Room No</span>
+                    <input
+                      type="text"
+                      className="form-input"
+                      placeholder="e.g. 101"
+                      value={startRoom}
+                      onChange={(e) => setStartRoom(e.target.value)}
+                      style={{ marginTop: '2px', padding: '6px 10px', fontSize: '13px' }}
+                    />
+                  </div>
+                  <div>
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>End Room No</span>
+                    <input
+                      type="text"
+                      className="form-input"
+                      placeholder="e.g. 120"
+                      value={endRoom}
+                      onChange={(e) => setEndRoom(e.target.value)}
+                      style={{ marginTop: '2px', padding: '6px 10px', fontSize: '13px' }}
+                    />
+                  </div>
+                  <div>
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Room Category</span>
+                    <select
+                      className="form-select"
+                      value={roomType}
+                      onChange={(e) => setRoomType(e.target.value)}
+                      style={{ marginTop: '2px', padding: '6px 10px', fontSize: '13px' }}
+                    >
+                      <option value="Standard Room">Standard Room</option>
+                      <option value="Deluxe Suite">Deluxe Suite</option>
+                      <option value="Executive Room">Executive Room</option>
+                      <option value="Family Villa">Family Villa</option>
+                      <option value="Dormitory">Dormitory</option>
+                    </select>
+                  </div>
+                </div>
+                <div style={{ fontSize: '11px', color: '#166534', background: '#f0fdf4', padding: '6px 10px', borderRadius: '4px' }}>
+                  Will automatically generate <strong>{Math.max(0, parseInt(endRoom || 0) - parseInt(startRoom || 0) + 1)}</strong> rooms from <strong>{startRoom || '?'}</strong> to <strong>{endRoom || '?'}</strong> ({roomType}).
+                </div>
+              </div>
+            )}
+
+            {roomMode === 'custom' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <textarea
+                  className="form-input"
+                  placeholder="Enter room numbers separated by commas (e.g. 101, 102, 103, 104, 201, 202, 203)"
+                  value={customRoomsText}
+                  onChange={(e) => setCustomRoomsText(e.target.value)}
+                  rows={2}
+                  style={{ fontSize: '12px', padding: '8px 10px' }}
+                />
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Category:</span>
+                  <select
+                    className="form-select"
+                    value={roomType}
+                    onChange={(e) => setRoomType(e.target.value)}
+                    style={{ padding: '4px 8px', fontSize: '12px' }}
+                  >
+                    <option value="Standard Room">Standard Room</option>
+                    <option value="Deluxe Suite">Deluxe Suite</option>
+                    <option value="Executive Room">Executive Room</option>
+                    <option value="Family Villa">Family Villa</option>
+                  </select>
+                </div>
+              </div>
+            )}
+
+            {roomMode === 'default' && (
+              <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                Generates default 20 rooms: 101-105, 201-205, 301-305, 401-405 (Standard).
+              </div>
+            )}
+
+            {roomMode === 'none' && (
+              <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                No rooms will be created now. You can add rooms anytime from Settings &gt; Rooms Inventory.
+              </div>
+            )}
           </div>
 
           {/* Manager Assignment Note */}

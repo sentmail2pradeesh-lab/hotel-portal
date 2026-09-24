@@ -53,7 +53,8 @@ export const SettingsView = () => {
     changePassword,
     roomsList, 
     roomsDetails,
-    addCustomRoom, 
+    addCustomRoom,
+    addCustomRoomsBulk, 
     editCustomRoom,
     removeCustomRoom,
     featureToggles,
@@ -131,9 +132,20 @@ export const SettingsView = () => {
   const [renameInput, setRenameInput] = useState('');
 
   // Room Management State
+  const [roomAddMode, setRoomAddMode] = useState('single'); // 'single' | 'bulk'
   const [newRoomNumber, setNewRoomNumber] = useState('');
   const [newRoomType, setNewRoomType] = useState('Deluxe Suite');
   const [newIsStaffRoom, setNewIsStaffRoom] = useState(false);
+
+  // Bulk Rooms State
+  const [bulkMode, setBulkMode] = useState('range'); // 'range' | 'custom'
+  const [bulkStartRoom, setBulkStartRoom] = useState('101');
+  const [bulkEndRoom, setBulkEndRoom] = useState('120');
+  const [bulkRoomType, setBulkRoomType] = useState('Standard Room');
+  const [bulkIsStaffRoom, setBulkIsStaffRoom] = useState(false);
+  const [bulkCustomText, setBulkCustomText] = useState('');
+  const [isBulkAdding, setIsBulkAdding] = useState(false);
+
   const [roomError, setRoomError] = useState('');
   const [roomSuccess, setRoomSuccess] = useState('');
   const [editingRoom, setEditingRoom] = useState(null); // { oldRoomNumber, newRoomNumber, roomType, isStaffRoom }
@@ -226,6 +238,64 @@ Login Portal: ${loginUrl}
       setRoomSuccess(`Room ${newRoomNumber.trim()} added successfully to inventory!`);
       setNewRoomNumber('');
       setNewIsStaffRoom(false);
+    }
+  };
+
+  // Bulk Add Rooms Handler
+  const handleBulkAddRooms = async (e) => {
+    e.preventDefault();
+    if (!isRegisterOpen) {
+      setRoomError('Shift Register is Closed. Please open shift register to add rooms.');
+      return;
+    }
+    setRoomError('');
+    setRoomSuccess('');
+
+    let roomsToCreate = [];
+    if (bulkMode === 'range') {
+      const start = parseInt(bulkStartRoom, 10);
+      const end = parseInt(bulkEndRoom, 10);
+      if (isNaN(start) || isNaN(end)) {
+        setRoomError('Please enter valid numeric room numbers.');
+        return;
+      }
+      if (start > end) {
+        setRoomError('Start Room Number cannot be greater than End Room Number.');
+        return;
+      }
+      const count = end - start + 1;
+      if (count > 200) {
+        setRoomError('Maximum 200 rooms can be added in a single batch.');
+        return;
+      }
+      for (let i = 0; i < count; i++) {
+        roomsToCreate.push({
+          roomNumber: String(start + i),
+          roomType: bulkRoomType,
+          isStaffRoom: bulkIsStaffRoom
+        });
+      }
+    } else {
+      const nums = bulkCustomText.split(/[,\n]+/).map(s => s.trim()).filter(Boolean);
+      if (nums.length === 0) {
+        setRoomError('Please enter at least one room number.');
+        return;
+      }
+      roomsToCreate = nums.map(num => ({
+        roomNumber: num,
+        roomType: bulkRoomType,
+        isStaffRoom: bulkIsStaffRoom
+      }));
+    }
+
+    setIsBulkAdding(true);
+    const res = await addCustomRoomsBulk(roomsToCreate);
+    setIsBulkAdding(false);
+    if (res.success) {
+      setRoomSuccess(res.message);
+      if (bulkMode === 'custom') setBulkCustomText('');
+    } else {
+      setRoomError(res.message);
     }
   };
 
@@ -610,66 +680,229 @@ Login Portal: ${loginUrl}
           
           {/* Add New Room Card */}
           <div className="card-container" style={{ padding: '24px' }}>
-            <h2 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text-main)', marginBottom: '16px', fontFamily: 'var(--font-sans)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Plus size={18} color="#d97706" /> Add New Room Suite
-            </h2>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
+              <h2 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text-main)', margin: 0, fontFamily: 'var(--font-sans)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Plus size={18} color="#d97706" /> Add Rooms
+              </h2>
+              {/* Tab Switcher: Single vs Bulk */}
+              <div style={{ display: 'flex', background: '#f1f5f9', padding: '3px', borderRadius: '8px', gap: '2px' }}>
+                <button
+                  type="button"
+                  onClick={() => setRoomAddMode('single')}
+                  style={{
+                    padding: '4px 10px',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    borderRadius: '6px',
+                    border: 'none',
+                    background: roomAddMode === 'single' ? '#ffffff' : 'transparent',
+                    color: roomAddMode === 'single' ? 'var(--text-main)' : 'var(--text-muted)',
+                    boxShadow: roomAddMode === 'single' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Single Room
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRoomAddMode('bulk')}
+                  style={{
+                    padding: '4px 10px',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    borderRadius: '6px',
+                    border: 'none',
+                    background: roomAddMode === 'bulk' ? '#0f172a' : 'transparent',
+                    color: roomAddMode === 'bulk' ? '#ffffff' : 'var(--text-muted)',
+                    boxShadow: roomAddMode === 'bulk' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}
+                >
+                  ⚡ Bulk Add
+                </button>
+              </div>
+            </div>
 
             {roomError && <div className="auth-error-banner">{roomError}</div>}
             {roomSuccess && <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', color: '#047857', padding: '10px 14px', borderRadius: 'var(--radius-md)', fontSize: '13px', fontWeight: 600, marginBottom: '16px' }}>{roomSuccess}</div>}
 
-            <form onSubmit={handleAddRoom} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <div className="form-group">
-                <label className="form-label">Room Identifier / Suite No. <span style={{ color: '#e11d48' }}>*</span></label>
-                <input 
-                  type="text" 
-                  className="form-input mono" 
-                  placeholder="e.g. 501, Deluxe-B, Villa-1" 
-                  value={newRoomNumber} 
-                  onChange={(e) => setNewRoomNumber(e.target.value)} 
-                  required 
-                />
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">Room Category / Type</label>
-                <select
-                  className="form-select"
-                  value={newRoomType}
-                  onChange={(e) => setNewRoomType(e.target.value)}
-                >
-                  <option value="Deluxe Suite">Deluxe Suite</option>
-                  <option value="Executive Room">Executive Room</option>
-                  <option value="Standard Room">Standard Room</option>
-                  <option value="Family Villa">Family Villa</option>
-                  <option value="Dormitory">Dormitory</option>
-                </select>
-              </div>
-
-              <div className="form-group">
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: 600, color: newIsStaffRoom ? '#7c3aed' : 'var(--text-main)' }}>
-                  <input
-                    type="checkbox"
-                    checked={newIsStaffRoom}
-                    onChange={(e) => setNewIsStaffRoom(e.target.checked)}
-                    style={{ width: '16px', height: '16px', accentColor: '#7c3aed' }}
+            {roomAddMode === 'single' ? (
+              <form onSubmit={handleAddRoom} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <div className="form-group">
+                  <label className="form-label">Room Identifier / Suite No. <span style={{ color: '#e11d48' }}>*</span></label>
+                  <input 
+                    type="text" 
+                    className="form-input mono" 
+                    placeholder="e.g. 501, Deluxe-B, Villa-1" 
+                    value={newRoomNumber} 
+                    onChange={(e) => setNewRoomNumber(e.target.value)} 
+                    required 
                   />
-                  <span>Mark as Staff Room (Non-Sellable Quarter)</span>
-                </label>
-                <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
-                  Staff quarters are automatically deducted from sellable inventory.
-                </span>
-              </div>
+                </div>
 
-              <button 
-                type="submit" 
-                className="btn-main" 
-                disabled={!isRegisterOpen}
-                style={{ width: '100%', padding: '10px', fontSize: '14px', marginTop: '8px' }}
-                title={isRegisterOpen ? "Add Room to Inventory" : "Shift Register is Closed (View-Only Mode)"}
-              >
-                <Plus size={16} /> Add Room to Inventory
-              </button>
-            </form>
+                <div className="form-group">
+                  <label className="form-label">Room Category / Type</label>
+                  <select
+                    className="form-select"
+                    value={newRoomType}
+                    onChange={(e) => setNewRoomType(e.target.value)}
+                  >
+                    <option value="Deluxe Suite">Deluxe Suite</option>
+                    <option value="Executive Room">Executive Room</option>
+                    <option value="Standard Room">Standard Room</option>
+                    <option value="Family Villa">Family Villa</option>
+                    <option value="Dormitory">Dormitory</option>
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: 600, color: newIsStaffRoom ? '#7c3aed' : 'var(--text-main)' }}>
+                    <input
+                      type="checkbox"
+                      checked={newIsStaffRoom}
+                      onChange={(e) => setNewIsStaffRoom(e.target.checked)}
+                      style={{ width: '16px', height: '16px', accentColor: '#7c3aed' }}
+                    />
+                    <span>Mark as Staff Room (Non-Sellable Quarter)</span>
+                  </label>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
+                    Staff quarters are automatically deducted from sellable inventory.
+                  </span>
+                </div>
+
+                <button 
+                  type="submit" 
+                  className="btn-main" 
+                  disabled={!isRegisterOpen}
+                  style={{ width: '100%', padding: '10px', fontSize: '14px', marginTop: '8px' }}
+                  title={isRegisterOpen ? "Add Room to Inventory" : "Shift Register is Closed (View-Only Mode)"}
+                >
+                  <Plus size={16} /> Add Room to Inventory
+                </button>
+              </form>
+            ) : (
+              <form onSubmit={handleBulkAddRooms} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', background: '#f8fafc', padding: '4px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                  <button
+                    type="button"
+                    onClick={() => setBulkMode('range')}
+                    style={{
+                      padding: '6px',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      borderRadius: '6px',
+                      border: 'none',
+                      background: bulkMode === 'range' ? '#0f172a' : 'transparent',
+                      color: bulkMode === 'range' ? '#ffffff' : 'var(--text-muted)',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Number Range
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBulkMode('custom')}
+                    style={{
+                      padding: '6px',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      borderRadius: '6px',
+                      border: 'none',
+                      background: bulkMode === 'custom' ? '#0f172a' : 'transparent',
+                      color: bulkMode === 'custom' ? '#ffffff' : 'var(--text-muted)',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Custom List
+                  </button>
+                </div>
+
+                {bulkMode === 'range' ? (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                    <div className="form-group">
+                      <label className="form-label">Start Room No. <span style={{ color: '#e11d48' }}>*</span></label>
+                      <input
+                        type="text"
+                        className="form-input mono"
+                        placeholder="e.g. 101"
+                        value={bulkStartRoom}
+                        onChange={(e) => setBulkStartRoom(e.target.value)}
+                        required
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">End Room No. <span style={{ color: '#e11d48' }}>*</span></label>
+                      <input
+                        type="text"
+                        className="form-input mono"
+                        placeholder="e.g. 120"
+                        value={bulkEndRoom}
+                        onChange={(e) => setBulkEndRoom(e.target.value)}
+                        required
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="form-group">
+                    <label className="form-label">Comma or Line Separated Rooms <span style={{ color: '#e11d48' }}>*</span></label>
+                    <textarea
+                      className="form-input mono"
+                      placeholder="e.g. 201, 202, 203, 204, 301, 302"
+                      value={bulkCustomText}
+                      onChange={(e) => setBulkCustomText(e.target.value)}
+                      rows={3}
+                      required
+                    />
+                  </div>
+                )}
+
+                <div className="form-group">
+                  <label className="form-label">Room Category / Type</label>
+                  <select
+                    className="form-select"
+                    value={bulkRoomType}
+                    onChange={(e) => setBulkRoomType(e.target.value)}
+                  >
+                    <option value="Standard Room">Standard Room</option>
+                    <option value="Deluxe Suite">Deluxe Suite</option>
+                    <option value="Executive Room">Executive Room</option>
+                    <option value="Family Villa">Family Villa</option>
+                    <option value="Dormitory">Dormitory</option>
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: 600, color: bulkIsStaffRoom ? '#7c3aed' : 'var(--text-main)' }}>
+                    <input
+                      type="checkbox"
+                      checked={bulkIsStaffRoom}
+                      onChange={(e) => setBulkIsStaffRoom(e.target.checked)}
+                      style={{ width: '16px', height: '16px', accentColor: '#7c3aed' }}
+                    />
+                    <span>Mark all as Staff Rooms (Non-Sellable)</span>
+                  </label>
+                </div>
+
+                {bulkMode === 'range' && !isNaN(parseInt(bulkStartRoom, 10)) && !isNaN(parseInt(bulkEndRoom, 10)) && parseInt(bulkEndRoom, 10) >= parseInt(bulkStartRoom, 10) && (
+                  <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#166534', padding: '8px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 600 }}>
+                    Will create <strong>{parseInt(bulkEndRoom, 10) - parseInt(bulkStartRoom, 10) + 1}</strong> rooms: {bulkStartRoom} ... {bulkEndRoom}
+                  </div>
+                )}
+
+                <button 
+                  type="submit" 
+                  className="btn-main" 
+                  disabled={!isRegisterOpen || isBulkAdding}
+                  style={{ width: '100%', padding: '10px', fontSize: '14px', marginTop: '8px' }}
+                  title={isRegisterOpen ? "Bulk Add Rooms" : "Shift Register is Closed"}
+                >
+                  {isBulkAdding ? 'Adding Rooms...' : '⚡ Bulk Add Rooms to Inventory'}
+                </button>
+              </form>
+            )}
           </div>
 
           {/* Rooms Grid */}

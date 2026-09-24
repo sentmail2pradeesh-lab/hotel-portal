@@ -533,6 +533,27 @@ export const HotelProvider = ({ children }) => {
     }
   };
 
+  const addCustomRoomsBulk = async (roomsToCreate) => {
+    if (!checkRegisterOpen()) return { success: false, message: 'Shift Register is Closed. Please open shift register to add rooms.' };
+    if (!Array.isArray(roomsToCreate) || roomsToCreate.length === 0) {
+      return { success: false, message: 'No rooms provided to add.' };
+    }
+    try {
+      const res = await api.addRoomsBulk(roomsToCreate);
+      await refreshPropertyData();
+      return { 
+        success: true, 
+        createdCount: res.createdCount, 
+        createdRooms: res.createdRooms,
+        skippedCount: res.skippedCount,
+        skippedRooms: res.skippedRooms,
+        message: `Successfully added ${res.createdCount} room(s)${res.skippedCount > 0 ? ` (${res.skippedCount} duplicate(s) skipped)` : ''}.` 
+      };
+    } catch (err) {
+      return { success: false, message: err.message || 'Failed to bulk add rooms.' };
+    }
+  };
+
   const editCustomRoom = async (oldRoomNum, newRoomNum, isStaffRoom = false, roomType = "Standard") => {
     if (!checkRegisterOpen()) return { success: false, message: 'Shift Register is Closed.' };
     try {
@@ -876,6 +897,7 @@ export const HotelProvider = ({ children }) => {
         roomsList,
         roomsDetails,
         addCustomRoom,
+        addCustomRoomsBulk,
         editCustomRoom,
         removeCustomRoom,
         featureToggles,

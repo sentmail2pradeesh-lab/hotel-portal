@@ -33,7 +33,7 @@ try:
         BulkImportRequest, BulkImportResponse,
         ExpenseCreate, ExpenseResponse,
         BillCreate, BillUpdate, BillResponse,
-        RoomCreate, RoomUpdate, RoomDetailResponse, RegisterStateResponse,
+        RoomCreate, RoomUpdate, BulkRoomsCreate, RoomDetailResponse, RegisterStateResponse,
         InvitationCreateRequest, InvitationResponse, AcceptInvitationRequest,
         ManagerCreateRequest, ChangePasswordRequest, FeatureToggleRequest
     )
@@ -52,7 +52,7 @@ except ModuleNotFoundError:
         BulkImportRequest, BulkImportResponse,
         ExpenseCreate, ExpenseResponse,
         BillCreate, BillUpdate, BillResponse,
-        RoomCreate, RoomUpdate, RoomDetailResponse, RegisterStateResponse,
+        RoomCreate, RoomUpdate, BulkRoomsCreate, RoomDetailResponse, RegisterStateResponse,
         InvitationCreateRequest, InvitationResponse, AcceptInvitationRequest,
         ManagerCreateRequest, ChangePasswordRequest, FeatureToggleRequest
     )
@@ -341,7 +341,7 @@ def get_initials(name_str: Optional[str]) -> str:
 
 def hash_password(password: str) -> str:
     pwd_bytes = password.encode('utf-8')[:72]
-    salt = bcrypt.gensalt()
+    salt = bcrypt.gensalt(rounds=10)
     return bcrypt.hashpw(pwd_bytes, salt).decode('utf-8')
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -830,9 +830,25 @@ def create_property(
     )
     db.add(new_prop)
 
-    # Initialize default rooms for the new property
-    for rm in DEFAULT_ROOMS:
-        db.add(RoomModel(firm_id=firm_id, room_number=rm))
+    # Initialize rooms for the new property (bulk custom rooms or defaults)
+    if req.initialRooms is not None and len(req.initialRooms) > 0:
+        seen_nums = set()
+        for rm in req.initialRooms:
+            if isinstance(rm, dict):
+                r_num = str(rm.get("roomNumber", "")).strip()
+                r_type = str(rm.get("roomType", "Standard")).strip() or "Standard"
+                r_staff = bool(rm.get("isStaffRoom", False))
+            else:
+                r_num = str(rm).strip()
+                r_type = "Standard"
+                r_staff = False
+            if r_num and r_num not in seen_nums:
+                seen_nums.add(r_num)
+                db.add(RoomModel(firm_id=firm_id, room_number=r_num, room_type=r_type, is_staff_room=r_staff))
+    elif req.initialRooms is None:
+        # None means use DEFAULT_ROOMS; explicit empty list [] means 0 rooms
+        for rm in DEFAULT_ROOMS:
+            db.add(RoomModel(firm_id=firm_id, room_number=rm))
 
     # Initialize register state
     db.add(RegisterStateModel(firm_id=firm_id, is_open=True))
@@ -1367,6 +1383,53 @@ def add_room(
     db.add(new_room)
     db.commit()
     return {"success": True}
+
+
+@app.post("/api/rooms/bulk")
+def add_rooms_bulk(
+    req: BulkRoomsCreate,
+    current_user: PropertyAccount = Depends(get_current_property),
+    db: Session = Depends(get_db)
+):
+    if not req.rooms or len(req.rooms) == 0:
+        raise HTTPException(status_code=400, detail="No rooms provided in request.")
+
+    # Get existing room numbers for this property to avoid duplicates
+    existing_rooms = set(
+        r[0] for r in db.query(RoomModel.room_number).filter(
+            RoomModel.firm_id == current_user.firm_id
+        ).all()
+    )
+
+    created_rooms = []
+    skipped_rooms = []
+
+    for r in req.rooms:
+        clean_num = str(r.roomNumber).strip()
+        if not clean_num:
+            continue
+        if clean_num in existing_rooms:
+            skipped_rooms.append(clean_num)
+            continue
+
+        new_room = RoomModel(
+            firm_id=current_user.firm_id,
+            room_number=clean_num,
+            room_type=r.roomType or "Standard",
+            is_staff_room=bool(r.isStaffRoom)
+        )
+        db.add(new_room)
+        existing_rooms.add(clean_num)
+        created_rooms.append(clean_num)
+
+    db.commit()
+    return {
+        "success": True,
+        "createdCount": len(created_rooms),
+        "createdRooms": created_rooms,
+        "skippedCount": len(skipped_rooms),
+        "skippedRooms": skipped_rooms
+    }
 
 
 @app.put("/api/rooms/{room_number}")
