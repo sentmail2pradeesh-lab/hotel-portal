@@ -5,7 +5,7 @@ import { IDCardViewerModal } from './IDCardViewerModal';
 import { 
   Upload, X, CheckCircle2, FileText, Sparkles, User, Phone, 
   Mail, BedDouble, Calendar, CreditCard, Hash, FileCheck, ShieldCheck,
-  Users, Minus, Plus, AlertCircle, Eye, Trash2, IdCard, RefreshCw
+  Users, Minus, Plus, AlertCircle, Eye, Trash2, IdCard, RefreshCw, Clock
 } from 'lucide-react';
 
 export const BookingModal = ({ isOpen, onClose, initialData = null }) => {
