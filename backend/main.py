@@ -1,22 +1,37 @@
 import os
+import sys
 import json
 import uuid
 from datetime import datetime, timedelta
 from typing import List, Optional
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI, Depends, HTTPException, status, Header, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 import jwt
-import bcrypt
-from passlib.context import CryptContext
+
+try:
+    import bcrypt
+except ImportError:
+    pass
+
+try:
+    from passlib.context import CryptContext
+except ImportError:
+    pass
 
 try:
     from dotenv import load_dotenv
     load_dotenv()
 except ImportError:
     pass
+
+# Ensure both backend/ and parent project directory are available on sys.path
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+PARENT_DIR = os.path.dirname(BASE_DIR)
+for path_dir in (BASE_DIR, PARENT_DIR):
+    if path_dir not in sys.path:
+        sys.path.insert(0, path_dir)
 
 try:
     from backend.database import engine, Base, get_db, SessionLocal
@@ -37,7 +52,7 @@ try:
         InvitationCreateRequest, InvitationResponse, AcceptInvitationRequest,
         ManagerCreateRequest, ChangePasswordRequest, FeatureToggleRequest
     )
-except ModuleNotFoundError:
+except (ModuleNotFoundError, ImportError):
     from database import engine, Base, get_db, SessionLocal
     from models import (
         ManagerAccount, PropertyAccount, RoomModel, BookingModel,

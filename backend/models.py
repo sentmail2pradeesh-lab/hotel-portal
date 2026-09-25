@@ -1,9 +1,22 @@
+import os
+import sys
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+PARENT_DIR = os.path.dirname(BASE_DIR)
+for path_dir in (BASE_DIR, PARENT_DIR):
+    if path_dir not in sys.path:
+        sys.path.insert(0, path_dir)
+
 from sqlalchemy import Column, Integer, String, Float, Text, Boolean, DateTime
 from datetime import datetime
+
 try:
     from backend.database import Base
-except ModuleNotFoundError:
-    from database import Base
+except (ModuleNotFoundError, ImportError):
+    try:
+        from database import Base
+    except (ModuleNotFoundError, ImportError):
+        from .database import Base
 
 class ManagerAccount(Base):
     __tablename__ = "manager_accounts"

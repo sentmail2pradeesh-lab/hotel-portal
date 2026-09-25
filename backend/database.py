@@ -1,8 +1,18 @@
-from sqlalchemy import create_engine
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
-
 import os
+import sys
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+PARENT_DIR = os.path.dirname(BASE_DIR)
+for path_dir in (BASE_DIR, PARENT_DIR):
+    if path_dir not in sys.path:
+        sys.path.insert(0, path_dir)
+
+from sqlalchemy import create_engine
+try:
+    from sqlalchemy.orm import declarative_base
+except ImportError:
+    from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
 
 default_db_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "hotel_booking.db"))
 if not os.path.exists(default_db_file):
