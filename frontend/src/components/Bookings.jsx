@@ -295,9 +295,34 @@ export const Bookings = () => {
                 </div>
 
                 {/* Amount & Payment Info */}
-                <div style={{ minWidth: '120px', whiteSpace: 'nowrap' }}>
-                  <div style={{ fontSize: '15px', fontWeight: 800, color: '#0f172a' }} className="mono">
-                    {formatCurrency(b.amountPaid)}
+                <div style={{ minWidth: '135px', whiteSpace: 'nowrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '15px', fontWeight: 800, color: '#0f172a' }} className="mono">
+                      {formatCurrency(b.amountPaid)}
+                    </span>
+                    {(() => {
+                      const isFullyPaid = b.paymentStatus === 'Fully Paid' || b.isPrepaid || b.bookingType === 'Online Pre-paid' || (b.amountPaid > 0 && b.paidVia !== 'Pending' && (!b.totalAmount || b.amountPaid >= b.totalAmount));
+                      const isUnpaid = b.paymentStatus === 'Unpaid' || b.paidVia === 'Pending' || b.amountPaid === 0;
+                      if (isFullyPaid) {
+                        return (
+                          <span className="badge-pay-status fully-paid" title="100% Fully Paid">
+                            <CheckCircle2 size={10} /> Fully Paid
+                          </span>
+                        );
+                      }
+                      if (isUnpaid) {
+                        return (
+                          <span className="badge-pay-status unpaid" title="Payment Pending / Unpaid">
+                            <AlertCircle size={10} /> Unpaid
+                          </span>
+                        );
+                      }
+                      return (
+                        <span className="badge-pay-status partial" title="Advance Paid, Balance Pending">
+                          <Clock size={10} /> Partial
+                        </span>
+                      );
+                    })()}
                   </div>
                   <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px', fontWeight: 600 }}>
                     Paid via {b.paidVia || 'Cash'}
@@ -336,16 +361,16 @@ export const Bookings = () => {
                       onClick={() => setSelectedIDBooking(b)}
                       title="View ID Card"
                     >
-                      <CheckCircle2 size={12} /> ID Scan
+                      <CheckCircle2 size={12} /> {b.idCardType ? b.idCardType.split(' ')[0] : 'ID'} Scan
                     </button>
                   ) : (
                     <button 
                       className="id-status-badge no-id"
                       disabled={!isRegisterOpen}
                       onClick={() => handleEdit(b)}
-                      title="Attach Guest ID"
+                      title="Upload Guest Document"
                     >
-                      + Attach ID
+                      + Upload ID
                     </button>
                   )}
 

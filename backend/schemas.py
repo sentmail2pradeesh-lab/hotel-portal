@@ -113,11 +113,15 @@ class BookingBase(BaseModel):
     checkIn: str
     checkOut: str
     amountPaid: float = 0.0
+    totalAmount: Optional[float] = 0.0
+    paymentStatus: Optional[str] = "Fully Paid"
     paidVia: Optional[str] = "Cash"
     txnId: Optional[str] = None
     notes: Optional[str] = ""
     idCard: Optional[str] = None
     idCardName: Optional[str] = "ID Photo"
+    idCardType: Optional[str] = None
+    idCardNumber: Optional[str] = None
     status: Optional[str] = "Upcoming"
     bookingType: Optional[str] = "Walk-in"
     isPrepaid: Optional[bool] = False
@@ -139,11 +143,15 @@ class BookingUpdate(BaseModel):
     checkIn: Optional[str] = None
     checkOut: Optional[str] = None
     amountPaid: Optional[float] = None
+    totalAmount: Optional[float] = None
+    paymentStatus: Optional[str] = None
     paidVia: Optional[str] = None
     txnId: Optional[str] = None
     notes: Optional[str] = None
     idCard: Optional[str] = None
     idCardName: Optional[str] = None
+    idCardType: Optional[str] = None
+    idCardNumber: Optional[str] = None
     status: Optional[str] = None
     bookingType: Optional[str] = None
     isPrepaid: Optional[bool] = None
@@ -170,9 +178,15 @@ class BulkImportBookingItem(BaseModel):
     checkIn: str
     checkOut: str
     amountPaid: Optional[float] = 0.0
+    totalAmount: Optional[float] = 0.0
+    paymentStatus: Optional[str] = "Fully Paid"
     paidVia: Optional[str] = "Cash"
     txnId: Optional[str] = None
     notes: Optional[str] = ""
+    idCard: Optional[str] = None
+    idCardName: Optional[str] = "ID Photo"
+    idCardType: Optional[str] = None
+    idCardNumber: Optional[str] = None
     status: Optional[str] = None
     bookingType: Optional[str] = "OTA"
     isPrepaid: Optional[bool] = False

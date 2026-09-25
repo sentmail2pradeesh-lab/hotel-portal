@@ -53,12 +53,19 @@ export const IDCardViewerModal = ({ booking, onClose }) => {
             </div>
 
             <div>
-              <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 800, display: 'block', letterSpacing: '0.05em' }}>DOCUMENT FILE</span>
-              <span className="mono" style={{ color: 'var(--text-secondary)' }}>{booking.idCardName || (isPdf ? 'PDF Scan' : 'Photo Scan')}</span>
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 800, display: 'block', letterSpacing: '0.05em' }}>DOCUMENT FILE & TYPE</span>
+              <span className="mono" style={{ color: 'var(--text-secondary)' }}>
+                {booking.idCardType ? `${booking.idCardType} • ` : ''}{booking.idCardName || (isPdf ? 'PDF Scan' : 'Photo Scan')}
+              </span>
+              {booking.idCardNumber && (
+                <div style={{ fontSize: '11.5px', color: '#0369a1', fontWeight: 700, marginTop: '2px' }}>
+                  ID Ref: {booking.idCardNumber}
+                </div>
+              )}
             </div>
 
             <div style={{ gridColumn: 'span 2', display: 'flex', alignItems: 'center', gap: '8px', color: '#047857', fontSize: '13px', fontWeight: 700, paddingTop: '8px', borderTop: '1px dashed var(--border-color)' }}>
-              <CheckCircle2 size={16} /> Government ID Document ({isPdf ? 'PDF Document' : 'Photo Image'}) mapped to {booking.guestName} ({booking.id})
+              <CheckCircle2 size={16} /> Verified Document ({isPdf ? 'PDF Document' : 'Photo Image'}) mapped to {booking.guestName} ({booking.id})
             </div>
           </div>
 

@@ -77,6 +77,10 @@ class BookingModel(Base):
     is_prepaid = Column(Boolean, default=False)
     is_guaranteed = Column(Boolean, default=False)
     is_hidden = Column(Boolean, default=False)
+    total_amount = Column(Float, default=0.0, nullable=True)
+    payment_status = Column(String, default="Fully Paid", nullable=True)
+    id_card_type = Column(String, nullable=True)
+    id_card_number = Column(String, nullable=True)
     created_at = Column(String, nullable=True)
 
 class ExpenseModel(Base):

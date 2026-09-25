@@ -171,6 +171,30 @@ if engine.name == "sqlite":
             if "is_guaranteed" not in b_cols:
                 conn.execute(text("ALTER TABLE bookings ADD COLUMN is_guaranteed BOOLEAN DEFAULT 0"))
                 conn.commit()
+            if "total_amount" not in b_cols:
+                conn.execute(text("ALTER TABLE bookings ADD COLUMN total_amount FLOAT DEFAULT 0.0"))
+                conn.commit()
+            if "payment_status" not in b_cols:
+                conn.execute(text("ALTER TABLE bookings ADD COLUMN payment_status VARCHAR DEFAULT 'Fully Paid'"))
+                conn.commit()
+            if "id_card_type" not in b_cols:
+                conn.execute(text("ALTER TABLE bookings ADD COLUMN id_card_type VARCHAR"))
+                conn.commit()
+            if "id_card_number" not in b_cols:
+                conn.execute(text("ALTER TABLE bookings ADD COLUMN id_card_number VARCHAR"))
+                conn.commit()
+            if "notes" not in b_cols:
+                conn.execute(text("ALTER TABLE bookings ADD COLUMN notes TEXT"))
+                conn.commit()
+            if "id_card" not in b_cols:
+                conn.execute(text("ALTER TABLE bookings ADD COLUMN id_card TEXT"))
+                conn.commit()
+            if "id_card_name" not in b_cols:
+                conn.execute(text("ALTER TABLE bookings ADD COLUMN id_card_name VARCHAR"))
+                conn.commit()
+            if "created_at" not in b_cols:
+                conn.execute(text("ALTER TABLE bookings ADD COLUMN created_at VARCHAR"))
+                conn.commit()
 
             # Initialize default feature toggles if empty
             ft_res = conn.execute(text("SELECT COUNT(*) FROM feature_toggles")).scalar()
@@ -220,6 +244,10 @@ else:
             conn.execute(text("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS adults INTEGER DEFAULT 1"))
             conn.execute(text("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS children INTEGER DEFAULT 0"))
             conn.execute(text("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS is_guaranteed BOOLEAN DEFAULT FALSE"))
+            conn.execute(text("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS total_amount FLOAT DEFAULT 0.0"))
+            conn.execute(text("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS payment_status VARCHAR DEFAULT 'Fully Paid'"))
+            conn.execute(text("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS id_card_type VARCHAR"))
+            conn.execute(text("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS id_card_number VARCHAR"))
             conn.execute(text("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS notes TEXT"))
             conn.execute(text("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS id_card TEXT"))
             conn.execute(text("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS id_card_name VARCHAR"))
@@ -1159,6 +1187,52 @@ def update_profile(
     )
 
 
+def format_booking_response(b: BookingModel) -> BookingResponse:
+    tot = getattr(b, "total_amount", None)
+    amt_paid = b.amount_paid or 0.0
+    if tot is None or tot == 0.0:
+        tot = amt_paid
+    
+    p_status = getattr(b, "payment_status", None)
+    if not p_status:
+        if b.is_prepaid or (amt_paid > 0 and b.paid_via != "Pending" and (tot == 0.0 or amt_paid >= tot)):
+            p_status = "Fully Paid"
+        elif amt_paid > 0 and b.paid_via != "Pending":
+            p_status = "Partially Paid"
+        else:
+            p_status = "Unpaid"
+
+    return BookingResponse(
+        id=b.id,
+        manualId=b.manual_id or b.id,
+        guestName=b.guest_name,
+        phone=b.phone or "",
+        email=b.email or "",
+        room=b.room if (b.room and b.room.strip()) else None,
+        guestCount=b.guest_count or 1,
+        adults=b.adults or 1,
+        children=b.children or 0,
+        checkIn=b.check_in,
+        checkOut=b.check_out,
+        amountPaid=amt_paid,
+        totalAmount=tot,
+        paymentStatus=p_status,
+        paidVia=b.paid_via or "Cash",
+        txnId=b.txn_id,
+        notes=b.notes or "",
+        idCard=b.id_card,
+        idCardName=b.id_card_name or "ID Photo",
+        idCardType=getattr(b, "id_card_type", None) or "Aadhaar Card",
+        idCardNumber=getattr(b, "id_card_number", None) or "",
+        status=b.status or "Upcoming",
+        bookingType=b.booking_type or "Walk-in",
+        isPrepaid=bool(b.is_prepaid),
+        isGuaranteed=bool(b.is_guaranteed),
+        isHidden=bool(b.is_hidden),
+        createdAt=b.created_at
+    )
+
+
 # --- CONSOLIDATED FAST SYNC ENDPOINT ---
 @app.get("/api/sync")
 def sync_property_data(
@@ -1184,22 +1258,7 @@ def sync_property_data(
             has_expired_updates = True
     if has_expired_updates:
         db.commit()
-    booking_list = [
-        BookingResponse(
-            id=b.id, manualId=b.manual_id or b.id, guestName=b.guest_name,
-            phone=b.phone or "", email=b.email or "", room=b.room if (b.room and b.room.strip()) else None,
-            guestCount=b.guest_count or 1,
-            adults=b.adults or 1,
-            children=b.children or 0,
-            checkIn=b.check_in, checkOut=b.check_out, amountPaid=b.amount_paid,
-            paidVia=b.paid_via or "Cash", txnId=b.txn_id, notes=b.notes or "", idCard=b.id_card,
-            idCardName=b.id_card_name or "ID Photo", status=b.status or "Upcoming",
-            bookingType=b.booking_type or "Walk-in",
-            isPrepaid=bool(b.is_prepaid),
-            isGuaranteed=bool(b.is_guaranteed),
-            isHidden=bool(b.is_hidden), createdAt=b.created_at
-        ) for b in bookings
-    ]
+    booking_list = [format_booking_response(b) for b in bookings]
 
     # Detailed Room Objects with real-time occupancy and availability
     valid_non_staff_rooms = set(r.room_number for r in rooms if not r.is_staff_room)
@@ -1545,33 +1604,7 @@ def get_bookings(
             has_expired_updates = True
     if has_expired_updates:
         db.commit()
-    res = []
-    for b in bookings:
-        res.append(BookingResponse(
-            id=b.id,
-            manualId=b.manual_id or b.id,
-            guestName=b.guest_name,
-            phone=b.phone or "",
-            email=b.email or "",
-            room=b.room if (b.room and b.room.strip()) else None,
-            guestCount=b.guest_count or 1,
-            adults=b.adults or 1,
-            children=b.children or 0,
-            checkIn=b.check_in,
-            checkOut=b.check_out,
-            amountPaid=b.amount_paid,
-            paidVia=b.paid_via or "Cash",
-            txnId=b.txn_id,
-            notes=b.notes or "",
-            idCard=b.id_card,
-            idCardName=b.id_card_name or "ID Photo",
-            status=b.status or "Upcoming",
-            bookingType=b.booking_type or "Walk-in",
-            isPrepaid=bool(b.is_prepaid),
-            isGuaranteed=bool(b.is_guaranteed),
-            isHidden=bool(b.is_hidden),
-            createdAt=b.created_at
-        ))
+    res = [format_booking_response(b) for b in bookings]
     return res
 
 
@@ -1649,11 +1682,15 @@ def create_booking(
         check_in=req.checkIn,
         check_out=req.checkOut,
         amount_paid=req.amountPaid,
+        total_amount=req.totalAmount if (req.totalAmount is not None and req.totalAmount > 0) else req.amountPaid,
+        payment_status=req.paymentStatus or ("Fully Paid" if (effective_is_prepaid or (req.amountPaid and req.amountPaid > 0 and req.paidVia != "Pending")) else "Unpaid"),
         paid_via=req.paidVia or "Cash",
         txn_id=req.txnId.strip() if req.txnId else None,
         notes=req.notes,
         id_card=req.idCard,
         id_card_name=req.idCardName or "ID Photo",
+        id_card_type=req.idCardType or "Aadhaar Card",
+        id_card_number=req.idCardNumber or "",
         status=req.status or "Upcoming",
         booking_type=effective_booking_type,
         is_prepaid=effective_is_prepaid,
@@ -1665,31 +1702,7 @@ def create_booking(
     db.commit()
     db.refresh(new_b)
 
-    return BookingResponse(
-        id=new_b.id,
-        manualId=new_b.manual_id or new_b.id,
-        guestName=new_b.guest_name,
-        phone=new_b.phone or "",
-        email=new_b.email or "",
-        room=new_b.room if (new_b.room and new_b.room.strip()) else None,
-        guestCount=new_b.guest_count or 1,
-        adults=new_b.adults or 1,
-        children=new_b.children or 0,
-        checkIn=new_b.check_in,
-        checkOut=new_b.check_out,
-        amountPaid=new_b.amount_paid,
-        paidVia=new_b.paid_via or "Cash",
-        txnId=new_b.txn_id,
-        notes=new_b.notes or "",
-        idCard=new_b.id_card,
-        idCardName=new_b.id_card_name or "ID Photo",
-        status=new_b.status or "Upcoming",
-        bookingType=new_b.booking_type or "Walk-in",
-        isPrepaid=bool(new_b.is_prepaid),
-        isGuaranteed=bool(new_b.is_guaranteed),
-        isHidden=bool(new_b.is_hidden),
-        createdAt=new_b.created_at
-    )
+    return format_booking_response(new_b)
 
 
 @app.post("/api/bookings/bulk-import", response_model=BulkImportResponse)
@@ -1805,6 +1818,10 @@ def bulk_import_bookings(
             check_in=in_date,
             check_out=out_date,
             amount_paid=float(item.amountPaid or 0.0),
+            total_amount=float(item.totalAmount or item.amountPaid or 0.0),
+            payment_status=item.paymentStatus or ("Fully Paid" if is_prepaid else "Unpaid"),
+            id_card_type=item.idCardType or "Aadhaar Card",
+            id_card_number=item.idCardNumber or "",
             paid_via=item.paidVia or ("Online" if is_prepaid else "Cash"),
             txn_id=item.txnId,
             notes=item.notes or f"Imported from {effective_btype}",
@@ -1822,31 +1839,7 @@ def bulk_import_bookings(
         if m_id:
             existing_manual_ids.add(m_id.lower())
 
-        imported_list.append(BookingResponse(
-            id=new_b.id,
-            manualId=new_b.manual_id or new_b.id,
-            guestName=new_b.guest_name,
-            phone=new_b.phone or "",
-            email=new_b.email or "",
-            room=new_b.room if (new_b.room and new_b.room.strip()) else None,
-            guestCount=new_b.guest_count or 1,
-            adults=new_b.adults or 1,
-            children=new_b.children or 0,
-            checkIn=new_b.check_in,
-            checkOut=new_b.check_out,
-            amountPaid=new_b.amount_paid,
-            paidVia=new_b.paid_via or "Cash",
-            txnId=new_b.txn_id,
-            notes=new_b.notes or "",
-            idCard=new_b.id_card,
-            idCardName=new_b.id_card_name or "ID Photo",
-            status=new_b.status or "Upcoming",
-            bookingType=new_b.booking_type or "OTA",
-            isPrepaid=bool(new_b.is_prepaid),
-            isGuaranteed=bool(new_b.is_guaranteed),
-            isHidden=bool(new_b.is_hidden),
-            createdAt=new_b.created_at
-        ))
+        imported_list.append(format_booking_response(new_b))
 
     db.commit()
 
@@ -1879,31 +1872,7 @@ def checkin_booking(
     db.commit()
     db.refresh(b)
 
-    return BookingResponse(
-        id=b.id,
-        manualId=b.manual_id or b.id,
-        guestName=b.guest_name,
-        phone=b.phone or "",
-        email=b.email or "",
-        room=b.room,
-        guestCount=b.guest_count or 1,
-        adults=b.adults or 1,
-        children=b.children or 0,
-        checkIn=b.check_in,
-        checkOut=b.check_out,
-        amountPaid=b.amount_paid,
-        paidVia=b.paid_via or "Cash",
-        txnId=b.txn_id,
-        notes=b.notes or "",
-        idCard=b.id_card,
-        idCardName=b.id_card_name or "ID Photo",
-        status=b.status,
-        bookingType=b.booking_type or "Walk-in",
-        isPrepaid=bool(b.is_prepaid),
-        isGuaranteed=bool(b.is_guaranteed),
-        isHidden=bool(b.is_hidden),
-        createdAt=b.created_at
-    )
+    return format_booking_response(b)
 
 
 @app.post("/api/bookings/{booking_id}/checkout", response_model=BookingResponse)
@@ -1924,31 +1893,7 @@ def checkout_booking(
     db.commit()
     db.refresh(b)
 
-    return BookingResponse(
-        id=b.id,
-        manualId=b.manual_id or b.id,
-        guestName=b.guest_name,
-        phone=b.phone or "",
-        email=b.email or "",
-        room=b.room,
-        guestCount=b.guest_count or 1,
-        adults=b.adults or 1,
-        children=b.children or 0,
-        checkIn=b.check_in,
-        checkOut=b.check_out,
-        amountPaid=b.amount_paid,
-        paidVia=b.paid_via or "Cash",
-        txnId=b.txn_id,
-        notes=b.notes or "",
-        idCard=b.id_card,
-        idCardName=b.id_card_name or "ID Photo",
-        status=b.status,
-        bookingType=b.booking_type or "Walk-in",
-        isPrepaid=bool(b.is_prepaid),
-        isGuaranteed=bool(b.is_guaranteed),
-        isHidden=bool(b.is_hidden),
-        createdAt=b.created_at
-    )
+    return format_booking_response(b)
 
 
 @app.post("/api/bookings/{booking_id}/early-checkout")
@@ -2004,27 +1949,8 @@ def early_checkout_booking(
         db.refresh(hidden_booking)
 
     return {
-        "updatedBooking": BookingResponse(
-            id=b.id, manualId=b.manual_id or b.id, guestName=b.guest_name,
-            phone=b.phone or "", email=b.email or "", room=b.room,
-            guestCount=b.guest_count or 1, adults=b.adults or 1, children=b.children or 0,
-            checkIn=b.check_in, checkOut=b.check_out, amountPaid=b.amount_paid, paidVia=b.paid_via or "Cash",
-            txnId=b.txn_id, notes=b.notes or "", idCard=b.id_card, idCardName=b.id_card_name or "ID Photo",
-            status=b.status, bookingType=b.booking_type or "Walk-in", isPrepaid=bool(b.is_prepaid),
-            isGuaranteed=bool(b.is_guaranteed), isHidden=bool(b.is_hidden), createdAt=b.created_at
-        ),
-        "hiddenBooking": BookingResponse(
-            id=hidden_booking.id, manualId=hidden_booking.manual_id or hidden_booking.id,
-            guestName=hidden_booking.guest_name, phone=hidden_booking.phone or "",
-            email=hidden_booking.email or "", room=hidden_booking.room,
-            guestCount=hidden_booking.guest_count or 1, adults=hidden_booking.adults or 1, children=hidden_booking.children or 0,
-            checkIn=hidden_booking.check_in, checkOut=hidden_booking.check_out,
-            amountPaid=hidden_booking.amount_paid, paidVia=hidden_booking.paid_via or "Cash",
-            notes=hidden_booking.notes or "", idCard=hidden_booking.id_card,
-            idCardName=hidden_booking.id_card_name or "ID Photo",
-            status=hidden_booking.status, bookingType="Walk-in", isPrepaid=False,
-            isGuaranteed=False, isHidden=True, createdAt=hidden_booking.created_at
-        ) if hidden_booking else None
+        "updatedBooking": format_booking_response(b),
+        "hiddenBooking": format_booking_response(hidden_booking) if hidden_booking else None
     }
 
 
@@ -2046,31 +1972,7 @@ def confirm_booking(
     db.commit()
     db.refresh(b)
 
-    return BookingResponse(
-        id=b.id,
-        manualId=b.manual_id or b.id,
-        guestName=b.guest_name,
-        phone=b.phone or "",
-        email=b.email or "",
-        room=b.room,
-        guestCount=b.guest_count or 1,
-        adults=b.adults or 1,
-        children=b.children or 0,
-        checkIn=b.check_in,
-        checkOut=b.check_out,
-        amountPaid=b.amount_paid,
-        paidVia=b.paid_via or "Cash",
-        txnId=b.txn_id,
-        notes=b.notes or "",
-        idCard=b.id_card,
-        idCardName=b.id_card_name or "ID Photo",
-        status=b.status,
-        bookingType=b.booking_type or "Walk-in",
-        isPrepaid=bool(b.is_prepaid),
-        isGuaranteed=bool(b.is_guaranteed),
-        isHidden=bool(b.is_hidden),
-        createdAt=b.created_at
-    )
+    return format_booking_response(b)
 
 
 @app.post("/api/bookings/{booking_id}/allot-room", response_model=BookingResponse)
@@ -2125,31 +2027,7 @@ def allot_room(
     db.commit()
     db.refresh(b)
 
-    return BookingResponse(
-        id=b.id,
-        manualId=b.manual_id or b.id,
-        guestName=b.guest_name,
-        phone=b.phone or "",
-        email=b.email or "",
-        room=b.room,
-        guestCount=b.guest_count or 1,
-        adults=b.adults or 1,
-        children=b.children or 0,
-        checkIn=b.check_in,
-        checkOut=b.check_out,
-        amountPaid=b.amount_paid,
-        paidVia=b.paid_via or "Cash",
-        txnId=b.txn_id,
-        notes=b.notes or "",
-        idCard=b.id_card,
-        idCardName=b.id_card_name or "ID Photo",
-        status=b.status or "Upcoming",
-        bookingType=b.booking_type or "Walk-in",
-        isPrepaid=bool(b.is_prepaid),
-        isGuaranteed=bool(b.is_guaranteed),
-        isHidden=bool(b.is_hidden),
-        createdAt=b.created_at
-    )
+    return format_booking_response(b)
 
 
 @app.put("/api/bookings/{booking_id}", response_model=BookingResponse)
@@ -2199,6 +2077,10 @@ def update_booking(
         b.check_out = req.checkOut
     if req.amountPaid is not None:
         b.amount_paid = req.amountPaid
+    if req.totalAmount is not None:
+        b.total_amount = req.totalAmount
+    if req.paymentStatus is not None:
+        b.payment_status = req.paymentStatus
     if req.paidVia is not None:
         b.paid_via = req.paidVia
     if req.txnId is not None:
@@ -2209,6 +2091,10 @@ def update_booking(
         b.id_card = req.idCard
     if req.idCardName is not None:
         b.id_card_name = req.idCardName
+    if req.idCardType is not None:
+        b.id_card_type = req.idCardType
+    if req.idCardNumber is not None:
+        b.id_card_number = req.idCardNumber
     if req.status is not None:
         b.status = req.status
     if req.bookingType is not None:
@@ -2223,31 +2109,7 @@ def update_booking(
     db.commit()
     db.refresh(b)
 
-    return BookingResponse(
-        id=b.id,
-        manualId=b.manual_id or b.id,
-        guestName=b.guest_name,
-        phone=b.phone or "",
-        email=b.email or "",
-        room=b.room,
-        guestCount=b.guest_count or 1,
-        adults=b.adults or 1,
-        children=b.children or 0,
-        checkIn=b.check_in,
-        checkOut=b.check_out,
-        amountPaid=b.amount_paid,
-        paidVia=b.paid_via or "Cash",
-        txnId=b.txn_id,
-        notes=b.notes or "",
-        idCard=b.id_card,
-        idCardName=b.id_card_name or "ID Photo",
-        status=b.status or "Upcoming",
-        bookingType=b.booking_type or "Walk-in",
-        isPrepaid=bool(b.is_prepaid),
-        isGuaranteed=bool(b.is_guaranteed),
-        isHidden=bool(b.is_hidden),
-        createdAt=b.created_at
-    )
+    return format_booking_response(b)
 
 
 @app.delete("/api/bookings/{booking_id}")
