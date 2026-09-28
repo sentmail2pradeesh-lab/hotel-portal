@@ -1,20 +1,16 @@
 const getApiBaseUrl = () => {
   if (typeof window !== 'undefined') {
     const host = window.location.hostname;
-    // When running locally on localhost or 127.0.0.1, ALWAYS use local backend on port 8000
-    if (host === 'localhost' || host === '127.0.0.1') {
+    // When running locally in development on localhost, use local backend
+    if ((host === 'localhost' || host === '127.0.0.1') && import.meta.env.DEV) {
       return 'http://localhost:8000/api';
-    }
-    // When running on production domain (aszenventures.com) or behind a reverse proxy
-    if (host === 'aszenventures.com' || host === 'www.aszenventures.com') {
-      return '/api';
     }
   }
   const envUrl = import.meta.env.VITE_API_URL;
-  if (envUrl && !envUrl.includes('hotel-portal-tfn9.onrender.com')) {
+  if (envUrl) {
     return envUrl;
   }
-  return import.meta.env.DEV ? 'http://localhost:8000/api' : '/api';
+  return 'https://hotel-portal-tfn9.onrender.com/api';
 };
 
 const API_BASE_URL = getApiBaseUrl();
@@ -42,6 +38,8 @@ export async function parseJsonResponse(res, fallbackMessage = 'Request failed.'
         throw new Error(text.slice(0, 150) || fallbackMessage);
       }
     }
+    // If the server returned HTTP 200 but it was HTML (e.g. Hostinger serving index.html for unknown /api route)
+    throw new Error('Received unexpected HTML response from server instead of JSON API. Please check your backend connection.');
   }
 
   if (!res.ok) {
