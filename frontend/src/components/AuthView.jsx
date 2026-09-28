@@ -185,7 +185,7 @@ export const AuthView = () => {
         ownerName: firstOwnerName.trim() || null,
         ownerPhone: firstOwnerPhone.trim() || null,
         tnebNumber: firstTnebNumber.trim() || null,
-        firmLogo: firmLogo,
+        firmLogo: firmLogo || '/aszen_ventures.jpeg',
         eSignature: null,
         initialRooms
       });
@@ -219,8 +219,23 @@ export const AuthView = () => {
       <div className="auth-container">
         <div className="auth-card" style={{ maxWidth: '540px' }}>
           <div className="auth-header">
-            <div className="auth-logo" style={{ background: '#d97706' }}>
-              <Hotel size={28} color="#ffffff" />
+            <div className="auth-logo" style={{ 
+              width: '72px', 
+              height: '72px', 
+              borderRadius: '16px', 
+              overflow: 'hidden', 
+              background: 'transparent',
+              boxShadow: '0 8px 24px rgba(0, 0, 0, 0.15)',
+              margin: '0 auto 16px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              <img 
+                src="/aszen_ventures.jpeg" 
+                alt="Aszen Ventures" 
+                style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+              />
             </div>
             <h1 className="auth-title">Welcome, {manager.name}!</h1>
             <p className="auth-subtitle">
@@ -337,12 +352,12 @@ export const AuthView = () => {
                   {firmLogo ? (
                     <img src={firmLogo} alt="Logo Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                   ) : (
-                    <Building2 size={24} color="#94a3b8" />
+                    <img src="/aszen_ventures.jpeg" alt="Aszen Ventures" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                   )}
                 </div>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-main)' }}>
-                    {firmLogo ? 'Custom Logo Selected' : 'No Logo Uploaded'}
+                    {firmLogo ? 'Custom Logo Selected' : 'Aszen Ventures Logo (Default)'}
                   </div>
                   <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>PNG, JPG or SVG (Max 2MB)</div>
                 </div>
@@ -520,8 +535,23 @@ export const AuthView = () => {
       <div className="auth-card">
         {/* Auth Brand Header */}
         <div className="auth-header">
-          <div className="auth-logo" style={{ background: !isAdminRegistered ? '#d97706' : '#000000' }}>
-            {!isAdminRegistered ? <ShieldCheck size={28} color="#ffffff" /> : <Building2 size={28} color="#ffffff" />}
+          <div className="auth-logo" style={{ 
+            width: '72px', 
+            height: '72px', 
+            borderRadius: '16px', 
+            overflow: 'hidden', 
+            background: 'transparent',
+            boxShadow: '0 8px 24px rgba(0, 0, 0, 0.15)',
+            margin: '0 auto 16px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}>
+            <img 
+              src="/aszen_ventures.jpeg" 
+              alt="Aszen Ventures" 
+              style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+            />
           </div>
           <h1 className="auth-title">
             {!isAdminRegistered ? 'System Setup — Super Admin' : 'Hotel Operations Portal'}

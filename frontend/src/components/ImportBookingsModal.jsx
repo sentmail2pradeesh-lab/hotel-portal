@@ -215,18 +215,22 @@ export const ImportBookingsModal = ({ onClose }) => {
     if (/^\d{4}-\d{2}-\d{2}/.test(clean)) {
       return clean.split('T')[0];
     }
-    const dmy = clean.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
-    if (dmy) {
-      const day = dmy[1].padStart(2, '0');
-      const month = dmy[2].padStart(2, '0');
-      const year = dmy[3];
-      return `${year}-${month}-${day}`;
-    }
-    const mdy = clean.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
-    if (mdy) {
-      const month = mdy[1].padStart(2, '0');
-      const day = mdy[2].padStart(2, '0');
-      const year = mdy[3];
+    const match = clean.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})/);
+    if (match) {
+      const p1 = parseInt(match[1], 10);
+      const p2 = parseInt(match[2], 10);
+      const year = match[3];
+      let day, month;
+      if (p1 > 12 && p2 <= 12) {
+        day = String(p1).padStart(2, '0');
+        month = String(p2).padStart(2, '0');
+      } else if (p2 > 12 && p1 <= 12) {
+        month = String(p1).padStart(2, '0');
+        day = String(p2).padStart(2, '0');
+      } else {
+        day = String(p1).padStart(2, '0');
+        month = String(p2).padStart(2, '0');
+      }
       return `${year}-${month}-${day}`;
     }
     try {

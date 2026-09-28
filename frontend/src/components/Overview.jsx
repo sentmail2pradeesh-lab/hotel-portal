@@ -22,6 +22,8 @@ import {
   Key,
   DoorOpen
 } from 'lucide-react';
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 export const Overview = () => {
   const { 
@@ -62,9 +64,7 @@ export const Overview = () => {
   const tomorrowStr = tomorrow.toISOString().split('T')[0]; // YYYY-MM-DD
   
   // Format today's date for display
-  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  const formattedToday = `${dayNames[today.getDay()]}, ${today.getDate()} ${monthNames[today.getMonth()]} ${today.getFullYear()}`;
+  const formattedToday = `${DAY_NAMES[today.getDay()]}, ${today.getDate()} ${MONTH_NAMES[today.getMonth()]} ${today.getFullYear()}`;
 
   // Dynamic Greeting based on time of day
   const currentHour = today.getHours();
@@ -164,11 +164,12 @@ export const Overview = () => {
   const occupancy7Days = useMemo(() => {
     const list = [];
     const totalCap = sellableInventory || 19;
+    const baseDate = new Date(todayStr + 'T00:00:00');
     for (let i = 6; i >= 0; i--) {
-      const d = new Date(today);
+      const d = new Date(baseDate);
       d.setDate(d.getDate() - i);
       const dStr = d.toISOString().split('T')[0];
-      const label = `${d.getDate()} ${monthNames[d.getMonth()]}`;
+      const label = `${d.getDate()} ${MONTH_NAMES[d.getMonth()]}`;
       
       const occ = bookings.filter(b => {
         return b.checkIn && b.checkOut && dStr >= b.checkIn && dStr <= b.checkOut;
@@ -188,7 +189,7 @@ export const Overview = () => {
       });
     }
     return list;
-  }, [bookings, sellableInventory, today]);
+  }, [bookings, sellableInventory, todayStr]);
 
   // Donut percentages
   const availablePct = Math.round((availableRoomsCount / Math.max(1, totalRoomsCount)) * 100);

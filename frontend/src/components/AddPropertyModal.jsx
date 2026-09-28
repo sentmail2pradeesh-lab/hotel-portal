@@ -124,7 +124,7 @@ export const AddPropertyModal = ({ isOpen, onClose }) => {
         address: address.trim() || null,
         phone: phone.trim() || null,
         email: email.trim() || null,
-        firmLogo,
+        firmLogo: firmLogo || '/aszen_ventures.jpeg',
         eSignature: null,
         initialRooms
       });
@@ -370,12 +370,12 @@ export const AddPropertyModal = ({ isOpen, onClose }) => {
                 {firmLogo ? (
                   <img src={firmLogo} alt="Logo Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 ) : (
-                  <Building2 size={24} color="#f59e0b" />
+                  <img src="/aszen_ventures.jpeg" alt="Aszen Ventures" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 )}
               </div>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-main)' }}>
-                  {firmLogo ? 'Custom Logo Uploaded' : 'No Logo Uploaded'}
+                  {firmLogo ? 'Custom Logo Uploaded' : 'Aszen Ventures Logo (Default)'}
                 </div>
                 <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>PNG, JPG or SVG image</div>
               </div>

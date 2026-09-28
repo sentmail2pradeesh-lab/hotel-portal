@@ -96,15 +96,11 @@ export const Navbar = () => {
           title="Click to switch property"
         >
           <div className="brand-logo">
-            {currentUser?.firmLogo ? (
-              <img 
-                src={currentUser.firmLogo} 
-                alt={currentUser?.firmName || 'Property Logo'} 
-                style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
-              />
-            ) : (
-              <Building2 size={20} color="#000000" />
-            )}
+            <img 
+              src={currentUser?.firmLogo || "/aszen_ventures.jpeg"} 
+              alt={currentUser?.firmName || 'Aszen Ventures'} 
+              style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+            />
           </div>
           <div className="brand-text">
             {currentUser?.propertyCode ? (
@@ -167,11 +163,11 @@ export const Navbar = () => {
                       }}
                     >
                       <div className="prop-item-logo">
-                        {p.firmLogo ? (
-                          <img src={p.firmLogo} alt={p.firmName} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                        ) : (
-                          <Building2 size={16} color="#d97706" />
-                        )}
+                        <img 
+                          src={p.firmLogo || "/aszen_ventures.jpeg"} 
+                          alt={p.firmName} 
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                        />
                       </div>
                       <div className="prop-item-info">
                         {p.propertyCode && (

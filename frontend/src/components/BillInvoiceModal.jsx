@@ -63,11 +63,11 @@ export const BillInvoiceModal = ({ bill, onClose, onEditBill }) => {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '2px solid #0f172a', paddingBottom: '20px', marginBottom: '24px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
               <div style={{ width: '44px', height: '44px', borderRadius: '12px', background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', color: '#f59e0b', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', boxShadow: '0 4px 15px rgba(15, 23, 42, 0.2)' }}>
-                {currentUser?.firmLogo ? (
-                  <img src={currentUser.firmLogo} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                ) : (
-                  <Building2 size={24} />
-                )}
+                <img 
+                  src={currentUser?.firmLogo || "/aszen_ventures.jpeg"} 
+                  alt={currentUser?.firmName || "Aszen Ventures"} 
+                  style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                />
               </div>
               <div>
                 <h1 style={{ fontFamily: 'var(--font-sans)', fontSize: '22px', fontWeight: 800, color: '#0f172a', margin: 0, letterSpacing: '-0.02em' }}>

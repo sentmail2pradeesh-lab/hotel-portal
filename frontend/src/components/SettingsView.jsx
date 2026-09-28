@@ -1063,11 +1063,11 @@ Login Portal: ${loginUrl}
                   >
                     <div className="prop-identity-group">
                       <div className="prop-avatar-box">
-                        {p.firmLogo ? (
-                          <img src={p.firmLogo} alt={p.firmName} />
-                        ) : (
-                          <Building2 size={22} color="#f59e0b" />
-                        )}
+                        <img 
+                          src={p.firmLogo || "/aszen_ventures.jpeg"} 
+                          alt={p.firmName} 
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                        />
                       </div>
                       <div className="prop-info-col">
                         {p.propertyCode && (
@@ -1177,16 +1177,16 @@ Login Portal: ${loginUrl}
                     boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
                     flexShrink: 0
                   }}>
-                    {currentUser?.firmLogo ? (
-                      <img src={currentUser.firmLogo} alt="Custom Logo" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                    ) : (
-                      <Building2 size={28} color="#f59e0b" />
-                    )}
+                    <img 
+                      src={currentUser?.firmLogo || "/aszen_ventures.jpeg"} 
+                      alt="Brand Logo" 
+                      style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                    />
                   </div>
 
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--text-main)' }}>
-                      {currentUser?.firmLogo ? 'Custom Brand Logo' : 'Default Building Icon'}
+                      {currentUser?.firmLogo && currentUser?.firmLogo !== '/aszen_ventures.jpeg' ? 'Custom Brand Logo' : 'Aszen Ventures Logo (Default)'}
                     </div>
                     <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginTop: '2px', marginBottom: '10px' }}>
                       Square PNG, JPG, or SVG (max 2MB)
@@ -1227,15 +1227,15 @@ Login Portal: ${loginUrl}
                           <Upload size={13} /> Upload Logo
                         </label>
 
-                        {currentUser?.firmLogo && (
+                        {currentUser?.firmLogo && currentUser?.firmLogo !== '/aszen_ventures.jpeg' && (
                           <button 
                             className="btn-sub" 
                             style={{ padding: '6px 12px', fontSize: '12px', color: '#be123c' }}
                             disabled={!isRegisterOpen}
-                            onClick={() => updateFirmLogo(null)}
-                            title={isRegisterOpen ? "Reset Default Icon" : "Shift Register is Closed (View-Only Mode)"}
+                            onClick={() => updateFirmLogo('/aszen_ventures.jpeg')}
+                            title={isRegisterOpen ? "Reset to Aszen Ventures Logo" : "Shift Register is Closed (View-Only Mode)"}
                           >
-                            Reset
+                            Reset to Default
                           </button>
                         )}
                       </div>

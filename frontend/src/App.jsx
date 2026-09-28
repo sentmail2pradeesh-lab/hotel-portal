@@ -60,11 +60,22 @@ const AppContent = () => {
           fontFamily: 'var(--font-sans, system-ui, sans-serif)'
         }}
       >
+        <div style={{
+          width: 64,
+          height: 64,
+          borderRadius: 16,
+          overflow: 'hidden',
+          marginBottom: 16,
+          boxShadow: '0 8px 24px rgba(0, 0, 0, 0.4)',
+          border: '2px solid rgba(245, 158, 11, 0.4)'
+        }}>
+          <img src="/aszen_ventures.jpeg" alt="Aszen Ventures" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        </div>
         <div
           style={{
-            width: 48,
-            height: 48,
-            border: '4px solid rgba(245, 158, 11, 0.2)',
+            width: 36,
+            height: 36,
+            border: '3px solid rgba(245, 158, 11, 0.2)',
             borderTopColor: '#f59e0b',
             borderRadius: '50%',
             animation: 'spin 0.8s linear infinite'
@@ -72,14 +83,14 @@ const AppContent = () => {
         />
         <p
           style={{
-            marginTop: 20,
-            fontSize: 15,
+            marginTop: 16,
+            fontSize: 14,
             fontWeight: 600,
             letterSpacing: '0.04em',
             color: '#cbd5e1'
           }}
         >
-          Connecting to FrontDesk PMS...
+          Connecting to Aszen Ventures Portal...
         </p>
       </div>
     );

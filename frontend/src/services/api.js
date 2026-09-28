@@ -1,4 +1,55 @@
-const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:8000/api' : '/api');
+const getApiBaseUrl = () => {
+  if (typeof window !== 'undefined') {
+    const host = window.location.hostname;
+    // When running locally on localhost or 127.0.0.1, ALWAYS use local backend on port 8000
+    if (host === 'localhost' || host === '127.0.0.1') {
+      return 'http://localhost:8000/api';
+    }
+    // When running on production domain (aszenventures.com) or behind a reverse proxy
+    if (host === 'aszenventures.com' || host === 'www.aszenventures.com') {
+      return '/api';
+    }
+  }
+  const envUrl = import.meta.env.VITE_API_URL;
+  if (envUrl && !envUrl.includes('hotel-portal-tfn9.onrender.com')) {
+    return envUrl;
+  }
+  return import.meta.env.DEV ? 'http://localhost:8000/api' : '/api';
+};
+
+const API_BASE_URL = getApiBaseUrl();
+
+// Safe JSON parser preventing "Unexpected token '<', '<!doctype '..." crashes on HTML error responses
+export async function parseJsonResponse(res, fallbackMessage = 'Request failed.') {
+  const contentType = res.headers.get('content-type') || '';
+  let data = null;
+  if (contentType.includes('application/json')) {
+    try {
+      data = await res.json();
+    } catch (_) {
+      data = null;
+    }
+  } else {
+    const text = await res.text().catch(() => '');
+    if (!res.ok) {
+      if (res.status === 404) {
+        throw new Error(`API endpoint not found (404). Please ensure the backend is running at ${API_BASE_URL}`);
+      } else if (res.status === 502 || res.status === 503 || res.status === 504) {
+        throw new Error(`Backend server temporarily unavailable (${res.status}). Please try again in a few moments.`);
+      } else if (res.status >= 500) {
+        throw new Error(`Backend server error (${res.status}). Please check backend terminal logs.`);
+      } else {
+        throw new Error(text.slice(0, 150) || fallbackMessage);
+      }
+    }
+  }
+
+  if (!res.ok) {
+    const errorMsg = data?.detail || data?.message || fallbackMessage;
+    throw new Error(errorMsg);
+  }
+  return data;
+}
 
 // Pre-warm backend immediately to eliminate cold start latency on sleeping instances
 try {
@@ -43,9 +94,15 @@ const getAuthHeaders = () => {
 
 export const api = {
   async getSystemStatus() {
-    const res = await fetchWithRetry(`${API_BASE_URL}/auth/system-status`, {}, 2, 1000).catch(() => null);
-    if (!res || !res.ok) return { isAdminRegistered: true };
-    return await res.json();
+    try {
+      const res = await fetchWithRetry(`${API_BASE_URL}/auth/system-status`, {}, 2, 1000);
+      if (!res.ok) {
+        return { isAdminRegistered: false };
+      }
+      return await parseJsonResponse(res, 'Failed to fetch system status');
+    } catch (_) {
+      return { isAdminRegistered: false };
+    }
   },
 
   async adminRegister(name, phone, email, password) {
@@ -64,9 +121,8 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Super Admin registration failed.');
-    if (data.token) localStorage.setItem('frontdesk_jwt_token', data.token);
+    const data = await parseJsonResponse(res, 'Super Admin registration failed.');
+    if (data?.token) localStorage.setItem('frontdesk_jwt_token', data.token);
     return data;
   },
 
@@ -76,9 +132,8 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, email, password })
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Manager registration failed.');
-    if (data.token) localStorage.setItem('frontdesk_jwt_token', data.token);
+    const data = await parseJsonResponse(res, 'Manager registration failed.');
+    if (data?.token) localStorage.setItem('frontdesk_jwt_token', data.token);
     return data;
   },
 
@@ -88,9 +143,8 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ identity, password })
     }, 2, 1500);
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Manager sign in failed.');
-    if (data.token) localStorage.setItem('frontdesk_jwt_token', data.token);
+    const data = await parseJsonResponse(res, 'Manager sign in failed.');
+    if (data?.token) localStorage.setItem('frontdesk_jwt_token', data.token);
     return data;
   },
 
@@ -158,9 +212,8 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ identity, password })
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Login failed.');
-    if (data.token) localStorage.setItem('frontdesk_jwt_token', data.token);
+    const data = await parseJsonResponse(res, 'Login failed.');
+    if (data?.token) localStorage.setItem('frontdesk_jwt_token', data.token);
     return data;
   },
 

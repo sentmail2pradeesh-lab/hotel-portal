@@ -333,8 +333,17 @@ app = FastAPI(
 def root():
     return {
         "status": "online",
-        "service": "Hotel Operations API",
+        "service": "Aszen Ventures Property Management API",
         "docs": "/docs"
+    }
+
+@app.get("/health")
+@app.get("/api/health")
+def health():
+    return {
+        "status": "healthy",
+        "service": "Aszen Ventures Property Management API",
+        "timestamp": datetime.utcnow().isoformat()
     }
 
 # Enable CORS (permissive origin regex so requests from aszenventures.com and localhost are always accepted)
@@ -2881,7 +2890,10 @@ def impersonate_user(
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
+    host = os.getenv("HOST", "0.0.0.0")
+    port = int(os.getenv("PORT", "8000"))
+    reload = os.getenv("ENV", "development").lower() == "development"
+    uvicorn.run("main:app", host=host, port=port, reload=reload)
 
 
 
