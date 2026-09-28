@@ -26,7 +26,8 @@ export const TopHeader = () => {
     roomsList, 
     setActiveTab, 
     logout,
-    openNewBookingModal
+    openNewBookingModal,
+    isServerConnected
   } = useHotel();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -324,8 +325,37 @@ export const TopHeader = () => {
         )}
       </div>
 
-      {/* Right: Date, Weather, Notifications, Profile */}
+      {/* Right: Cloud Sync, Date, Weather, Notifications, Profile */}
       <div className="top-actions-container">
+        {/* Cloud Sync Status */}
+        <div 
+          className="top-widget-pill"
+          title={isServerConnected ? 'Cloud Backend Connected & Live' : 'Cloud Backend Synchronizing / Reconnecting'}
+          style={{
+            cursor: 'default',
+            borderColor: isServerConnected ? 'rgba(16, 185, 129, 0.25)' : 'rgba(245, 158, 11, 0.35)',
+            background: isServerConnected ? 'rgba(16, 185, 129, 0.05)' : 'rgba(245, 158, 11, 0.08)'
+          }}
+        >
+          <span
+            style={{
+              width: 7,
+              height: 7,
+              borderRadius: '50%',
+              background: isServerConnected ? '#10b981' : '#f59e0b',
+              boxShadow: isServerConnected ? '0 0 6px rgba(16, 185, 129, 0.7)' : '0 0 6px rgba(245, 158, 11, 0.8)',
+              animation: isServerConnected ? 'none' : 'pulse 1.5s infinite',
+              flexShrink: 0
+            }}
+          />
+          <div className="top-widget-text">
+            <span className="top-widget-label">Cloud Sync</span>
+            <span className="top-widget-val" style={{ color: isServerConnected ? '#059669' : '#d97706', fontWeight: 700 }}>
+              {isServerConnected ? 'Live' : 'Syncing...'}
+            </span>
+          </div>
+        </div>
+
         {/* Date Widget */}
         <div className="top-widget-pill" title="Today's Date">
           <Calendar size={14} className="top-widget-icon" color="#2563eb" />

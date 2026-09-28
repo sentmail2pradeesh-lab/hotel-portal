@@ -31,7 +31,7 @@ export async function parseJsonResponse(res, fallbackMessage = 'Request failed.'
       if (res.status === 404) {
         throw new Error(`API endpoint not found (404). Please ensure the backend is running at ${API_BASE_URL}`);
       } else if (res.status === 502 || res.status === 503 || res.status === 504) {
-        throw new Error(`Backend server temporarily unavailable (${res.status}). Please try again in a few moments.`);
+        throw new Error(`Backend server temporarily unavailable (${res.status}). Server is waking up, please hold on.`);
       } else if (res.status >= 500) {
         throw new Error(`Backend server error (${res.status}). Please check backend terminal logs.`);
       } else {
@@ -49,29 +49,51 @@ export async function parseJsonResponse(res, fallbackMessage = 'Request failed.'
   return data;
 }
 
-// Pre-warm backend immediately to eliminate cold start latency on sleeping instances
-try {
-  const rootUrl = API_BASE_URL.endsWith('/api') ? API_BASE_URL.slice(0, -4) : API_BASE_URL;
-  fetch(`${rootUrl}/`, { method: 'GET', keepalive: true }).catch(() => {});
-} catch (_) {}
+// Pre-warm backend immediately and periodically to eliminate Render free tier cold starts
+const pingCloudBackend = () => {
+  try {
+    const rootUrl = API_BASE_URL.endsWith('/api') ? API_BASE_URL.slice(0, -4) : API_BASE_URL;
+    fetch(`${rootUrl}/health`, { method: 'GET', keepalive: true, mode: 'cors' }).catch(() => {});
+  } catch (_) {}
+};
 
-export async function fetchWithRetry(url, options = {}, retries = 2, delayMs = 1500) {
+pingCloudBackend();
+if (typeof window !== 'undefined') {
+  // Keep alive every 8 minutes while user is on page
+  setInterval(pingCloudBackend, 8 * 60 * 1000);
+}
+
+export async function fetchWithRetry(url, options = {}, retries = 2, delayMs = 1500, timeoutMs = 25000) {
   for (let attempt = 0; attempt <= retries; attempt++) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    const fetchOptions = {
+      ...options,
+      signal: options.signal || controller.signal
+    };
+
     try {
-      const res = await fetch(url, options);
-      // If cloud server is waking up and returns 502/503/504 Bad Gateway, retry automatically
+      const res = await fetch(url, fetchOptions);
+      clearTimeout(timeoutId);
+
+      // Cloud server waking up (cold start returns 502/503/504 Bad Gateway / Service Unavailable)
       if ((res.status === 502 || res.status === 503 || res.status === 504) && attempt < retries) {
+        console.warn(`[API] Server waking up (${res.status}). Retrying attempt ${attempt + 1}/${retries}...`);
         await new Promise(r => setTimeout(r, delayMs * (attempt + 1)));
         continue;
       }
       return res;
     } catch (err) {
-      // Browser network glitch, cold start socket timeout, or "Failed to fetch"
-      const isNetworkErr = err?.name === 'TypeError' || 
+      clearTimeout(timeoutId);
+      const isTimeout = err?.name === 'AbortError' || err?.message?.includes('aborted');
+      const isNetworkErr = isTimeout ||
+                           err?.name === 'TypeError' || 
                            err?.message?.includes('Failed to fetch') || 
                            err?.message?.includes('NetworkError') ||
                            err?.message?.includes('Load failed');
+      
       if (isNetworkErr && attempt < retries) {
+        console.warn(`[API] Network retry (${err?.message || 'timeout'}). Retrying attempt ${attempt + 1}/${retries}...`);
         await new Promise(r => setTimeout(r, delayMs * (attempt + 1)));
         continue;
       }
@@ -90,16 +112,33 @@ const getAuthHeaders = () => {
   };
 };
 
+export async function apiFetch(endpoint, options = {}, retries = 2, fallbackMsg = 'Request failed.') {
+  const url = endpoint.startsWith('http') ? endpoint : `${API_BASE_URL}${endpoint.startsWith('/') ? endpoint : '/' + endpoint}`;
+  const defaultHeaders = getAuthHeaders();
+  const mergedOptions = {
+    ...options,
+    headers: {
+      ...defaultHeaders,
+      ...(options.headers || {})
+    }
+  };
+  const res = await fetchWithRetry(url, mergedOptions, retries);
+  return await parseJsonResponse(res, fallbackMsg);
+}
+
 export const api = {
   async getSystemStatus() {
     try {
-      const res = await fetchWithRetry(`${API_BASE_URL}/auth/system-status`, {}, 2, 1000);
+      const res = await fetchWithRetry(`${API_BASE_URL}/auth/system-status`, {}, 2, 1000, 15000);
       if (!res.ok) {
-        return { isAdminRegistered: false };
+        return { isAdminRegistered: true, isError: true };
       }
       return await parseJsonResponse(res, 'Failed to fetch system status');
-    } catch (_) {
-      return { isAdminRegistered: false };
+    } catch (e) {
+      console.warn('System status fetch failed, preserving existing auth state:', e);
+      // Resilience guarantee: If server is waking up or network is slow, NEVER assume admin is false!
+      // This prevents destroying the stored user session!
+      return { isAdminRegistered: true, isError: true, networkError: true };
     }
   },
 
@@ -108,7 +147,6 @@ export const api = {
     if (typeof name === 'object' && name !== null) {
       payload = name;
     } else if (arguments.length === 3) {
-      // Backward compatibility: (name, email, password)
       payload = { name: arguments[0], email: arguments[1], password: arguments[2] };
     } else {
       payload = { name, phone, email, password };
@@ -121,6 +159,11 @@ export const api = {
     });
     const data = await parseJsonResponse(res, 'Super Admin registration failed.');
     if (data?.token) localStorage.setItem('frontdesk_jwt_token', data.token);
+    if (data?.manager) {
+      try {
+        localStorage.setItem('frontdesk_cached_manager', JSON.stringify(data.manager));
+      } catch (_) {}
+    }
     return data;
   },
 
@@ -132,6 +175,11 @@ export const api = {
     });
     const data = await parseJsonResponse(res, 'Manager registration failed.');
     if (data?.token) localStorage.setItem('frontdesk_jwt_token', data.token);
+    if (data?.manager) {
+      try {
+        localStorage.setItem('frontdesk_cached_manager', JSON.stringify(data.manager));
+      } catch (_) {}
+    }
     return data;
   },
 
@@ -140,31 +188,57 @@ export const api = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ identity, password })
-    }, 2, 1500);
+    }, 2, 1500, 30000);
     const data = await parseJsonResponse(res, 'Manager sign in failed.');
     if (data?.token) localStorage.setItem('frontdesk_jwt_token', data.token);
+    if (data?.manager) {
+      try {
+        localStorage.setItem('frontdesk_cached_manager', JSON.stringify(data.manager));
+        if (data.manager.properties) {
+          localStorage.setItem('frontdesk_cached_properties', JSON.stringify(data.manager.properties));
+        }
+      } catch (_) {}
+    }
     return data;
   },
 
   async getManagerMe() {
     const token = localStorage.getItem('frontdesk_jwt_token');
     if (!token) return null;
-    const res = await fetch(`${API_BASE_URL}/auth/manager/me`, {
-      headers: getAuthHeaders()
-    });
-    if (!res.ok) {
-      localStorage.removeItem('frontdesk_jwt_token');
+    try {
+      const res = await fetchWithRetry(`${API_BASE_URL}/auth/manager/me`, {
+        headers: getAuthHeaders()
+      }, 2, 1500, 20000);
+
+      if (!res.ok) {
+        // ONLY clear credentials on explicit 401 Unauthorized or 403 Forbidden
+        if (res.status === 401 || res.status === 403) {
+          console.warn('[Auth] Token expired or invalid. Clearing saved token.');
+          localStorage.removeItem('frontdesk_jwt_token');
+          localStorage.removeItem('frontdesk_cached_manager');
+          return null;
+        }
+        // If 500, 502, 503, server is waking up; DO NOT clear token!
+        return null;
+      }
+      const data = await parseJsonResponse(res, 'Failed to fetch manager session');
+      if (data) {
+        try {
+          localStorage.setItem('frontdesk_cached_manager', JSON.stringify(data));
+          if (data.properties) {
+            localStorage.setItem('frontdesk_cached_properties', JSON.stringify(data.properties));
+          }
+        } catch (_) {}
+      }
+      return data;
+    } catch (err) {
+      console.warn('Manager session check warning (server cold start):', err);
       return null;
     }
-    return await res.json();
   },
 
   async getProperties() {
-    const res = await fetch(`${API_BASE_URL}/properties`, {
-      headers: getAuthHeaders()
-    });
-    if (!res.ok) throw new Error('Failed to fetch manager properties.');
-    return await res.json();
+    return await apiFetch('/properties', {}, 2, 'Failed to fetch properties.');
   },
 
   async createProperty(propertyData) {
@@ -172,47 +246,31 @@ export const api = {
       ? propertyData
       : { firmName: arguments[0], firmLogo: arguments[1] || null, eSignature: arguments[2] || null };
 
-    const res = await fetch(`${API_BASE_URL}/properties`, {
+    return await apiFetch('/properties', {
       method: 'POST',
-      headers: getAuthHeaders(),
       body: JSON.stringify(payload)
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Failed to create property.');
-    return data;
+    }, 2, 'Failed to create property.');
   },
 
   async deleteProperty(firmId) {
-    const res = await fetch(`${API_BASE_URL}/properties/${firmId}`, {
-      method: 'DELETE',
-      headers: getAuthHeaders()
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Failed to delete property.');
-    return data;
+    return await apiFetch(`/properties/${firmId}`, {
+      method: 'DELETE'
+    }, 2, 'Failed to delete property.');
   },
 
   async register(firmName, name, email, password) {
-    const res = await fetch(`${API_BASE_URL}/auth/register`, {
+    const res = await fetchWithRetry(`${API_BASE_URL}/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ firmName, name, email, password })
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Registration failed.');
-    if (data.token) localStorage.setItem('frontdesk_jwt_token', data.token);
+    const data = await parseJsonResponse(res, 'Registration failed.');
+    if (data?.token) localStorage.setItem('frontdesk_jwt_token', data.token);
     return data;
   },
 
   async login(identity, password) {
-    const res = await fetch(`${API_BASE_URL}/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ identity, password })
-    });
-    const data = await parseJsonResponse(res, 'Login failed.');
-    if (data?.token) localStorage.setItem('frontdesk_jwt_token', data.token);
-    return data;
+    return await this.managerLogin(identity, password);
   },
 
   async getMe() {
@@ -220,26 +278,18 @@ export const api = {
   },
 
   async updateProfile(profileData) {
-    const res = await fetch(`${API_BASE_URL}/auth/profile`, {
+    return await apiFetch('/auth/profile', {
       method: 'PUT',
-      headers: getAuthHeaders(),
       body: JSON.stringify(profileData)
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Profile update failed.');
-    return data;
+    }, 2, 'Profile update failed.');
   },
 
   async syncPropertyData() {
-    const res = await fetch(`${API_BASE_URL}/sync`, { headers: getAuthHeaders() });
-    if (!res.ok) throw new Error('Failed to sync property data.');
-    return await res.json();
+    return await apiFetch('/sync', {}, 2, 'Failed to sync property data.');
   },
 
   async getRooms() {
-    const res = await fetch(`${API_BASE_URL}/rooms`, { headers: getAuthHeaders() });
-    if (!res.ok) throw new Error('Failed to fetch rooms.');
-    return await res.json();
+    return await apiFetch('/rooms', {}, 2, 'Failed to fetch rooms.');
   },
 
   async getAvailableRooms(checkIn, checkOut, excludeBookingId) {
@@ -248,325 +298,210 @@ export const api = {
     if (checkOut) params.append('checkOut', checkOut);
     if (excludeBookingId) params.append('excludeBookingId', excludeBookingId);
     const qs = params.toString() ? `?${params.toString()}` : '';
-    const res = await fetch(`${API_BASE_URL}/rooms/available${qs}`, { headers: getAuthHeaders() });
-    if (!res.ok) throw new Error('Failed to fetch available rooms.');
-    return await res.json();
+    return await apiFetch(`/rooms/available${qs}`, {}, 2, 'Failed to fetch available rooms.');
   },
 
   async addRoom(roomNumber, roomType = "Standard", isStaffRoom = false) {
-    const res = await fetch(`${API_BASE_URL}/rooms`, {
+    return await apiFetch('/rooms', {
       method: 'POST',
-      headers: getAuthHeaders(),
       body: JSON.stringify({ roomNumber, roomType, isStaffRoom })
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Failed to add room.');
-    return data;
+    }, 2, 'Failed to add room.');
   },
 
   async addRoomsBulk(rooms) {
-    const res = await fetchWithRetry(`${API_BASE_URL}/rooms/bulk`, {
+    return await apiFetch('/rooms/bulk', {
       method: 'POST',
-      headers: getAuthHeaders(),
       body: JSON.stringify({ rooms })
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Failed to bulk add rooms.');
-    return data;
+    }, 2, 'Failed to bulk add rooms.');
   },
 
   async updateRoom(roomNumber, updateData) {
-    const res = await fetch(`${API_BASE_URL}/rooms/${encodeURIComponent(roomNumber)}`, {
+    return await apiFetch(`/rooms/${encodeURIComponent(roomNumber)}`, {
       method: 'PUT',
-      headers: getAuthHeaders(),
       body: JSON.stringify(updateData)
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Failed to update room.');
-    return data;
+    }, 2, 'Failed to update room.');
   },
 
   async deleteRoom(roomNumber) {
-    const res = await fetch(`${API_BASE_URL}/rooms/${encodeURIComponent(roomNumber)}`, {
-      method: 'DELETE',
-      headers: getAuthHeaders()
-    });
-    if (!res.ok) throw new Error('Failed to delete room.');
-    return await res.json();
+    return await apiFetch(`/rooms/${encodeURIComponent(roomNumber)}`, {
+      method: 'DELETE'
+    }, 2, 'Failed to delete room.');
   },
 
   async getBookings() {
-    const res = await fetch(`${API_BASE_URL}/bookings`, { headers: getAuthHeaders() });
-    if (!res.ok) throw new Error('Failed to fetch bookings.');
-    return await res.json();
+    return await apiFetch('/bookings', {}, 2, 'Failed to fetch bookings.');
   },
 
   async createBooking(bookingData) {
-    const res = await fetch(`${API_BASE_URL}/bookings`, {
+    return await apiFetch('/bookings', {
       method: 'POST',
-      headers: getAuthHeaders(),
       body: JSON.stringify(bookingData)
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Failed to create booking.');
-    return data;
+    }, 2, 'Failed to create booking.');
   },
 
   async bulkImportBookings(bookingsList) {
-    const res = await fetch(`${API_BASE_URL}/bookings/bulk-import`, {
+    return await apiFetch('/bookings/bulk-import', {
       method: 'POST',
-      headers: getAuthHeaders(),
       body: JSON.stringify({ bookings: bookingsList })
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Failed to import external bookings.');
-    return data;
+    }, 2, 'Failed to import external bookings.');
   },
 
   async updateBooking(bookingId, updatedFields) {
-    const res = await fetch(`${API_BASE_URL}/bookings/${encodeURIComponent(bookingId)}`, {
+    return await apiFetch(`/bookings/${encodeURIComponent(bookingId)}`, {
       method: 'PUT',
-      headers: getAuthHeaders(),
       body: JSON.stringify(updatedFields)
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Failed to update booking.');
-    return data;
+    }, 2, 'Failed to update booking.');
   },
 
   async confirmBooking(bookingId) {
-    const res = await fetch(`${API_BASE_URL}/bookings/${encodeURIComponent(bookingId)}/confirm`, {
-      method: 'POST',
-      headers: getAuthHeaders()
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Failed to confirm booking.');
-    return data;
+    return await apiFetch(`/bookings/${encodeURIComponent(bookingId)}/confirm`, {
+      method: 'POST'
+    }, 2, 'Failed to confirm booking.');
   },
 
   async checkInBooking(bookingId) {
-    const res = await fetch(`${API_BASE_URL}/bookings/${encodeURIComponent(bookingId)}/checkin`, {
-      method: 'POST',
-      headers: getAuthHeaders()
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Failed to check in booking.');
-    return data;
+    return await apiFetch(`/bookings/${encodeURIComponent(bookingId)}/checkin`, {
+      method: 'POST'
+    }, 2, 'Failed to check in booking.');
   },
 
   async allotRoom(bookingId, room, status = null, isGuaranteed = true) {
-    const res = await fetch(`${API_BASE_URL}/bookings/${encodeURIComponent(bookingId)}/allot-room`, {
+    return await apiFetch(`/bookings/${encodeURIComponent(bookingId)}/allot-room`, {
       method: 'POST',
-      headers: getAuthHeaders(),
       body: JSON.stringify({ room, status, isGuaranteed })
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Failed to allot room.');
-    return data;
+    }, 2, 'Failed to allot room.');
   },
 
   async checkOutBooking(bookingId) {
-    const res = await fetch(`${API_BASE_URL}/bookings/${encodeURIComponent(bookingId)}/checkout`, {
-      method: 'POST',
-      headers: getAuthHeaders()
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Failed to check out booking.');
-    return data;
+    return await apiFetch(`/bookings/${encodeURIComponent(bookingId)}/checkout`, {
+      method: 'POST'
+    }, 2, 'Failed to check out booking.');
   },
 
   async earlyCheckOutBooking(bookingId, createHiddenSlot = true) {
-    const res = await fetch(`${API_BASE_URL}/bookings/${encodeURIComponent(bookingId)}/early-checkout`, {
+    return await apiFetch(`/bookings/${encodeURIComponent(bookingId)}/early-checkout`, {
       method: 'POST',
-      headers: getAuthHeaders(),
       body: JSON.stringify({ createHiddenSlot })
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Failed to process early check out.');
-    return data;
+    }, 2, 'Failed to process early check out.');
   },
 
   async deleteBooking(bookingId) {
-    const res = await fetch(`${API_BASE_URL}/bookings/${encodeURIComponent(bookingId)}`, {
-      method: 'DELETE',
-      headers: getAuthHeaders()
-    });
-    if (!res.ok) throw new Error('Failed to delete booking.');
-    return await res.json();
+    return await apiFetch(`/bookings/${encodeURIComponent(bookingId)}`, {
+      method: 'DELETE'
+    }, 2, 'Failed to delete booking.');
   },
 
   async getExpenses() {
-    const res = await fetch(`${API_BASE_URL}/expenses`, { headers: getAuthHeaders() });
-    if (!res.ok) throw new Error('Failed to fetch expenses.');
-    return await res.json();
+    return await apiFetch('/expenses', {}, 2, 'Failed to fetch expenses.');
   },
 
   async createExpense(expenseData) {
-    const res = await fetch(`${API_BASE_URL}/expenses`, {
+    return await apiFetch('/expenses', {
       method: 'POST',
-      headers: getAuthHeaders(),
       body: JSON.stringify(expenseData)
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Failed to create expense.');
-    return data;
+    }, 2, 'Failed to create expense.');
   },
 
   async deleteExpense(expenseId) {
-    const res = await fetch(`${API_BASE_URL}/expenses/${encodeURIComponent(expenseId)}`, {
-      method: 'DELETE',
-      headers: getAuthHeaders()
-    });
-    if (!res.ok) throw new Error('Failed to delete expense.');
-    return await res.json();
+    return await apiFetch(`/expenses/${encodeURIComponent(expenseId)}`, {
+      method: 'DELETE'
+    }, 2, 'Failed to delete expense.');
   },
 
   async getBills() {
-    const res = await fetch(`${API_BASE_URL}/bills`, { headers: getAuthHeaders() });
-    if (!res.ok) throw new Error('Failed to fetch bills.');
-    return await res.json();
+    return await apiFetch('/bills', {}, 2, 'Failed to fetch bills.');
   },
 
   async createBill(billData) {
-    const res = await fetch(`${API_BASE_URL}/bills`, {
+    return await apiFetch('/bills', {
       method: 'POST',
-      headers: getAuthHeaders(),
       body: JSON.stringify(billData)
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Failed to create bill.');
-    return data;
+    }, 2, 'Failed to create bill.');
   },
 
   async updateBill(billData) {
-    const res = await fetch(`${API_BASE_URL}/bills/${encodeURIComponent(billData.id)}`, {
+    return await apiFetch(`/bills/${encodeURIComponent(billData.id)}`, {
       method: 'PUT',
-      headers: getAuthHeaders(),
       body: JSON.stringify(billData)
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Failed to update bill.');
-    return data;
+    }, 2, 'Failed to update bill.');
   },
 
   async deleteBill(billId) {
-    const res = await fetch(`${API_BASE_URL}/bills/${encodeURIComponent(billId)}`, {
-      method: 'DELETE',
-      headers: getAuthHeaders()
-    });
-    if (!res.ok) throw new Error('Failed to delete bill.');
-    return await res.json();
+    return await apiFetch(`/bills/${encodeURIComponent(billId)}`, {
+      method: 'DELETE'
+    }, 2, 'Failed to delete bill.');
   },
 
   async getRegisterStatus() {
-    const res = await fetch(`${API_BASE_URL}/register-status`, { headers: getAuthHeaders() });
-    if (!res.ok) throw new Error('Failed to fetch register status.');
-    return await res.json();
+    return await apiFetch('/register-status', {}, 2, 'Failed to fetch register status.');
   },
 
   async toggleRegisterStatus() {
-    const res = await fetch(`${API_BASE_URL}/register-status/toggle`, {
-      method: 'POST',
-      headers: getAuthHeaders()
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error('Failed to toggle register status.');
-    return data;
+    return await apiFetch('/register-status/toggle', {
+      method: 'POST'
+    }, 2, 'Failed to toggle register status.');
   },
 
   async sendManagerInvitation(propertyId, email) {
-    const res = await fetch(`${API_BASE_URL}/invitations/send`, {
+    return await apiFetch('/invitations/send', {
       method: 'POST',
-      headers: getAuthHeaders(),
       body: JSON.stringify({ propertyId, email })
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Failed to send manager invitation.');
-    return data;
+    }, 2, 'Failed to send manager invitation.');
   },
 
   async getInvitationDetails(token) {
-    const res = await fetch(`${API_BASE_URL}/invitations/${encodeURIComponent(token)}`);
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Invalid or expired invitation token.');
-    return data;
+    const res = await fetchWithRetry(`${API_BASE_URL}/invitations/${encodeURIComponent(token)}`);
+    return await parseJsonResponse(res, 'Invalid or expired invitation token.');
   },
 
   async acceptManagerInvitation(token, name, password) {
-    const res = await fetch(`${API_BASE_URL}/invitations/accept`, {
+    const res = await fetchWithRetry(`${API_BASE_URL}/invitations/accept`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token, name, password })
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Failed to accept invitation.');
-    if (data.token) localStorage.setItem('frontdesk_jwt_token', data.token);
+    const data = await parseJsonResponse(res, 'Failed to accept invitation.');
+    if (data?.token) localStorage.setItem('frontdesk_jwt_token', data.token);
     return data;
   },
 
   async getInvitations() {
-    const res = await fetch(`${API_BASE_URL}/invitations`, { headers: getAuthHeaders() });
-    if (!res.ok) throw new Error('Failed to fetch invitations list.');
-    return await res.json();
+    return await apiFetch('/invitations', {}, 2, 'Failed to fetch invitations list.');
   },
 
   async createManager(name, email, propertyId, tempPassword, role = "Manager") {
-    const res = await fetch(`${API_BASE_URL}/managers/create`, {
+    return await apiFetch('/managers/create', {
       method: 'POST',
-      headers: getAuthHeaders(),
       body: JSON.stringify({ name, email, propertyId, tempPassword, role })
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Failed to create user account.');
-    return data;
+    }, 2, 'Failed to create user account.');
   },
 
   async getManagers() {
-    const res = await fetch(`${API_BASE_URL}/managers`, {
-      headers: getAuthHeaders()
-    });
-    if (!res.ok) throw new Error('Failed to fetch user list.');
-    return await res.json();
+    return await apiFetch('/managers', {}, 2, 'Failed to fetch user list.');
   },
 
   async changePassword(currentPassword, newPassword) {
-    const res = await fetch(`${API_BASE_URL}/auth/change-password`, {
+    return await apiFetch('/auth/change-password', {
       method: 'POST',
-      headers: getAuthHeaders(),
       body: JSON.stringify({ currentPassword, newPassword })
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Failed to change password.');
-    return data;
+    }, 2, 'Failed to change password.');
   },
 
   async getFeatureToggles() {
-    const res = await fetch(`${API_BASE_URL}/system/feature-toggles`, {
-      headers: getAuthHeaders()
-    });
-    if (!res.ok) throw new Error('Failed to fetch feature toggles.');
-    return await res.json();
+    return await apiFetch('/system/feature-toggles', {}, 2, 'Failed to fetch feature toggles.');
   },
 
   async updateFeatureToggles(role, features) {
-    const res = await fetch(`${API_BASE_URL}/system/feature-toggles`, {
+    return await apiFetch('/system/feature-toggles', {
       method: 'POST',
-      headers: getAuthHeaders(),
       body: JSON.stringify({ role, features })
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Failed to update feature toggles.');
-    return data;
+    }, 2, 'Failed to update feature toggles.');
   },
 
   async impersonateUser(userId) {
-    const res = await fetch(`${API_BASE_URL}/auth/impersonate/${encodeURIComponent(userId)}`, {
-      method: 'POST',
-      headers: getAuthHeaders()
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Failed to impersonate user.');
-    return data;
+    return await apiFetch(`/auth/impersonate/${encodeURIComponent(userId)}`, {
+      method: 'POST'
+    }, 2, 'Failed to impersonate user.');
   }
 };
 

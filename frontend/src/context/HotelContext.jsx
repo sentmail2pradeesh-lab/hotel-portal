@@ -11,8 +11,29 @@ export const HotelProvider = ({ children }) => {
     }
     return 'overview';
   });
-  const [manager, setManager] = useState(null);
-  const [propertiesList, setPropertiesList] = useState([]);
+  const [manager, setManager] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const cached = localStorage.getItem('frontdesk_cached_manager');
+        const token = localStorage.getItem('frontdesk_jwt_token');
+        if (token && cached) {
+          return JSON.parse(cached);
+        }
+      } catch (_) {}
+    }
+    return null;
+  });
+  const [propertiesList, setPropertiesList] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const cached = localStorage.getItem('frontdesk_cached_properties');
+        if (cached) {
+          return JSON.parse(cached);
+        }
+      } catch (_) {}
+    }
+    return [];
+  });
   const [activePropertyId, setActivePropertyIdState] = useState(
     localStorage.getItem('frontdesk_active_firm_id') || ''
   );
@@ -20,7 +41,12 @@ export const HotelProvider = ({ children }) => {
   const [isServerConnected, setIsServerConnected] = useState(true);
   const [isAdminRegistered, setIsAdminRegistered] = useState(true);
   const [isAuthLoading, setIsAuthLoading] = useState(() => {
-    return typeof window !== 'undefined' && Boolean(localStorage.getItem('frontdesk_jwt_token'));
+    if (typeof window === 'undefined') return false;
+    const token = localStorage.getItem('frontdesk_jwt_token');
+    const cachedManager = localStorage.getItem('frontdesk_cached_manager');
+    // If the user already has a saved token and valid cached manager profile, don't block them with full-screen spinner!
+    if (token && cachedManager) return false;
+    return Boolean(token);
   });
 
   // Property Operational Data States
@@ -172,59 +198,62 @@ export const HotelProvider = ({ children }) => {
     }
   }, [activePropertyId]);
 
-  // Initial user session check on app start
-  useEffect(() => {
-    let isMounted = true;
-    const checkMe = async () => {
-      try {
-        const sysStatus = await api.getSystemStatus().catch(() => ({ isAdminRegistered: true }));
-        if (isMounted) {
-          setIsAdminRegistered(sysStatus?.isAdminRegistered ?? true);
-        }
+  // User session check and validation
+  const checkSession = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('frontdesk_jwt_token');
 
-        if (!sysStatus?.isAdminRegistered) {
-          localStorage.removeItem('frontdesk_jwt_token');
-          localStorage.removeItem('frontdesk_active_firm_id');
-          if (isMounted) {
-            setManager(null);
-            setPropertiesList([]);
-            setActivePropertyIdState('');
-          }
-          return;
-        }
+      // Check system status (does an admin exist?)
+      const sysStatus = await api.getSystemStatus().catch(() => ({ isAdminRegistered: true, isError: true }));
+      setIsAdminRegistered(sysStatus?.isAdminRegistered ?? true);
 
-        const mgrMe = await api.getManagerMe();
-        if (mgrMe && isMounted) {
-          setManager({
-            id: mgrMe.id,
-            name: mgrMe.name,
-            email: mgrMe.email,
-            phone: mgrMe.phone || '',
-            role: mgrMe.role
-          });
-          setPropertiesList(mgrMe.properties || []);
-          if (mgrMe.activeProperty) {
-            const savedPropId = localStorage.getItem('frontdesk_active_firm_id');
-            const targetPropId = savedPropId && mgrMe.properties.some(p => p.firmId === savedPropId)
-              ? savedPropId
-              : mgrMe.activeProperty.firmId;
-            setActivePropertyIdState(targetPropId);
-            localStorage.setItem('frontdesk_active_firm_id', targetPropId);
-          }
-        }
-      } catch (e) {
-        console.warn('Authentication check failed:', e);
-      } finally {
-        if (isMounted) {
-          setIsAuthLoading(false);
-        }
+      // ONLY clear credentials if server explicitly confirms no admin exists AND no network error occurred
+      if (sysStatus && sysStatus.isAdminRegistered === false && !sysStatus.networkError && !sysStatus.isError) {
+        localStorage.removeItem('frontdesk_jwt_token');
+        localStorage.removeItem('frontdesk_active_firm_id');
+        localStorage.removeItem('frontdesk_cached_manager');
+        localStorage.removeItem('frontdesk_cached_properties');
+        setManager(null);
+        setPropertiesList([]);
+        setActivePropertyIdState('');
+        return;
       }
-    };
-    checkMe();
-    return () => {
-      isMounted = false;
-    };
+
+      if (!token) {
+        return;
+      }
+
+      const mgrMe = await api.getManagerMe();
+      if (mgrMe) {
+        setManager({
+          id: mgrMe.id,
+          name: mgrMe.name,
+          email: mgrMe.email,
+          phone: mgrMe.phone || '',
+          role: mgrMe.role
+        });
+        setPropertiesList(mgrMe.properties || []);
+        if (mgrMe.activeProperty) {
+          const savedPropId = localStorage.getItem('frontdesk_active_firm_id');
+          const targetPropId = savedPropId && mgrMe.properties.some(p => p.firmId === savedPropId)
+            ? savedPropId
+            : mgrMe.activeProperty.firmId;
+          setActivePropertyIdState(targetPropId);
+          localStorage.setItem('frontdesk_active_firm_id', targetPropId);
+        }
+        setIsServerConnected(true);
+      }
+    } catch (e) {
+      console.warn('Session verification warning (cold start or offline):', e);
+      setIsServerConnected(false);
+    } finally {
+      setIsAuthLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    checkSession();
+  }, [checkSession]);
 
   // Whenever manager or activePropertyId changes, fetch property data and poll
   useEffect(() => {
@@ -267,6 +296,8 @@ export const HotelProvider = ({ children }) => {
   const logout = useCallback(() => {
     localStorage.removeItem('frontdesk_jwt_token');
     localStorage.removeItem('frontdesk_active_firm_id');
+    localStorage.removeItem('frontdesk_cached_manager');
+    localStorage.removeItem('frontdesk_cached_properties');
     setManager(null);
     setPropertiesList([]);
     setActivePropertyIdState('');
@@ -318,6 +349,9 @@ export const HotelProvider = ({ children }) => {
         setPropertiesList([]);
         setActivePropertyIdState('');
         localStorage.removeItem('frontdesk_active_firm_id');
+        try {
+          localStorage.setItem('frontdesk_cached_manager', JSON.stringify(res.manager));
+        } catch (_) {}
         setIsAdminRegistered(true);
         setActiveTab('overview', true);
         setAuthNotice('');
@@ -338,6 +372,9 @@ export const HotelProvider = ({ children }) => {
         setPropertiesList([]);
         setActivePropertyIdState('');
         localStorage.removeItem('frontdesk_active_firm_id');
+        try {
+          localStorage.setItem('frontdesk_cached_manager', JSON.stringify(res.manager));
+        } catch (_) {}
         setActiveTab('overview', true);
         setAuthNotice('');
         return { success: true };
@@ -369,8 +406,13 @@ export const HotelProvider = ({ children }) => {
           setActivePropertyIdState(targetPropId);
           localStorage.setItem('frontdesk_active_firm_id', targetPropId);
         }
+        try {
+          localStorage.setItem('frontdesk_cached_manager', JSON.stringify(res.manager));
+          localStorage.setItem('frontdesk_cached_properties', JSON.stringify(props));
+        } catch (_) {}
         setActiveTab('overview', true);
         setAuthNotice('');
+        setIsServerConnected(true);
         return { success: true };
       }
     } catch (err) {
@@ -876,6 +918,9 @@ export const HotelProvider = ({ children }) => {
         currentUser,
         isAuthenticated,
         isAuthLoading,
+        setIsAuthLoading,
+        checkSession,
+        retryAuth: checkSession,
         authNotice,
         setAuthNotice,
         isServerConnected,

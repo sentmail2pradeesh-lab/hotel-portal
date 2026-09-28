@@ -10,6 +10,7 @@ import { GuestIDCards } from './components/GuestIDCards';
 import { SettingsView } from './components/SettingsView';
 import { AuthView } from './components/AuthView';
 import { BookingModal } from './components/BookingModal';
+import { ConnectingScreen } from './components/ConnectingScreen';
 import { Lock } from 'lucide-react';
 
 const MainView = () => {
@@ -37,6 +38,8 @@ const AppContent = () => {
   const { 
     isAuthenticated, 
     isAuthLoading, 
+    setIsAuthLoading,
+    retryAuth,
     isRegisterOpen,
     isImpersonating,
     currentUser,
@@ -48,51 +51,10 @@ const AppContent = () => {
 
   if (isAuthLoading) {
     return (
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          minHeight: '100vh',
-          background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
-          color: '#f8fafc',
-          fontFamily: 'var(--font-sans, system-ui, sans-serif)'
-        }}
-      >
-        <div style={{
-          width: 64,
-          height: 64,
-          borderRadius: 16,
-          overflow: 'hidden',
-          marginBottom: 16,
-          boxShadow: '0 8px 24px rgba(0, 0, 0, 0.4)',
-          border: '2px solid rgba(245, 158, 11, 0.4)'
-        }}>
-          <img src="/aszen_ventures.jpeg" alt="Aszen Ventures" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-        </div>
-        <div
-          style={{
-            width: 36,
-            height: 36,
-            border: '3px solid rgba(245, 158, 11, 0.2)',
-            borderTopColor: '#f59e0b',
-            borderRadius: '50%',
-            animation: 'spin 0.8s linear infinite'
-          }}
-        />
-        <p
-          style={{
-            marginTop: 16,
-            fontSize: 14,
-            fontWeight: 600,
-            letterSpacing: '0.04em',
-            color: '#cbd5e1'
-          }}
-        >
-          Connecting to Aszen Ventures Portal...
-        </p>
-      </div>
+      <ConnectingScreen
+        onRetry={retryAuth}
+        onSkipToAuth={() => setIsAuthLoading(false)}
+      />
     );
   }
 
