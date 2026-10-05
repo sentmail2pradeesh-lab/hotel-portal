@@ -39,6 +39,10 @@ if not env_db_url or env_db_url == "sqlite:///./hotel_booking.db":
 else:
     SQLALCHEMY_DATABASE_URL = env_db_url
 
+# Auto-correct Hostinger domain if .hstgr.io and .main-hosting.eu were mistakenly merged
+if ".hstgr.io.main-hosting.eu" in SQLALCHEMY_DATABASE_URL:
+    SQLALCHEMY_DATABASE_URL = SQLALCHEMY_DATABASE_URL.replace(".hstgr.io.main-hosting.eu", ".hstgr.io")
+
 # Normalize PostgreSQL driver URLs
 if SQLALCHEMY_DATABASE_URL.startswith("postgres://"):
     SQLALCHEMY_DATABASE_URL = SQLALCHEMY_DATABASE_URL.replace("postgres://", "postgresql+psycopg2://", 1)
