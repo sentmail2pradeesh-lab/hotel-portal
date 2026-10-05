@@ -442,6 +442,45 @@ export const HotelProvider = ({ children }) => {
     return { success: false, message: 'Failed to create property.' };
   };
 
+  // Update Property Details (Super Admin Only)
+  const updateProperty = async (firmId, propData) => {
+    if (!isSuperAdmin) {
+      return { success: false, message: 'Only Super Admin is authorized to edit properties.' };
+    }
+    try {
+      const updatedProp = await api.updateProperty(firmId, propData);
+      if (updatedProp && updatedProp.firmId) {
+        setPropertiesList((prev) =>
+          prev.map((p) => (p.firmId === updatedProp.firmId ? { ...p, ...updatedProp } : p))
+        );
+        // If the updated property is the currently active one, update currentUser state as well
+        if (activePropertyId === updatedProp.firmId) {
+          setCurrentUser((prev) => {
+            if (!prev) return prev;
+            return {
+              ...prev,
+              firmName: updatedProp.firmName,
+              propertyCode: updatedProp.propertyCode,
+              ownerName: updatedProp.ownerName,
+              ownerPhone: updatedProp.ownerPhone,
+              tnebNumber: updatedProp.tnebNumber,
+              address: updatedProp.address,
+              phone: updatedProp.phone,
+              email: updatedProp.email,
+              firmLogo: updatedProp.firmLogo,
+              name: updatedProp.name,
+              initials: updatedProp.initials
+            };
+          });
+        }
+        return { success: true, property: updatedProp };
+      }
+      return { success: false, message: 'Failed to update property.' };
+    } catch (err) {
+      return { success: false, message: err.message || 'Failed to update property.' };
+    }
+  };
+
   // Delete Property (Super Admin Only)
   const deleteProperty = async (firmId) => {
     if (!isSuperAdmin) {
@@ -914,6 +953,7 @@ export const HotelProvider = ({ children }) => {
         activePropertyId,
         switchProperty,
         addProperty,
+        updateProperty,
         deleteProperty,
         currentUser,
         isAuthenticated,

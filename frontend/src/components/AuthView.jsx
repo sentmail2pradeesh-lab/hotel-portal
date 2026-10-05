@@ -19,6 +19,7 @@ import {
   UserCheck,
   Zap
 } from 'lucide-react';
+import { AuthLoadingScreen } from './AuthLoadingScreen';
 
 export const AuthView = () => {
   const { manager, propertiesList, managerLogin, adminRegister, addProperty, authNotice, isAdminRegistered } = useHotel();
@@ -212,6 +213,20 @@ export const AuthView = () => {
       reader.readAsDataURL(file);
     }
   };
+
+  // DEDICATED FULL-PAGE LOADING SCREEN WITH EFFECTS
+  if (loading) {
+    return (
+      <AuthLoadingScreen
+        message={loadingMessage}
+        identity={loginIdentity}
+        onCancel={() => {
+          setLoading(false);
+          setLoadingMessage('');
+        }}
+      />
+    );
+  }
 
   // ONBOARDING SCREEN (Super Admin logged in but has no properties yet)
   if (manager && propertiesList.length === 0) {
@@ -502,26 +517,8 @@ export const AuthView = () => {
               )}
             </div>
 
-            {loading && loadingMessage && (
-              <div style={{
-                background: '#eff6ff',
-                border: '1px solid #bfdbfe',
-                color: '#1d4ed8',
-                padding: '10px 14px',
-                borderRadius: 'var(--radius-md)',
-                fontSize: '12px',
-                fontWeight: 600,
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px'
-              }}>
-                <span style={{ width: '12px', height: '12px', border: '2px solid #3b82f6', borderTopColor: 'transparent', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.8s linear infinite' }}></span>
-                <span>{loadingMessage}</span>
-              </div>
-            )}
-
             <button type="submit" className="btn-main" disabled={loading} style={{ width: '100%', padding: '12px', fontSize: '15px', marginTop: '6px' }}>
-              {loading ? (loadingMessage || 'Creating Property...') : <><Plus size={16} /> Create Property & Launch Dashboard</>}
+              <Plus size={16} /> Create Property & Launch Dashboard
             </button>
           </form>
         </div>
@@ -793,27 +790,8 @@ export const AuthView = () => {
               </div>
             </div>
 
-            {loading && loadingMessage && (
-              <div style={{
-                background: '#eff6ff',
-                border: '1px solid #bfdbfe',
-                color: '#1d4ed8',
-                padding: '10px 14px',
-                borderRadius: 'var(--radius-md)',
-                fontSize: '12px',
-                fontWeight: 600,
-                marginBottom: '8px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px'
-              }}>
-                <span style={{ width: '12px', height: '12px', border: '2px solid #3b82f6', borderTopColor: 'transparent', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.8s linear infinite' }}></span>
-                <span>{loadingMessage}</span>
-              </div>
-            )}
-
             <button type="submit" className="btn-main" disabled={loading} style={{ width: '100%', padding: '12px', fontSize: '15px', marginTop: '6px' }}>
-              {loading ? (loadingMessage || 'Signing In...') : <><ArrowRight size={16} /> Sign In to Portal</>}
+              <ArrowRight size={16} /> Sign In to Portal
             </button>
           </form>
         )}

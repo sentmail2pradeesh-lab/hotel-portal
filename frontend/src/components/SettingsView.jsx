@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useHotel } from '../context/HotelContext';
 import { api } from '../services/api';
 import { formatCurrency, formatDate, exportToCSV, confirmDouble } from '../utils/formatters';
@@ -37,6 +37,7 @@ import {
   Users
 } from 'lucide-react';
 import { AddPropertyModal } from './AddPropertyModal';
+import { EditPropertyModal } from './EditPropertyModal';
 import { CreateManagerModal } from './CreateManagerModal';
 
 export const SettingsView = () => {
@@ -127,9 +128,8 @@ export const SettingsView = () => {
     }
   };
 
-  // Rename Property State for Admin
+  // Edit Property State for Admin
   const [editingProp, setEditingProp] = useState(null);
-  const [renameInput, setRenameInput] = useState('');
 
   // Room Management State
   const [roomAddMode, setRoomAddMode] = useState('single'); // 'single' | 'bulk'
@@ -218,6 +218,15 @@ Login Portal: ${loginUrl}
   const [firmPhone, setFirmPhone] = useState(currentUser?.firmPhone || '');
   const [workEmail, setWorkEmail] = useState(currentUser?.firmEmail || currentUser?.email || '');
   const [profileSuccess, setProfileSuccess] = useState('');
+
+  useEffect(() => {
+    if (currentUser) {
+      setFirmName(currentUser.firmName || '');
+      setFirmAddress(currentUser.firmAddress || currentUser.address || '');
+      setFirmPhone(currentUser.firmPhone || currentUser.phone || '');
+      setWorkEmail(currentUser.firmEmail || currentUser.email || '');
+    }
+  }, [currentUser]);
 
   // Analytics Date Filter State: 'all' | 'today' | 'month' | 'year' | 'custom'
   const [filterMode, setFilterMode] = useState('all');
@@ -1110,11 +1119,8 @@ Login Portal: ${loginUrl}
                         <button
                           className="icon-btn"
                           style={{ color: '#0284c7' }}
-                          onClick={() => {
-                            setEditingProp(p);
-                            setRenameInput(p.firmName);
-                          }}
-                          title="Rename Property"
+                          onClick={() => setEditingProp(p)}
+                          title="Edit Property Details"
                         >
                           <Edit2 size={15} />
                         </button>
@@ -2085,46 +2091,11 @@ Login Portal: ${loginUrl}
       )}
 
       {editingProp && (
-        <div className="modal-overlay" onClick={() => setEditingProp(null)}>
-          <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '440px' }}>
-            <div className="modal-header-row">
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <Edit2 size={20} color="#0284c7" />
-                <h3 className="modal-heading">Rename Property</h3>
-              </div>
-              <button className="icon-btn" onClick={() => setEditingProp(null)}>
-                <X size={16} />
-              </button>
-            </div>
-            
-            <form onSubmit={(e) => {
-              e.preventDefault();
-              if (!renameInput.trim()) return;
-              if (editingProp.firmId !== activePropertyId) {
-                switchProperty(editingProp.firmId);
-              }
-              updateUserProfile(renameInput.trim(), null, null);
-              setEditingProp(null);
-            }}>
-              <div className="form-group" style={{ margin: '16px 0' }}>
-                <label className="form-label">Property / Firm Name</label>
-                <input
-                  type="text"
-                  className="form-input"
-                  value={renameInput}
-                  onChange={(e) => setRenameInput(e.target.value)}
-                  placeholder="Enter new property name..."
-                  required
-                />
-              </div>
-
-              <div className="modal-actions">
-                <button type="button" className="btn-sub" onClick={() => setEditingProp(null)}>Cancel</button>
-                <button type="submit" className="btn-main">Save Property Name</button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <EditPropertyModal
+          isOpen={!!editingProp}
+          property={editingProp}
+          onClose={() => setEditingProp(null)}
+        />
       )}
 
       {editingRoom && (

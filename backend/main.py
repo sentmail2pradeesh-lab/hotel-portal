@@ -42,7 +42,7 @@ try:
     )
     from backend.schemas import (
         ManagerRegisterRequest, ManagerLoginRequest, ManagerResponse,
-        PropertyCreateRequest, PropertyResponse,
+        PropertyCreateRequest, PropertyUpdateRequest, PropertyResponse,
         RegisterRequest, LoginRequest, UserProfileResponse, ProfileUpdateRequest,
         BookingCreate, BookingUpdate, BookingResponse, AllotRoomRequest, EarlyCheckoutRequest,
         BulkImportRequest, BulkImportResponse,
@@ -61,7 +61,7 @@ except (ModuleNotFoundError, ImportError):
     )
     from schemas import (
         ManagerRegisterRequest, ManagerLoginRequest, ManagerResponse,
-        PropertyCreateRequest, PropertyResponse,
+        PropertyCreateRequest, PropertyUpdateRequest, PropertyResponse,
         RegisterRequest, LoginRequest, UserProfileResponse, ProfileUpdateRequest,
         BookingCreate, BookingUpdate, BookingResponse, AllotRoomRequest, EarlyCheckoutRequest,
         BulkImportRequest, BulkImportResponse,
@@ -928,6 +928,123 @@ def create_property(
         sessionTimeoutMinutes=new_prop.session_timeout_minutes or 15,
         role=new_prop.role or "Property Manager",
         initials=new_prop.initials or "PM"
+    )
+
+
+@app.put("/api/properties/{firm_id}", response_model=PropertyResponse)
+def update_property(
+    firm_id: str,
+    req: PropertyUpdateRequest,
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+):
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing authorization token.")
+    token = authorization.split(" ")[1]
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        manager_id = payload.get("manager_id")
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid token.")
+
+    if not manager_id:
+        raise HTTPException(status_code=401, detail="Manager authorization required.")
+
+    mgr = db.query(ManagerAccount).filter(ManagerAccount.id == manager_id).first()
+    if not mgr or mgr.role not in ["Overall Admin", "Super Admin"]:
+        raise HTTPException(status_code=403, detail="Only Super Admin is authorized to edit properties.")
+
+    prop = db.query(PropertyAccount).filter(PropertyAccount.firm_id == firm_id).first()
+    if not prop:
+        raise HTTPException(status_code=404, detail="Property not found.")
+
+    if req.propertyCode is not None and req.propertyCode.strip():
+        new_code = req.propertyCode.strip().upper()
+        existing = db.query(PropertyAccount).filter(
+            PropertyAccount.property_code == new_code,
+            PropertyAccount.firm_id != firm_id
+        ).first()
+        if existing:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Property code '{new_code}' is already used by another property ({existing.firm_name})."
+            )
+        prop.property_code = new_code
+
+    if req.firmName is not None and req.firmName.strip():
+        prop.firm_name = req.firmName.strip()
+
+    if req.managerId is not None:
+        clean_mgr_id = req.managerId.strip()
+        if clean_mgr_id:
+            target_mgr = db.query(ManagerAccount).filter(ManagerAccount.id == clean_mgr_id).first()
+            if target_mgr:
+                prop.manager_id = target_mgr.id
+                prop.name = target_mgr.name
+                parts = target_mgr.name.split(" ")
+                prop.initials = (parts[0][0] + parts[1][0]).upper() if len(parts) >= 2 else target_mgr.name[:2].upper()
+        else:
+            prop.manager_id = None
+            custom_name = (req.managerName or req.name or "").strip()
+            if custom_name:
+                prop.name = custom_name
+                parts = custom_name.split(" ")
+                prop.initials = (parts[0][0] + parts[1][0]).upper() if len(parts) >= 2 else custom_name[:2].upper()
+            else:
+                prop.name = mgr.name
+                parts = mgr.name.split(" ")
+                prop.initials = (parts[0][0] + parts[1][0]).upper() if len(parts) >= 2 else mgr.name[:2].upper()
+    elif req.managerName is not None or req.name is not None:
+        custom_name = (req.managerName or req.name or "").strip()
+        if custom_name:
+            prop.name = custom_name
+            parts = custom_name.split(" ")
+            prop.initials = (parts[0][0] + parts[1][0]).upper() if len(parts) >= 2 else custom_name[:2].upper()
+
+    if req.ownerName is not None:
+        prop.owner_name = req.ownerName.strip() or None
+
+    if req.ownerPhone is not None:
+        prop.owner_phone = req.ownerPhone.strip() or None
+
+    if req.tnebNumber is not None:
+        prop.tneb_number = req.tnebNumber.strip() or None
+
+    if req.address is not None:
+        prop.address = req.address.strip() or None
+
+    if req.phone is not None:
+        prop.phone = req.phone.strip() or None
+
+    if req.email is not None:
+        prop.email = req.email.strip().lower() or None
+
+    if req.firmLogo is not None:
+        prop.firm_logo = req.firmLogo
+
+    if req.eSignature is not None:
+        prop.e_signature = req.eSignature
+
+    db.commit()
+    db.refresh(prop)
+
+    return PropertyResponse(
+        firmId=prop.firm_id,
+        propertyCode=prop.property_code,
+        firmName=prop.firm_name,
+        name=prop.name,
+        managerId=prop.manager_id,
+        ownerName=prop.owner_name,
+        ownerPhone=prop.owner_phone,
+        tnebNumber=prop.tneb_number,
+        email=prop.email,
+        firmLogo=prop.firm_logo,
+        eSignature=prop.e_signature,
+        address=prop.address,
+        phone=prop.phone,
+        sessionTimeoutMinutes=prop.session_timeout_minutes or 15,
+        role=prop.role or "Property Manager",
+        initials=prop.initials or "PM"
     )
 
 

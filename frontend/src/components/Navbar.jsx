@@ -9,7 +9,6 @@ import {
   Building2,
   ShieldCheck,
   X,
-  Trash2,
   Settings,
   ChevronDown,
   BedDouble,
@@ -19,8 +18,8 @@ import {
   UserPlus
 } from 'lucide-react';
 import { useHotel } from '../context/HotelContext';
-import { confirmDouble } from '../utils/formatters';
 import { AddPropertyModal } from './AddPropertyModal';
+import { EditPropertyModal } from './EditPropertyModal';
 import { CreateManagerModal } from './CreateManagerModal';
 
 export const Navbar = () => {
@@ -36,8 +35,6 @@ export const Navbar = () => {
     isRegisterOpen, 
     toggleRegisterStatus,
     guestIDCards,
-    clearAllData,
-    bookings,
     canAccess,
     isSuperAdmin,
     isAdmin,
@@ -51,7 +48,6 @@ export const Navbar = () => {
   const [showAddPropertyModal, setShowAddPropertyModal] = useState(false);
   const [showCreateManagerModal, setShowCreateManagerModal] = useState(false);
   const [editingProp, setEditingProp] = useState(null);
-  const [renameInput, setRenameInput] = useState('');
 
   const profileMenuRef = useRef(null);
   const propertyMenuRef = useRef(null);
@@ -203,10 +199,9 @@ export const Navbar = () => {
                           onClick={(e) => {
                             e.stopPropagation();
                             setEditingProp(p);
-                            setRenameInput(p.firmName);
                             setShowPropertyMenu(false);
                           }}
-                          title="Rename Property"
+                          title="Edit Property Details"
                         >
                           <Edit2 size={13} />
                         </button>
@@ -232,41 +227,6 @@ export const Navbar = () => {
               </>
             )}
           </div>
-        )}
-      </div>
-
-      {/* Shift Register Status Card */}
-      <div className="sidebar-status-card">
-        <div 
-          className={`register-status-pill ${isRegisterOpen ? 'open' : 'closed'}`}
-          onClick={() => setShowShiftModal(true)}
-          title="Click to manage shift register status"
-        >
-          <span className="pulse-dot" />
-          <span>{isRegisterOpen ? 'REGISTER OPEN' : 'REGISTER CLOSED'}</span>
-        </div>
-
-        {/* Clear Register Button (Super Admin Only) */}
-        {isSuperAdmin && bookings.length > 0 && (
-          <button 
-            className="sidebar-clear-btn"
-            disabled={!isRegisterOpen}
-            onClick={() => {
-              if (!isRegisterOpen) {
-                alert('Shift Register is Closed. Please open the shift register to perform operations.');
-                return;
-              }
-              if (confirmDouble(
-                'Are you sure you want to clear all register entries (bookings, expenses, bills)?',
-                'CRITICAL CONFIRMATION: Clearing register will permanently wipe all active stays, expenses, and bills. Are you double sure?'
-              )) {
-                clearAllData();
-              }
-            }}
-            title={isRegisterOpen ? "Clear all register entries" : "Shift Register is Closed (View-Only Mode)"}
-          >
-            <Trash2 size={12} /> Clear Register
-          </button>
         )}
       </div>
 
@@ -551,48 +511,13 @@ export const Navbar = () => {
         </div>
       )}
 
-      {/* Rename Property Modal */}
+      {/* Edit Property Details Modal */}
       {editingProp && (
-        <div className="modal-overlay" onClick={() => setEditingProp(null)}>
-          <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '440px' }}>
-            <div className="modal-header-row">
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <Edit2 size={20} color="#0284c7" />
-                <h3 className="modal-heading">Rename Property</h3>
-              </div>
-              <button className="icon-btn" onClick={() => setEditingProp(null)}>
-                <X size={16} />
-              </button>
-            </div>
-            
-            <form onSubmit={(e) => {
-              e.preventDefault();
-              if (!renameInput.trim()) return;
-              if (editingProp.firmId !== activePropertyId) {
-                switchProperty(editingProp.firmId);
-              }
-              updateUserProfile(renameInput.trim(), null, null);
-              setEditingProp(null);
-            }}>
-              <div className="form-group" style={{ margin: '16px 0' }}>
-                <label className="form-label">Property / Firm Name</label>
-                <input
-                  type="text"
-                  className="form-input"
-                  value={renameInput}
-                  onChange={(e) => setRenameInput(e.target.value)}
-                  placeholder="Enter new property name..."
-                  required
-                />
-              </div>
-
-              <div className="modal-actions">
-                <button type="button" className="btn-sub" onClick={() => setEditingProp(null)}>Cancel</button>
-                <button type="submit" className="btn-main">Save Property Name</button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <EditPropertyModal
+          isOpen={!!editingProp}
+          property={editingProp}
+          onClose={() => setEditingProp(null)}
+        />
       )}
 
       {/* Create Manager / Admin Modal */}

@@ -26,6 +26,21 @@ class PropertyCreateRequest(BaseModel):
     email: Optional[str] = None
     initialRooms: Optional[List[Any]] = None
 
+class PropertyUpdateRequest(BaseModel):
+    propertyCode: Optional[str] = None
+    firmName: Optional[str] = None
+    managerId: Optional[str] = None
+    managerName: Optional[str] = None
+    name: Optional[str] = None
+    ownerName: Optional[str] = None
+    ownerPhone: Optional[str] = None
+    tnebNumber: Optional[str] = None
+    firmLogo: Optional[str] = None
+    eSignature: Optional[str] = None
+    address: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+
 class PropertyResponse(BaseModel):
     firmId: str
     propertyCode: Optional[str] = None

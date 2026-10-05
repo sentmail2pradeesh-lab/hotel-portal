@@ -252,6 +252,13 @@ export const api = {
     }, 2, 'Failed to create property.');
   },
 
+  async updateProperty(firmId, propertyData) {
+    return await apiFetch(`/properties/${firmId}`, {
+      method: 'PUT',
+      body: JSON.stringify(propertyData)
+    }, 2, 'Failed to update property.');
+  },
+
   async deleteProperty(firmId) {
     return await apiFetch(`/properties/${firmId}`, {
       method: 'DELETE'
