@@ -74,6 +74,19 @@ else:
         pool_size=10,
         max_overflow=20
     )
+    # Test connection on startup with safe fallback to prevent container crash loops
+    try:
+        with engine.connect() as test_conn:
+            pass
+        masked_host = engine.url.host or "unknown"
+        print(f"[DATABASE] Successfully connected to remote database on '{masked_host}'.", flush=True)
+    except Exception as remote_err:
+        print(f"[DATABASE WARNING] Failed to connect to remote database ({engine.url.render_as_string(hide_password=True)}): {remote_err}", flush=True)
+        print("[DATABASE NOTICE] Hostinger MySQL host is unreachable or misconfigured. Falling back to local SQLite so your server remains online. Please verify your Hostinger MySQL Host and Remote MySQL IP access!", flush=True)
+        SQLALCHEMY_DATABASE_URL = f"sqlite:///{default_db_file.replace(os.sep, '/')}"
+        is_sqlite = True
+        connect_args = {"check_same_thread": False}
+        engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args=connect_args)
 
 from sqlalchemy import event
 if is_sqlite:

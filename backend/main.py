@@ -73,7 +73,11 @@ except (ModuleNotFoundError, ImportError):
     )
 
 # Initialize database tables
-Base.metadata.create_all(bind=engine)
+try:
+    Base.metadata.create_all(bind=engine)
+    print("[DATABASE] Schema tables verified successfully.", flush=True)
+except Exception as db_init_err:
+    print(f"[DATABASE ERROR] Could not initialize tables on engine {engine.url.render_as_string(hide_password=True)}: {db_init_err}", flush=True)
 
 # Auto-migrate missing columns on existing tables
 DEFAULT_ADMIN_FEATURES = {
