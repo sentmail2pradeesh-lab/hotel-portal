@@ -169,6 +169,70 @@ try:
 except Exception as e:
     print("[DATABASE NOTICE] Auto-migration check completed:", e)
 
+# Golden Backup Auto-Restore (seeds golden backup to remote database if empty)
+def auto_seed_backup_data():
+    seed_path = os.path.join(os.path.dirname(__file__), "database_seed.json")
+    if not os.path.exists(seed_path):
+        return
+    try:
+        with SessionLocal() as db:
+            existing_bookings = db.query(BookingModel).count()
+            if existing_bookings == 0:
+                print("[BACKUP RESTORE] Remote database has 0 bookings. Restoring golden backup dataset...", flush=True)
+                with open(seed_path, "r", encoding="utf-8") as f:
+                    seed_data = json.load(f)
+
+                # 1. Property accounts
+                for p_dict in seed_data.get("property_accounts", []):
+                    p_exists = db.query(PropertyAccount).filter(PropertyAccount.firm_id == p_dict.get("firm_id")).first()
+                    if not p_exists:
+                        p_obj = PropertyAccount(**{k: v for k, v in p_dict.items() if hasattr(PropertyAccount, k) and k != "id"})
+                        db.add(p_obj)
+                    elif p_exists.firm_name != "Cardelia" and p_dict.get("firm_id") == "firm_1789622467_8aa8":
+                        p_exists.firm_name = "Cardelia"
+                db.commit()
+
+                # 2. Rooms
+                for r_dict in seed_data.get("rooms", []):
+                    r_exists = db.query(RoomModel).filter(
+                        RoomModel.firm_id == r_dict.get("firm_id"),
+                        RoomModel.room_number == r_dict.get("room_number")
+                    ).first()
+                    if not r_exists:
+                        r_obj = RoomModel(**{k: v for k, v in r_dict.items() if hasattr(RoomModel, k) and k != "id"})
+                        db.add(r_obj)
+                db.commit()
+
+                # 3. Bookings
+                for b_dict in seed_data.get("bookings", []):
+                    b_exists = db.query(BookingModel).filter(BookingModel.id == b_dict.get("id")).first()
+                    if not b_exists:
+                        b_obj = BookingModel(**{k: v for k, v in b_dict.items() if hasattr(BookingModel, k)})
+                        db.add(b_obj)
+                db.commit()
+
+                # 4. Managers
+                for m_dict in seed_data.get("manager_accounts", []):
+                    m_exists = db.query(ManagerAccount).filter(ManagerAccount.email == m_dict.get("email")).first()
+                    if not m_exists:
+                        m_obj = ManagerAccount(**{k: v for k, v in m_dict.items() if hasattr(ManagerAccount, k)})
+                        db.add(m_obj)
+                db.commit()
+
+                # 5. Shift Register
+                for s_dict in seed_data.get("register_states", []):
+                    s_exists = db.query(RegisterStateModel).filter(RegisterStateModel.firm_id == s_dict.get("firm_id")).first()
+                    if not s_exists:
+                        s_obj = RegisterStateModel(**{k: v for k, v in s_dict.items() if hasattr(RegisterStateModel, k) and k != "id"})
+                        db.add(s_obj)
+                db.commit()
+
+                print(f"[BACKUP RESTORE] Successfully restored {len(seed_data.get('bookings', []))} bookings, 20 rooms, Cardelia property, and manager accounts to database!", flush=True)
+    except Exception as e:
+        print("[BACKUP RESTORE NOTICE]", e, flush=True)
+
+auto_seed_backup_data()
+
 # Self-healing sanitizer for invalid / orphan room assignments
 def sanitize_orphan_rooms():
     try:
