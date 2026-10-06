@@ -100,122 +100,65 @@ DEFAULT_MANAGER_FEATURES = {
     "shift_register": False
 }
 
-if engine.name == "sqlite":
-    try:
-        with engine.connect() as conn:
-            # Property accounts
-            res = conn.execute(text("PRAGMA table_info(property_accounts)")).fetchall()
-            cols = [r[1] for r in res]
-            if "manager_id" not in cols:
-                conn.execute(text("ALTER TABLE property_accounts ADD COLUMN manager_id VARCHAR"))
-                conn.commit()
-            if "property_code" not in cols:
-                conn.execute(text("ALTER TABLE property_accounts ADD COLUMN property_code VARCHAR"))
-                conn.commit()
-            if "address" not in cols:
-                conn.execute(text("ALTER TABLE property_accounts ADD COLUMN address TEXT"))
-                conn.commit()
-            if "phone" not in cols:
-                conn.execute(text("ALTER TABLE property_accounts ADD COLUMN phone VARCHAR"))
-                conn.commit()
-            if "owner_name" not in cols:
-                conn.execute(text("ALTER TABLE property_accounts ADD COLUMN owner_name VARCHAR"))
-                conn.commit()
-            if "owner_phone" not in cols:
-                conn.execute(text("ALTER TABLE property_accounts ADD COLUMN owner_phone VARCHAR"))
-                conn.commit()
-            if "tneb_number" not in cols:
-                conn.execute(text("ALTER TABLE property_accounts ADD COLUMN tneb_number VARCHAR"))
-                conn.commit()
+try:
+    from sqlalchemy import inspect
+    insp = inspect(engine)
+    table_names = insp.get_table_names()
 
-            # Manager accounts
-            m_res = conn.execute(text("PRAGMA table_info(manager_accounts)")).fetchall()
-            m_cols = [r[1] for r in m_res]
-            if "temp_password_hash" not in m_cols:
-                conn.execute(text("ALTER TABLE manager_accounts ADD COLUMN temp_password_hash VARCHAR"))
-                conn.commit()
-            if "temp_password_plain" not in m_cols:
-                conn.execute(text("ALTER TABLE manager_accounts ADD COLUMN temp_password_plain VARCHAR"))
-                conn.commit()
-            if "created_by" not in m_cols:
-                conn.execute(text("ALTER TABLE manager_accounts ADD COLUMN created_by VARCHAR"))
-                conn.commit()
-            if "phone" not in m_cols:
-                conn.execute(text("ALTER TABLE manager_accounts ADD COLUMN phone VARCHAR"))
-                conn.commit()
+    with engine.connect() as conn:
+        def ensure_column(table: str, col: str, col_type: str):
+            if table in table_names:
+                existing_cols = [c["name"] for c in insp.get_columns(table)]
+                if col not in existing_cols:
+                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {col_type}"))
+                    conn.commit()
 
-            # Rooms
-            r_res = conn.execute(text("PRAGMA table_info(rooms)")).fetchall()
-            r_cols = [r[1] for r in r_res]
-            if "room_type" not in r_cols:
-                conn.execute(text("ALTER TABLE rooms ADD COLUMN room_type VARCHAR DEFAULT 'Standard'"))
-                conn.commit()
-            if "is_staff_room" not in r_cols:
-                conn.execute(text("ALTER TABLE rooms ADD COLUMN is_staff_room BOOLEAN DEFAULT 0"))
-                conn.commit()
+        # Property accounts
+        ensure_column("property_accounts", "manager_id", "VARCHAR(191)")
+        ensure_column("property_accounts", "property_code", "VARCHAR(191)")
+        ensure_column("property_accounts", "address", "TEXT")
+        ensure_column("property_accounts", "phone", "VARCHAR(191)")
+        ensure_column("property_accounts", "owner_name", "VARCHAR(191)")
+        ensure_column("property_accounts", "owner_phone", "VARCHAR(191)")
+        ensure_column("property_accounts", "tneb_number", "VARCHAR(191)")
+        ensure_column("property_accounts", "firm_logo", "TEXT")
+        ensure_column("property_accounts", "e_signature", "TEXT")
+        ensure_column("property_accounts", "session_timeout_minutes", "INTEGER DEFAULT 15")
+        ensure_column("property_accounts", "initials", "VARCHAR(191)")
 
-            # Bookings
-            b_res = conn.execute(text("PRAGMA table_info(bookings)")).fetchall()
-            b_cols = [r[1] for r in b_res]
-            if "status" not in b_cols:
-                conn.execute(text("ALTER TABLE bookings ADD COLUMN status VARCHAR DEFAULT 'Upcoming'"))
-                conn.commit()
-            if "manual_id" not in b_cols:
-                conn.execute(text("ALTER TABLE bookings ADD COLUMN manual_id VARCHAR"))
-                conn.commit()
-            if "email" not in b_cols:
-                conn.execute(text("ALTER TABLE bookings ADD COLUMN email VARCHAR"))
-                conn.commit()
-            if "is_hidden" not in b_cols:
-                conn.execute(text("ALTER TABLE bookings ADD COLUMN is_hidden BOOLEAN DEFAULT 0"))
-                conn.commit()
-            if "booking_type" not in b_cols:
-                conn.execute(text("ALTER TABLE bookings ADD COLUMN booking_type VARCHAR DEFAULT 'Walk-in'"))
-                conn.commit()
-            if "is_prepaid" not in b_cols:
-                conn.execute(text("ALTER TABLE bookings ADD COLUMN is_prepaid BOOLEAN DEFAULT 0"))
-                conn.commit()
-            if "txn_id" not in b_cols:
-                conn.execute(text("ALTER TABLE bookings ADD COLUMN txn_id VARCHAR"))
-                conn.commit()
-            if "guest_count" not in b_cols:
-                conn.execute(text("ALTER TABLE bookings ADD COLUMN guest_count INTEGER DEFAULT 1"))
-                conn.commit()
-            if "adults" not in b_cols:
-                conn.execute(text("ALTER TABLE bookings ADD COLUMN adults INTEGER DEFAULT 1"))
-                conn.commit()
-            if "children" not in b_cols:
-                conn.execute(text("ALTER TABLE bookings ADD COLUMN children INTEGER DEFAULT 0"))
-                conn.commit()
-            if "is_guaranteed" not in b_cols:
-                conn.execute(text("ALTER TABLE bookings ADD COLUMN is_guaranteed BOOLEAN DEFAULT 0"))
-                conn.commit()
-            if "total_amount" not in b_cols:
-                conn.execute(text("ALTER TABLE bookings ADD COLUMN total_amount FLOAT DEFAULT 0.0"))
-                conn.commit()
-            if "payment_status" not in b_cols:
-                conn.execute(text("ALTER TABLE bookings ADD COLUMN payment_status VARCHAR DEFAULT 'Fully Paid'"))
-                conn.commit()
-            if "id_card_type" not in b_cols:
-                conn.execute(text("ALTER TABLE bookings ADD COLUMN id_card_type VARCHAR"))
-                conn.commit()
-            if "id_card_number" not in b_cols:
-                conn.execute(text("ALTER TABLE bookings ADD COLUMN id_card_number VARCHAR"))
-                conn.commit()
-            if "notes" not in b_cols:
-                conn.execute(text("ALTER TABLE bookings ADD COLUMN notes TEXT"))
-                conn.commit()
-            if "id_card" not in b_cols:
-                conn.execute(text("ALTER TABLE bookings ADD COLUMN id_card TEXT"))
-                conn.commit()
-            if "id_card_name" not in b_cols:
-                conn.execute(text("ALTER TABLE bookings ADD COLUMN id_card_name VARCHAR"))
-                conn.commit()
-            if "created_at" not in b_cols:
-                conn.execute(text("ALTER TABLE bookings ADD COLUMN created_at VARCHAR"))
-                conn.commit()
+        # Manager accounts
+        ensure_column("manager_accounts", "temp_password_hash", "VARCHAR(191)")
+        ensure_column("manager_accounts", "temp_password_plain", "VARCHAR(191)")
+        ensure_column("manager_accounts", "created_by", "VARCHAR(191)")
+        ensure_column("manager_accounts", "phone", "VARCHAR(191)")
 
-            # Initialize default feature toggles if empty
+        # Rooms
+        ensure_column("rooms", "room_type", "VARCHAR(191) DEFAULT 'Standard'")
+        ensure_column("rooms", "is_staff_room", "BOOLEAN DEFAULT 0" if engine.name == "sqlite" else "BOOLEAN DEFAULT FALSE")
+
+        # Bookings
+        ensure_column("bookings", "status", "VARCHAR(191) DEFAULT 'Upcoming'")
+        ensure_column("bookings", "manual_id", "VARCHAR(191)")
+        ensure_column("bookings", "email", "VARCHAR(191)")
+        ensure_column("bookings", "is_hidden", "BOOLEAN DEFAULT 0" if engine.name == "sqlite" else "BOOLEAN DEFAULT FALSE")
+        ensure_column("bookings", "booking_type", "VARCHAR(191) DEFAULT 'Walk-in'")
+        ensure_column("bookings", "is_prepaid", "BOOLEAN DEFAULT 0" if engine.name == "sqlite" else "BOOLEAN DEFAULT FALSE")
+        ensure_column("bookings", "txn_id", "VARCHAR(191)")
+        ensure_column("bookings", "guest_count", "INTEGER DEFAULT 1")
+        ensure_column("bookings", "adults", "INTEGER DEFAULT 1")
+        ensure_column("bookings", "children", "INTEGER DEFAULT 0")
+        ensure_column("bookings", "is_guaranteed", "BOOLEAN DEFAULT 0" if engine.name == "sqlite" else "BOOLEAN DEFAULT FALSE")
+        ensure_column("bookings", "total_amount", "FLOAT DEFAULT 0.0")
+        ensure_column("bookings", "payment_status", "VARCHAR(191) DEFAULT 'Fully Paid'")
+        ensure_column("bookings", "id_card_type", "VARCHAR(191)")
+        ensure_column("bookings", "id_card_number", "VARCHAR(191)")
+        ensure_column("bookings", "notes", "TEXT")
+        ensure_column("bookings", "id_card", "TEXT")
+        ensure_column("bookings", "id_card_name", "VARCHAR(191)")
+        ensure_column("bookings", "created_at", "VARCHAR(191)")
+
+        # Initialize default feature toggles if table exists and is empty
+        if "feature_toggles" in table_names:
             ft_res = conn.execute(text("SELECT COUNT(*) FROM feature_toggles")).scalar()
             if ft_res == 0:
                 conn.execute(
@@ -223,66 +166,8 @@ if engine.name == "sqlite":
                     {"r1": "Admin", "j1": json.dumps(DEFAULT_ADMIN_FEATURES), "r2": "Manager", "j2": json.dumps(DEFAULT_MANAGER_FEATURES)}
                 )
                 conn.commit()
-    except Exception as e:
-        print("Database auto-migration info:", e)
-else:
-    try:
-        with engine.connect() as conn:
-            # Property accounts
-            conn.execute(text("ALTER TABLE property_accounts ADD COLUMN IF NOT EXISTS manager_id VARCHAR"))
-            conn.execute(text("ALTER TABLE property_accounts ADD COLUMN IF NOT EXISTS property_code VARCHAR"))
-            conn.execute(text("ALTER TABLE property_accounts ADD COLUMN IF NOT EXISTS address TEXT"))
-            conn.execute(text("ALTER TABLE property_accounts ADD COLUMN IF NOT EXISTS phone VARCHAR"))
-            conn.execute(text("ALTER TABLE property_accounts ADD COLUMN IF NOT EXISTS owner_name VARCHAR"))
-            conn.execute(text("ALTER TABLE property_accounts ADD COLUMN IF NOT EXISTS owner_phone VARCHAR"))
-            conn.execute(text("ALTER TABLE property_accounts ADD COLUMN IF NOT EXISTS tneb_number VARCHAR"))
-            conn.execute(text("ALTER TABLE property_accounts ADD COLUMN IF NOT EXISTS firm_logo TEXT"))
-            conn.execute(text("ALTER TABLE property_accounts ADD COLUMN IF NOT EXISTS e_signature TEXT"))
-            conn.execute(text("ALTER TABLE property_accounts ADD COLUMN IF NOT EXISTS session_timeout_minutes INTEGER DEFAULT 15"))
-            conn.execute(text("ALTER TABLE property_accounts ADD COLUMN IF NOT EXISTS initials VARCHAR"))
-
-            # Manager accounts
-            conn.execute(text("ALTER TABLE manager_accounts ADD COLUMN IF NOT EXISTS temp_password_hash VARCHAR"))
-            conn.execute(text("ALTER TABLE manager_accounts ADD COLUMN IF NOT EXISTS temp_password_plain VARCHAR"))
-            conn.execute(text("ALTER TABLE manager_accounts ADD COLUMN IF NOT EXISTS created_by VARCHAR"))
-            conn.execute(text("ALTER TABLE manager_accounts ADD COLUMN IF NOT EXISTS phone VARCHAR"))
-
-            # Rooms
-            conn.execute(text("ALTER TABLE rooms ADD COLUMN IF NOT EXISTS room_type VARCHAR DEFAULT 'Standard'"))
-            conn.execute(text("ALTER TABLE rooms ADD COLUMN IF NOT EXISTS is_staff_room BOOLEAN DEFAULT FALSE"))
-
-            # Bookings
-            conn.execute(text("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS status VARCHAR DEFAULT 'Upcoming'"))
-            conn.execute(text("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS manual_id VARCHAR"))
-            conn.execute(text("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS email VARCHAR"))
-            conn.execute(text("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS is_hidden BOOLEAN DEFAULT FALSE"))
-            conn.execute(text("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS booking_type VARCHAR DEFAULT 'Walk-in'"))
-            conn.execute(text("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS is_prepaid BOOLEAN DEFAULT FALSE"))
-            conn.execute(text("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS txn_id VARCHAR"))
-            conn.execute(text("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS guest_count INTEGER DEFAULT 1"))
-            conn.execute(text("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS adults INTEGER DEFAULT 1"))
-            conn.execute(text("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS children INTEGER DEFAULT 0"))
-            conn.execute(text("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS is_guaranteed BOOLEAN DEFAULT FALSE"))
-            conn.execute(text("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS total_amount FLOAT DEFAULT 0.0"))
-            conn.execute(text("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS payment_status VARCHAR DEFAULT 'Fully Paid'"))
-            conn.execute(text("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS id_card_type VARCHAR"))
-            conn.execute(text("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS id_card_number VARCHAR"))
-            conn.execute(text("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS notes TEXT"))
-            conn.execute(text("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS id_card TEXT"))
-            conn.execute(text("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS id_card_name VARCHAR"))
-            conn.execute(text("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS created_at VARCHAR"))
-
-            # Initialize default feature toggles if empty
-            ft_res = conn.execute(text("SELECT COUNT(*) FROM feature_toggles")).scalar()
-            if ft_res == 0:
-                conn.execute(
-                    text("INSERT INTO feature_toggles (role, features_json) VALUES (:r1, :j1), (:r2, :j2)"),
-                    {"r1": "Admin", "j1": json.dumps(DEFAULT_ADMIN_FEATURES), "r2": "Manager", "j2": json.dumps(DEFAULT_MANAGER_FEATURES)}
-                )
-
-            conn.commit()
-    except Exception as e:
-        print("PostgreSQL auto-migration info:", e)
+except Exception as e:
+    print("[DATABASE NOTICE] Auto-migration check completed:", e)
 
 # Self-healing sanitizer for invalid / orphan room assignments
 def sanitize_orphan_rooms():
