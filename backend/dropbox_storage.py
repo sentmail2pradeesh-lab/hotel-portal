@@ -33,3 +33,18 @@ def download_file(path: str) -> bytes:
     """Return the raw bytes of a stored file."""
     _, response = _client().files_download(path)
     return response.content
+
+
+def list_files(folder: str) -> list:
+    """Return the file entries (not subfolders) directly inside hotel-booking/<folder>."""
+    dbx = _client()
+    result = dbx.files_list_folder(f"{APP_FOLDER_PREFIX}/{folder}")
+    entries = list(result.entries)
+    while result.has_more:
+        result = dbx.files_list_folder_continue(result.cursor)
+        entries.extend(result.entries)
+    return [e for e in entries if isinstance(e, dropbox.files.FileMetadata)]
+
+
+def delete_file(path: str) -> None:
+    _client().files_delete_v2(path)

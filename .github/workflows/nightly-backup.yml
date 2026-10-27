@@ -1,0 +1,23 @@
+name: Nightly backup
+
+on:
+  schedule:
+    # 20:30 UTC = 02:00 IST every day
+    - cron: "30 20 * * *"
+  workflow_dispatch:
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ask the backend to store an encrypted backup in Dropbox
+        env:
+          BACKUP_URL: ${{ secrets.BACKUP_URL }}
+          BACKUP_TOKEN: ${{ secrets.BACKUP_TOKEN }}
+        # Retries cover the first request after Render's free tier wakes up
+        run: |
+          curl -fsS --max-time 300 \
+            --retry 3 --retry-delay 30 --retry-all-errors \
+            -X POST \
+            -H "X-Backup-Token: $BACKUP_TOKEN" \
+            "$BACKUP_URL/api/system/backup"

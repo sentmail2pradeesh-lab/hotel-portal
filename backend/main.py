@@ -1,3 +1,4 @@
+import hmac
 import os
 import re
 import sys
@@ -3473,6 +3474,27 @@ def get_document_file(
         media_type=doc.mime_type or "application/octet-stream",
         headers={"Content-Disposition": f'inline; filename="{safe_name}"'},
     )
+
+
+try:
+    from backend import backup_service
+except (ModuleNotFoundError, ImportError):
+    import backup_service
+
+
+# Called by the scheduler (GitHub Actions). Not tied to a user login; the shared BACKUP_TOKEN is the only check.
+@app.post("/api/system/backup")
+def run_backup(x_backup_token: Optional[str] = Header(None)):
+    expected = os.getenv("BACKUP_TOKEN")
+    if not expected:
+        raise HTTPException(status_code=503, detail="Backups are not configured on this server.")
+    if not x_backup_token or not hmac.compare_digest(x_backup_token, expected):
+        raise HTTPException(status_code=401, detail="Invalid backup token.")
+    try:
+        result = backup_service.store_backup(engine, Base)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Backup failed: {e}")
+    return {"ok": True, **result}
 
 
 if __name__ == "__main__":
