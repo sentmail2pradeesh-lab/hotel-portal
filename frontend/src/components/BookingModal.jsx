@@ -297,7 +297,7 @@ export const BookingModal = ({ isOpen, onClose, initialData = null }) => {
       }
       // The new scan replaces the first document and keeps any others
       if (idCardFile && bookingId) {
-        const scan = await storeIdScan(idCardFile, bookingId, { type: idCardType, number: idCardNumber.trim() });
+        const scan = await storeIdScan(idCardFile, bookingId, { type: idCardType, number: idCardNumber.trim(), guestName: guestName.trim() });
         const otherDocs = (initialData?.documents || []).slice(1);
         await updateBooking(bookingId, { documents: [scan, ...otherDocs], idCard: '', idCardName: idCardFile.name });
       }

@@ -48,7 +48,7 @@ export const GuestIDCards = () => {
 
     const booking = allBookings.find((b) => b.id === bookingId);
     try {
-      const scan = await storeIdScan(file, bookingId, { type: booking?.idCardType, number: booking?.idCardNumber });
+      const scan = await storeIdScan(file, bookingId, { type: booking?.idCardType, number: booking?.idCardNumber, guestName: booking?.guestName });
       const otherDocs = documentsOf(booking).slice(1);
       await updateBooking(bookingId, {
         documents: [scan, ...otherDocs],

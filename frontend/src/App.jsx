@@ -8,6 +8,7 @@ import { Expenses } from './components/Expenses';
 import { Bills } from './components/Bills';
 import { GuestIDCards } from './components/GuestIDCards';
 import { SettingsView } from './components/SettingsView';
+import { Reports } from './components/Reports';
 import { AuthView } from './components/AuthView';
 import { BookingModal } from './components/BookingModal';
 import { CreateBookingPage } from './components/CreateBookingPage';
@@ -32,6 +33,8 @@ const MainView = () => {
       return <GuestIDCards />;
     case 'settings':
       return <SettingsView />;
+    case 'reports':
+      return <Reports />;
     default:
       return <Overview />;
   }

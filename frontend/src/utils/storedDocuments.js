@@ -41,9 +41,11 @@ export const hasIdScan = (booking) => (
   Boolean(booking?.idCard) || (booking?.documents || []).some((d) => d && (d.docId || d.dataUrl))
 );
 
-// Uploads a newly picked ID scan for a booking and returns the entry kept in booking.documents
-export const storeIdScan = async (file, bookingId, { type = 'Aadhaar Card', number = '' } = {}) => {
-  const stored = await storeDocument(file, file.name, { docType: 'id_scan', refId: bookingId });
+// Uploads a newly picked ID scan and returns the entry kept in booking.documents.
+// The file is named <bookingId>_<guestName>_<original file name> and stored in the docs folder.
+export const storeIdScan = async (file, bookingId, { type = 'Aadhaar Card', number = '', guestName = '' } = {}) => {
+  const fileName = [bookingId, guestName, file.name].filter(Boolean).join('_').replace(/\s+/g, '_');
+  const stored = await storeDocument(file, fileName, { docType: 'id_scan', refId: bookingId, folder: 'docs' });
   return {
     docId: stored.id,
     type,

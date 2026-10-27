@@ -24,7 +24,7 @@ export const BillInvoiceModal = ({ bill, onClose, onEditBill, onSave }) => {
         const dataUrl = await toPng(invoiceRef.current, { quality: 0.95 });
         const blob = await (await fetch(dataUrl)).blob();
         const fileName = `${bill.id}_${(bill.guestName || 'bill').replace(/\s+/g, '_')}.png`;
-        await storeDocument(blob, fileName, { docType: 'bill', refId: bill.id });
+        await storeDocument(blob, fileName, { docType: 'bill', refId: bill.id, folder: 'bills' });
       } catch (err) {
         alert(`The bill is saved, but its copy could not be stored in Dropbox: ${err.message}`);
       }

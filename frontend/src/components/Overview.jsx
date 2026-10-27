@@ -670,7 +670,7 @@ export const Overview = () => {
                       l.payment_channel,
                       l.amount
                     ]);
-                    exportToCSV(`Consolidated_Financial_Logs_${localDateStr()}.csv`, headers, rows, { docType: 'report' });
+                    exportToCSV(`Consolidated_Financial_Logs_${localDateStr()}.csv`, headers, rows, { docType: 'report', folder: 'reports' });
                   }}
                   style={{ padding: '6px 12px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}
                 >

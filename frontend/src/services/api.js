@@ -133,11 +133,14 @@ export async function apiFetch(endpoint, options = {}, retries = 2, fallbackMsg 
 
 // Stores a generated file (bill image, report) in Dropbox through the backend.
 // Uploads are not retried, so a slow response cannot create the same document twice.
-export const storeDocument = async (blob, fileName, { docType, refId = null }) => {
+// folder is one of bills, bookings, expenses, docs, reports; the backend places it under the property name
+export const storeDocument = async (blob, fileName, { docType, refId = null, folder = null }) => {
   const form = new FormData();
   form.append('file', blob, fileName);
+  form.append('file_name', fileName);
   form.append('doc_type', docType);
   if (refId) form.append('ref_id', refId);
+  if (folder) form.append('folder', folder);
 
   // The browser sets the multipart Content-Type (with boundary) itself
   const headers = { ...getAuthHeaders() };

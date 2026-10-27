@@ -10,6 +10,7 @@ import {
   ShieldCheck,
   X,
   Settings,
+  Download,
   ChevronDown,
   BedDouble,
   Plus,
@@ -66,6 +67,7 @@ export const Navbar = () => {
     { id: 'expenses', label: 'Daily expenses', icon: Receipt, feature: 'expenses' },
     { id: 'bills', label: 'Bills & add-ons', icon: FileText, feature: 'bills' },
     { id: 'guest-ids', label: 'Guest ID cards', icon: IdCard, badge: totalIDCards, feature: 'guest_ids' },
+    { id: 'reports', label: 'Reports', icon: Download, feature: 'reports' },
     { id: 'settings', label: 'Settings & Controls', icon: Settings, feature: 'settings' },
   ];
 

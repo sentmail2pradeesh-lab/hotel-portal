@@ -459,7 +459,7 @@ Login Portal: ${loginUrl}
       item.amount,
       item.paidVia
     ]);
-    exportToCSV(`property_financial_report_${filterMode}_${todayStr}.csv`, headers, rows, { docType: 'report' });
+    exportToCSV(`property_financial_report_${filterMode}_${todayStr}.csv`, headers, rows, { docType: 'report', folder: 'reports' });
   };
 
   const handlePrintSummary = () => {

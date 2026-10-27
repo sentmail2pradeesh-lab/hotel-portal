@@ -456,7 +456,7 @@ export const CreateBookingPage = () => {
             const storedDocs = [];
             for (const d of documents) {
               if (d.file) {
-                storedDocs.push(await storeIdScan(d.file, res.id, { type: d.type, number: d.number }));
+                storedDocs.push(await storeIdScan(d.file, res.id, { type: d.type, number: d.number, guestName: guestName.trim() }));
               } else {
                 storedDocs.push({
                   docId: d.docId,

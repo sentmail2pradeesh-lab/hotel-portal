@@ -8,7 +8,8 @@ import {
   LogOut,
   CheckCircle2,
   XCircle,
-  Settings
+  Settings,
+  Download
 } from 'lucide-react';
 import { useHotel } from '../context/HotelContext';
 
@@ -34,6 +35,7 @@ export const Sidebar = () => {
     { id: 'expenses', label: 'Daily expenses', icon: Receipt, feature: 'expenses' },
     { id: 'bills', label: 'Bills & add-ons', icon: FileText, feature: 'bills' },
     { id: 'guest-ids', label: 'Guest ID cards', icon: IdCard, badge: totalIDCards, feature: 'guest_ids' },
+    { id: 'reports', label: 'Reports', icon: Download, feature: 'reports' },
     { id: 'settings', label: 'Settings & Reports', icon: Settings, feature: 'reports' },
   ];
 

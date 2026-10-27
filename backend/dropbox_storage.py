@@ -1,5 +1,4 @@
 import os
-import uuid
 
 import dropbox
 from dropbox.files import WriteMode
@@ -21,12 +20,12 @@ def _client():
 
 
 def upload_file(data: bytes, folder: str, filename: str) -> str:
-    """Upload bytes under the app folder and return the Dropbox path.
+    """Upload bytes to hotel-booking/<folder>/<filename> and return the Dropbox path.
 
-    A random prefix keeps two uploads with the same name from overwriting each other.
+    The name is set by the caller (ID or guest name), so a file with the same name is replaced.
     """
-    path = f"{APP_FOLDER_PREFIX}/{folder}/{uuid.uuid4().hex[:8]}_{filename}"
-    _client().files_upload(data, path, mode=WriteMode.add)
+    path = f"{APP_FOLDER_PREFIX}/{folder}/{filename}"
+    _client().files_upload(data, path, mode=WriteMode.overwrite)
     return path
 
 

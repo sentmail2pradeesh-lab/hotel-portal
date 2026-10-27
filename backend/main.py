@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 import json
 import uuid
@@ -3365,7 +3366,15 @@ except (ModuleNotFoundError, ImportError):
     import dropbox_storage
 
 DOCUMENT_TYPES = {"id_scan", "bill", "report", "backup"}
+DOCUMENT_FOLDERS = {"bills", "bookings", "expenses", "docs", "reports", "backups"}
+DEFAULT_DOCUMENT_FOLDER = {"id_scan": "docs", "bill": "bills", "report": "reports", "backup": "backups"}
 MAX_DOCUMENT_BYTES = 15 * 1024 * 1024
+
+
+def safe_path_part(value: str) -> str:
+    # Dropbox folder and file names cannot contain these characters
+    cleaned = re.sub(r'[\\/:*?"<>|]+', "_", str(value)).strip().strip(".")
+    return cleaned or "document"
 
 
 def document_to_dict(doc: DocumentModel) -> dict:
@@ -3386,6 +3395,8 @@ async def upload_document(
     file: UploadFile = File(...),
     doc_type: str = Form(...),
     ref_id: Optional[str] = Form(None),
+    folder: Optional[str] = Form(None),
+    file_name: Optional[str] = Form(None),
     current_user: PropertyAccount = Depends(get_current_property),
     db: Session = Depends(get_db)
 ):
@@ -3397,9 +3408,12 @@ async def upload_document(
     if len(data) > MAX_DOCUMENT_BYTES:
         raise HTTPException(status_code=413, detail="The file is larger than 15 MB.")
 
-    file_name = os.path.basename(file.filename or "document")
+    # Layout: hotel-booking / <property name> / <bills|bookings|expenses|docs|reports> / <file name>
+    folder_name = folder if folder in DOCUMENT_FOLDERS else DEFAULT_DOCUMENT_FOLDER[doc_type]
+    property_folder = safe_path_part(current_user.firm_name or current_user.firm_id)
+    name = safe_path_part(file_name or os.path.basename(file.filename or "document"))
     try:
-        dropbox_path = dropbox_storage.upload_file(data, f"{current_user.firm_id}/{doc_type}", file_name)
+        dropbox_path = dropbox_storage.upload_file(data, f"{property_folder}/{folder_name}", name)
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Dropbox upload failed: {e}")
 
@@ -3408,7 +3422,7 @@ async def upload_document(
         firm_id=current_user.firm_id,
         doc_type=doc_type,
         ref_id=ref_id,
-        file_name=file_name,
+        file_name=name,
         mime_type=file.content_type,
         size_bytes=len(data),
         dropbox_path=dropbox_path,
