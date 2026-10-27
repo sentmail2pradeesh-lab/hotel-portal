@@ -6,7 +6,7 @@ import json
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
-from fastapi import FastAPI, Depends, HTTPException, status, Header, Request, Query, UploadFile, File, Form
+from fastapi import FastAPI, Depends, HTTPException, status, Header, Request, Query, UploadFile, File, Form, BackgroundTasks
 from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
@@ -3482,19 +3482,26 @@ except (ModuleNotFoundError, ImportError):
     import backup_service
 
 
+def _run_backup_job():
+    # Runs after the response is sent; errors are written to the server log
+    try:
+        result = backup_service.store_backup(engine, Base)
+        print(f"[BACKUP] Stored {result['file']} ({result['bytes']} bytes), pruned {result['pruned']} old backup(s).", flush=True)
+    except Exception as e:
+        print(f"[BACKUP] Failed: {e}", flush=True)
+
+
 # Called by the scheduler (GitHub Actions). Not tied to a user login; the shared BACKUP_TOKEN is the only check.
-@app.post("/api/system/backup")
-def run_backup(x_backup_token: Optional[str] = Header(None)):
+# The backup runs in the background so the scheduler gets a reply before the hosting proxy times out.
+@app.post("/api/system/backup", status_code=202)
+def run_backup(background_tasks: BackgroundTasks, x_backup_token: Optional[str] = Header(None)):
     expected = os.getenv("BACKUP_TOKEN")
     if not expected:
         raise HTTPException(status_code=503, detail="Backups are not configured on this server.")
     if not x_backup_token or not hmac.compare_digest(x_backup_token, expected):
         raise HTTPException(status_code=401, detail="Invalid backup token.")
-    try:
-        result = backup_service.store_backup(engine, Base)
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Backup failed: {e}")
-    return {"ok": True, **result}
+    background_tasks.add_task(_run_backup_job)
+    return {"ok": True, "started": True}
 
 
 if __name__ == "__main__":
