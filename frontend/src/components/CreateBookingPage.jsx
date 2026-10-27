@@ -4,6 +4,8 @@ import { localDateStr, generateSystemBookingId, getAutoStayStatus, calculateNigh
 import { api } from '../services/api';
 import { computeMonthBreakdown } from '../utils/paymentBreakdown';
 import { PaymentBreakdownBar } from './PaymentBreakdownBar';
+import { StoredDocumentImage } from './StoredDocumentImage';
+import { storeIdScan } from '../utils/storedDocuments';
 import {
   ArrowLeft, Upload, X, FileText, User, Phone,
   Mail, Calendar, CreditCard, Hash, ShieldCheck,
@@ -264,6 +266,7 @@ export const CreateBookingPage = () => {
             id: `doc-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
             type: guessedType,
             number: '',
+            file, // uploaded to Dropbox once the booking is saved
             dataUrl: reader.result,
             fileName: file.name,
             fileSize: sizeStr
@@ -418,15 +421,17 @@ export const CreateBookingPage = () => {
         // Legacy mirroring for backwards compatibility
         idCardType: primaryDoc.type || 'Aadhaar Card',
         idCardNumber: primaryDoc.number || null,
-        idCard: primaryDoc.dataUrl || null,
+        // Only older scans are sent as data URLs; new and stored scans are referenced by docId
+        idCard: primaryDoc.file || primaryDoc.docId ? '' : (primaryDoc.dataUrl || null),
         idCardName: primaryDoc.fileName || null,
         // Requirement 5: Multiple documents
         documents: documents.map(d => ({
+          docId: d.docId,
           type: d.type,
           number: d.number,
           fileName: d.fileName,
           fileSize: d.fileSize,
-          dataUrl: d.dataUrl
+          dataUrl: d.file || d.docId ? null : d.dataUrl
         })),
         totalAmount: finalTotal,
         amountPaid: finalPaid,
@@ -445,6 +450,29 @@ export const CreateBookingPage = () => {
       setSubmitting(false);
 
       if (res && (res.id || res.success || res.manualId)) {
+        // Newly picked scans are uploaded now that the booking has an id
+        if (documents.some((d) => d.file) && res.id) {
+          try {
+            const storedDocs = [];
+            for (const d of documents) {
+              if (d.file) {
+                storedDocs.push(await storeIdScan(d.file, res.id, { type: d.type, number: d.number }));
+              } else {
+                storedDocs.push({
+                  docId: d.docId,
+                  type: d.type,
+                  number: d.number,
+                  fileName: d.fileName,
+                  fileSize: d.fileSize,
+                  dataUrl: d.docId ? null : d.dataUrl
+                });
+              }
+            }
+            await api.updateBooking(res.id, { documents: storedDocs, idCard: '' }, targetFirmId);
+          } catch (scanErr) {
+            alert(`The booking is saved, but its ID scan could not be stored in Dropbox: ${scanErr.message}. Upload it again from the Bookings page.`);
+          }
+        }
         if (isActiveTarget) refreshPropertyData();
         // Open the Bookings page on the tab for what was just saved
         sessionStorage.setItem('bookingsStartTab', pendingActionType === 'draft' ? 'drafts' : 'upcoming');
@@ -853,8 +881,8 @@ export const CreateBookingPage = () => {
                       overflow: 'hidden',
                       border: '1px solid #cbd5e1'
                     }}>
-                      {doc.dataUrl && doc.dataUrl.startsWith('data:image') ? (
-                        <img src={doc.dataUrl} alt="doc" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      {(doc.docId || (doc.dataUrl && doc.dataUrl.startsWith('data:image'))) && !(doc.fileName || '').toLowerCase().endsWith('.pdf') ? (
+                        <StoredDocumentImage doc={doc} alt="doc" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                       ) : (
                         <FileText size={20} color="#475569" />
                       )}

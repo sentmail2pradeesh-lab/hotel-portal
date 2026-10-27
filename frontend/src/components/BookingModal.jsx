@@ -2,7 +2,9 @@ import React, { useState, useMemo } from 'react';
 import { useHotel } from '../context/HotelContext';
 import { localDateStr, generateSystemBookingId, getAutoStayStatus, calculateNights, formatCurrency } from '../utils/formatters';
 import { IDCardViewerModal } from './IDCardViewerModal';
-import { 
+import { StoredDocumentImage } from './StoredDocumentImage';
+import { storeIdScan } from '../utils/storedDocuments';
+import {
   Upload, X, CheckCircle2, FileText, Sparkles, User, Phone, 
   Mail, BedDouble, Calendar, CreditCard, Hash, FileCheck, ShieldCheck,
   Users, Minus, Plus, AlertCircle, Eye, Trash2, IdCard, RefreshCw, Clock
@@ -61,6 +63,10 @@ export const BookingModal = ({ isOpen, onClose, initialData = null }) => {
   const [idCardType, setIdCardType] = useState(initialData?.idCardType || 'Aadhaar Card');
   const [idCardNumber, setIdCardNumber] = useState(initialData?.idCardNumber || '');
   const [idCardDataUrl, setIdCardDataUrl] = useState(initialData?.idCard || null);
+  // A newly picked scan is previewed locally and uploaded to Dropbox after the booking is saved
+  const [idCardFile, setIdCardFile] = useState(null);
+  // A scan already stored in Dropbox is referenced by its document id
+  const [idCardDocId, setIdCardDocId] = useState(initialData?.documents?.[0]?.docId || null);
   const [idCardFileName, setIdCardFileName] = useState(initialData?.idCardName || '');
   const [idCardFileSize, setIdCardFileSize] = useState('');
   const [isDragging, setIsDragging] = useState(false);
@@ -138,7 +144,9 @@ export const BookingModal = ({ isOpen, onClose, initialData = null }) => {
       : `${Math.round(file.size / 1024)} KB`;
     setIdCardFileSize(sizeStr);
     setIdCardFileName(file.name);
-    
+    setIdCardFile(file);
+    setIdCardDocId(null);
+
     const reader = new FileReader();
     reader.onloadend = () => {
       setIdCardDataUrl(reader.result);
@@ -270,7 +278,7 @@ export const BookingModal = ({ isOpen, onClose, initialData = null }) => {
       isPrepaid: Boolean(paymentOption === 'Fully Paid' || isPrepaid),
       isGuaranteed: Boolean(isGuaranteed),
       notes: notes.trim(),
-      idCard: idCardDataUrl,
+      idCard: idCardFile ? '' : idCardDataUrl,
       idCardName: idCardFileName || (idCardDataUrl ? `${idCardType}` : ''),
       idCardType: idCardType,
       idCardNumber: idCardNumber.trim(),
@@ -280,10 +288,18 @@ export const BookingModal = ({ isOpen, onClose, initialData = null }) => {
     setSubmitting(true);
     setErrorMsg('');
     try {
+      let bookingId = initialData?.id;
       if (initialData) {
         await updateBooking(initialData.id, bookingPayload);
       } else {
-        await addBooking(bookingPayload);
+        const created = await addBooking(bookingPayload);
+        bookingId = created?.id;
+      }
+      // The new scan replaces the first document and keeps any others
+      if (idCardFile && bookingId) {
+        const scan = await storeIdScan(idCardFile, bookingId, { type: idCardType, number: idCardNumber.trim() });
+        const otherDocs = (initialData?.documents || []).slice(1);
+        await updateBooking(bookingId, { documents: [scan, ...otherDocs], idCard: '', idCardName: idCardFile.name });
       }
       onClose();
     } catch (err) {
@@ -489,7 +505,7 @@ export const BookingModal = ({ isOpen, onClose, initialData = null }) => {
                   style={{ display: 'none' }}
                 />
 
-                {!idCardDataUrl ? (
+                {!idCardDataUrl && !idCardDocId ? (
                   <div
                     className={`doc-upload-dropzone ${isDragging ? 'dragging' : ''}`}
                     onDragOver={handleDragOver}
@@ -522,7 +538,7 @@ export const BookingModal = ({ isOpen, onClose, initialData = null }) => {
                         </div>
                       ) : (
                         <div className="doc-file-thumbnail-wrap">
-                          <img src={idCardDataUrl} alt="ID Preview" className="doc-file-thumbnail" />
+                          <StoredDocumentImage doc={{ dataUrl: idCardDataUrl, docId: idCardDocId }} alt="ID Preview" className="doc-file-thumbnail" />
                         </div>
                       )}
                       <div className="doc-file-meta">
@@ -562,6 +578,8 @@ export const BookingModal = ({ isOpen, onClose, initialData = null }) => {
                         className="btn-doc-action remove"
                         onClick={() => {
                           setIdCardDataUrl(null);
+                          setIdCardFile(null);
+                          setIdCardDocId(null);
                           setIdCardFileName('');
                           setIdCardFileSize('');
                         }}
@@ -1112,13 +1130,14 @@ export const BookingModal = ({ isOpen, onClose, initialData = null }) => {
       </div>
 
       {/* ID Document Preview Modal */}
-      {showDocPreview && idCardDataUrl && (
+      {showDocPreview && (idCardDataUrl || idCardDocId) && (
         <IDCardViewerModal
           booking={{
             id: manualId || id,
             guestName: guestName || 'Guest Document',
             room: room || 'Unallocated',
             idCard: idCardDataUrl,
+            idCardDocId,
             idCardName: idCardFileName || `${idCardType}`,
             idCardType,
             idCardNumber

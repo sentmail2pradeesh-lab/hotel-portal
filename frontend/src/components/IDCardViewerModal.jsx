@@ -1,16 +1,25 @@
 import React from 'react';
 import { X, Download, IdCard, CheckCircle2, ShieldCheck } from 'lucide-react';
+import { useDocumentSrc } from '../utils/storedDocuments';
 
 export const IDCardViewerModal = ({ booking, onClose }) => {
+  // The scan is either the selected document's data URL or its Dropbox copy (docId)
+  const firstStored = (booking?.documents || []).find((d) => d && (d.docId || d.dataUrl));
+  const src = useDocumentSrc({
+    dataUrl: booking?.idCard || firstStored?.dataUrl,
+    docId: booking?.idCardDocId || firstStored?.docId,
+  });
+
   if (!booking) return null;
 
-  const isPdf = (booking.idCardName && booking.idCardName.toLowerCase().endsWith('.pdf')) || 
-                (booking.idCard && booking.idCard.startsWith('data:application/pdf'));
+  const isPdf = (booking.idCardName && booking.idCardName.toLowerCase().endsWith('.pdf')) ||
+                (src && src.startsWith('data:application/pdf')) ||
+                (src && src.endsWith('.pdf'));
 
   const handleDownload = () => {
-    if (!booking.idCard) return;
+    if (!src) return;
     const link = document.createElement('a');
-    link.href = booking.idCard;
+    link.href = src;
     link.download = booking.idCardName || `${booking.id}_guest_document${isPdf ? '.pdf' : '.png'}`;
     link.click();
   };
@@ -80,10 +89,10 @@ export const IDCardViewerModal = ({ booking, onClose }) => {
             minHeight: '340px',
             overflow: 'hidden'
           }}>
-            {booking.idCard ? (
+            {src ? (
               isPdf ? (
                 <iframe
-                  src={booking.idCard}
+                  src={src}
                   title={`PDF Document for ${booking.guestName}`}
                   style={{
                     width: '100%',
@@ -94,7 +103,7 @@ export const IDCardViewerModal = ({ booking, onClose }) => {
                 />
               ) : (
                 <img
-                  src={booking.idCard}
+                  src={src}
                   alt={`ID Card for ${booking.guestName}`}
                   style={{
                     maxWidth: '100%',
@@ -117,7 +126,7 @@ export const IDCardViewerModal = ({ booking, onClose }) => {
 
         <div className="modal-actions">
           <button className="btn-sub" onClick={onClose}>Close</button>
-          {booking.idCard && (
+          {src && (
             <button className="btn-main" onClick={handleDownload}>
               <Download size={15} /> Download Document {isPdf ? '(PDF)' : '(Image)'}
             </button>

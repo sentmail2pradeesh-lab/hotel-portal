@@ -147,6 +147,16 @@ export const storeDocument = async (blob, fileName, { docType, refId = null }) =
   return await parseJsonResponse(res, 'Failed to store document in Dropbox.');
 };
 
+// Loads a stored file through the backend and returns a local blob URL for it
+export const fetchDocumentBlobUrl = async (docId) => {
+  const headers = { ...getAuthHeaders() };
+  delete headers['Content-Type'];
+
+  const res = await fetchWithRetry(`${API_BASE_URL}/documents/${encodeURIComponent(docId)}/file`, { headers }, 2);
+  if (!res.ok) throw new Error('Failed to load the stored document.');
+  return URL.createObjectURL(await res.blob());
+};
+
 export const listDocuments = async ({ docType, refId } = {}) => {
   const params = new URLSearchParams();
   if (docType) params.set('doc_type', docType);

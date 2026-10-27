@@ -7,6 +7,7 @@ import { localDateStr, formatCurrency, formatDate, confirmDouble, calculateNight
 import { IDCardViewerModal } from './IDCardViewerModal';
 import { EarlyCheckoutModal } from './EarlyCheckoutModal';
 import { BillInvoiceModal } from './BillInvoiceModal';
+import { hasIdScan } from '../utils/storedDocuments';
 import { GenerateBillModal } from './GenerateBillModal';
 import { AllotRoomModal } from './AllotRoomModal';
 import { ImportBookingsModal } from './ImportBookingsModal';
@@ -461,7 +462,7 @@ export const Bookings = () => {
 
                 {/* ID Document & Actions */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'flex-end', flexWrap: 'nowrap' }}>
-                  {b.idCard ? (
+                  {hasIdScan(b) ? (
                     <button
                       className="id-status-badge has-id" style={{ whiteSpace: 'nowrap' }}
                       onClick={() => setSelectedIDBooking(b)}

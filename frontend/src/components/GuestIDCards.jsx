@@ -4,6 +4,8 @@ import { formatDate } from '../utils/formatters';
 import { IDCardViewerModal } from './IDCardViewerModal';
 import { Search, IdCard, Eye, Upload, CheckCircle2, AlertCircle, FileText } from 'lucide-react';
 import { PropertySwitcher } from './PropertySwitcher';
+import { StoredDocumentImage } from './StoredDocumentImage';
+import { storeIdScan } from '../utils/storedDocuments';
 
 export const GuestIDCards = () => {
   const { bookings: allBookings, updateBooking, isRegisterOpen } = useHotel();
@@ -25,7 +27,7 @@ export const GuestIDCards = () => {
 
   // Each saved document is shown as its own card; a booking with no document list falls back to its single ID scan
   const documentsOf = (booking) => {
-    const docs = (booking.documents || []).filter((d) => d && d.dataUrl);
+    const docs = (booking.documents || []).filter((d) => d && (d.docId || d.dataUrl));
     if (docs.length > 0) return docs;
     return booking.idCard
       ? [{ dataUrl: booking.idCard, fileName: booking.idCardName, type: booking.idCardType, number: booking.idCardNumber }]
@@ -34,21 +36,27 @@ export const GuestIDCards = () => {
 
   const totalUploadedIDs = bookings.reduce((count, b) => count + documentsOf(b).length, 0);
 
-  const handleFileUploadForBooking = (bookingId, e) => {
+  // The new scan goes to Dropbox and replaces the booking's first document; any other documents are kept
+  const handleFileUploadForBooking = async (bookingId, e) => {
     if (!isRegisterOpen) {
       alert('Shift Register is Closed. Please open the shift register to upload guest ID cards.');
       return;
     }
     const file = e.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        updateBooking(bookingId, {
-          idCard: reader.result,
-          idCardName: file.name
-        });
-      };
-      reader.readAsDataURL(file);
+    e.target.value = '';
+    if (!file) return;
+
+    const booking = allBookings.find((b) => b.id === bookingId);
+    try {
+      const scan = await storeIdScan(file, bookingId, { type: booking?.idCardType, number: booking?.idCardNumber });
+      const otherDocs = documentsOf(booking).slice(1);
+      await updateBooking(bookingId, {
+        documents: [scan, ...otherDocs],
+        idCard: '',
+        idCardName: file.name
+      });
+    } catch (err) {
+      alert(`The ID scan could not be stored in Dropbox: ${err.message}`);
     }
   };
 
@@ -171,7 +179,7 @@ export const GuestIDCards = () => {
                         </div>
                       </div>
                     ) : (
-                      <img src={doc.dataUrl} alt={`ID Document for ${booking.guestName}`} />
+                      <StoredDocumentImage doc={doc} alt={`ID Document for ${booking.guestName}`} />
                     )
                   ) : (
                     <div style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: '24px' }}>
@@ -225,7 +233,8 @@ export const GuestIDCards = () => {
                         style={{ flex: 1, padding: '7px', fontSize: '12px', justifyContent: 'center' }}
                         onClick={() => setSelectedBookingForView({
                           ...booking,
-                          idCard: doc.dataUrl,
+                          idCard: doc.dataUrl || null,
+                          idCardDocId: doc.docId || null,
                           idCardName: doc.fileName,
                           idCardType: doc.type,
                           idCardNumber: doc.number

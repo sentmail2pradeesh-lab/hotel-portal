@@ -1013,7 +1013,7 @@ export const HotelProvider = ({ children }) => {
     checkOut: b.checkOut,
     idCard: b.idCard || null,
     idCardName: b.idCardName || 'ID Photo',
-    hasID: Boolean(b.idCard),
+    hasID: Boolean(b.idCard) || (b.documents || []).some((d) => d && (d.docId || d.dataUrl)),
     createdAt: b.createdAt
   }));
 
