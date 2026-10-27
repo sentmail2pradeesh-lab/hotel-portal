@@ -1,47 +1,89 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { api } from '../services/api';
+import { computeMonthBreakdown } from '../utils/paymentBreakdown';
+import { PaymentBreakdownBar } from './PaymentBreakdownBar';
 import { useHotel } from '../context/HotelContext';
-import { formatCurrency, formatDate, confirmDouble, calculateNights, getAutoStayStatus } from '../utils/formatters';
+import { localDateStr, formatCurrency, formatDate, confirmDouble, calculateNights, getAutoStayStatus } from '../utils/formatters';
 import { IDCardViewerModal } from './IDCardViewerModal';
 import { EarlyCheckoutModal } from './EarlyCheckoutModal';
 import { BillInvoiceModal } from './BillInvoiceModal';
 import { GenerateBillModal } from './GenerateBillModal';
 import { AllotRoomModal } from './AllotRoomModal';
 import { ImportBookingsModal } from './ImportBookingsModal';
-import { 
-  Plus, Search, Trash2, Edit2, CheckCircle2, BedDouble, PhoneCall, 
+import {
+  Plus, Search, Trash2, Edit2, CheckCircle2, BedDouble, PhoneCall,
   Clock, LogIn, LogOut, FileText, UserCheck, Mail, EyeOff, Calendar, Filter,
-  Users, ShieldCheck, AlertCircle, UploadCloud
+  Users, ShieldCheck, AlertCircle, UploadCloud, X
 } from 'lucide-react';
+import { PropertySwitcher } from './PropertySwitcher';
+
+// Settlement channel -> payment option stored on the booking (matches the breakdown categories)
+const SETTLE_PAYMENT_OPTION = {
+  'Cash': 'Cash',
+  'UPI (Owner UPI)': 'UPI (owner upi)',
+  'Other UPI': 'Other UPI'
+};
 
 export const Bookings = () => {
-  const { 
-    bookings, 
+  const {
+    bookings,
     roomsList,
-    deleteBooking, 
-    checkInBooking, 
-    checkOutBooking, 
+    deleteBooking,
+    checkInBooking,
+    checkOutBooking,
     earlyCheckOutBooking,
     addBill,
     currentUser,
     isRegisterOpen,
     openNewBookingModal,
+    activePropertyId,
+    propertiesList,
+    navigateToCreateBooking,
+    updateBooking,
     isSuperAdmin,
     isAdmin
   } = useHotel();
-  
-  const [activeTab, setActiveTab] = useState('in-house'); // 'in-house' | 'upcoming' | 'completed' | 'hidden' | 'all'
+
+  // "All Properties" view: read-only list of every property's bookings (admin accounts only)
+  const [viewAll, setViewAll] = useState(false);
+  const [allPropBookings, setAllPropBookings] = useState([]);
+  const [activeTab, setActiveTab] = useState(() => {
+    // Set when a booking was just saved; used once, then the page starts on In-House as usual
+    const start = sessionStorage.getItem('bookingsStartTab');
+    sessionStorage.removeItem('bookingsStartTab');
+    return start || 'in-house';
+  }); // 'in-house' | 'upcoming' | 'drafts' | 'completed' | 'hidden' | 'all'
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedIDBooking, setSelectedIDBooking] = useState(null);
   const [earlyCheckoutBooking, setEarlyCheckoutBooking] = useState(null);
   const [selectedBillForInvoice, setSelectedBillForInvoice] = useState(null);
   const [generatingBillBooking, setGeneratingBillBooking] = useState(null);
-  const [allottingBooking, setAllottingBooking] = useState(null);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
-  const todayStr = new Date().toISOString().split('T')[0];
+  const [allottingBooking, setAllottingBooking] = useState(null);
+  const todayStr = localDateStr();
+  const activeCode = (propertiesList || []).find(p => p.firmId === activePropertyId)?.propertyCode || currentUser?.propertyCode;
+
+  // Settle Outstanding Balance Before Checkout State (Requirements 7 & 11)
+  const [settleCheckoutBooking, setSettleCheckoutBooking] = useState(null);
+  const [settleChannel, setSettleChannel] = useState('Cash');
+  const [settleTxnId, setSettleTxnId] = useState('');
+  const [settleError, setSettleError] = useState('');
+  const [settleLoading, setSettleLoading] = useState(false);
+
+  useEffect(() => {
+    if (!viewAll) return;
+    let cancelled = false;
+    api.getAllPropertyBookings()
+      .then((data) => { if (!cancelled) setAllPropBookings(Array.isArray(data) ? data : []); })
+      .catch(() => { if (!cancelled) setAllPropBookings([]); });
+    return () => { cancelled = true; };
+  }, [viewAll]);
+
+  const sourceBookings = viewAll ? allPropBookings : bookings;
 
   // Auto-calculated dynamic statuses for all bookings
-  const bookingsWithAutoStatus = bookings.map(b => {
-    const computed = getAutoStayStatus(b.checkIn, b.checkOut, b.status);
+  const bookingsWithAutoStatus = sourceBookings.map(b => {
+    const computed = getAutoStayStatus(b.checkIn, b.checkOut, b.status, 120, b.confirmedAt);
     return { ...b, computedStatus: computed };
   });
 
@@ -55,11 +97,23 @@ export const Bookings = () => {
   const completedStays = bookingsWithAutoStatus.filter(
     b => !b.isHidden && b.computedStatus === 'Completed'
   );
+  const archivedStays = bookingsWithAutoStatus.filter(
+    b => !b.isHidden && (b.computedStatus === 'Archived' || b.status === 'Archived')
+  );
+  const draftStays = bookingsWithAutoStatus.filter(
+    b => !b.isHidden && b.computedStatus === 'Draft'
+  );
   const hiddenBookings = bookingsWithAutoStatus.filter(
     b => b.isHidden
   );
 
   const handleEdit = (booking) => {
+    // Drafts open in the full registration console so every saved document and the draft actions are available
+    if (booking.status === 'Draft') {
+      // The list shows the active property's bookings, so the draft belongs to that property
+      navigateToCreateBooking({ ...booking, firmId: activePropertyId });
+      return;
+    }
     openNewBookingModal(booking);
   };
 
@@ -77,7 +131,26 @@ export const Bookings = () => {
       alert('Shift Register is Closed. Please open shift register to perform check-out.');
       return;
     }
-    const today = new Date().toISOString().split('T')[0];
+
+    // Requirements 7 & 11: Block checkout if full amount is not paid!
+    const total = parseFloat(booking.totalAmount) || parseFloat(booking.amountPaid) || 0;
+    const paid = parseFloat(booking.amountPaid) || 0;
+    const balanceDue = Math.max(0, total - paid);
+
+    if (booking.paidVia === 'Pending' || booking.paymentOption === 'Unpaid' || balanceDue > 0) {
+      setSettleCheckoutBooking({
+        ...booking,
+        total,
+        paid,
+        balanceDue
+      });
+      setSettleChannel('Cash');
+      setSettleTxnId('');
+      setSettleError('');
+      return;
+    }
+
+    const today = localDateStr();
     if (booking.checkOut && booking.checkOut > today) {
       setEarlyCheckoutBooking(booking);
     } else {
@@ -87,6 +160,40 @@ export const Bookings = () => {
       )) {
         checkOutBooking(booking.id);
       }
+    }
+  };
+
+  const handleSettleAndCheckout = async () => {
+    if (!settleCheckoutBooking) return;
+    const isUpi = settleChannel.toLowerCase().includes('upi');
+    if (isUpi && !settleTxnId.trim()) {
+      setSettleError('Transaction ID / UTR is mandatory for UPI payment.');
+      return;
+    }
+
+    setSettleLoading(true);
+    setSettleError('');
+
+    try {
+      // Update booking to fully paid
+      await updateBooking(settleCheckoutBooking.id, {
+        ...settleCheckoutBooking,
+        amountPaid: settleCheckoutBooking.total,
+        balanceDue: 0,
+        // The balance is recorded under the channel it was collected through, so the breakdown counts it there
+        paymentOption: SETTLE_PAYMENT_OPTION[settleChannel] || 'Cash',
+        paidVia: settleChannel,
+        paymentStatus: null, // let the backend recalculate from the amounts
+        txnId: settleTxnId.trim() || settleCheckoutBooking.txnId || null
+      });
+
+      setSettleLoading(false);
+      const bId = settleCheckoutBooking.id;
+      setSettleCheckoutBooking(null);
+      checkOutBooking(bId);
+    } catch (err) {
+      setSettleLoading(false);
+      setSettleError(err.message || 'Failed to settle payment.');
     }
   };
 
@@ -102,8 +209,8 @@ export const Bookings = () => {
   const filterBySearch = (list) => {
     if (!searchTerm.trim()) return list;
     const term = searchTerm.toLowerCase();
-    const propCode = (currentUser?.propertyCode || '').toLowerCase();
-    return list.filter(b => 
+    const propCode = (activeCode || '').toLowerCase();
+    return list.filter(b =>
       (b.guestName && b.guestName.toLowerCase().includes(term)) ||
       (b.phone && b.phone.toLowerCase().includes(term)) ||
       (b.email && b.email.toLowerCase().includes(term)) ||
@@ -114,11 +221,12 @@ export const Bookings = () => {
     );
   };
 
-  const allCount = bookings.filter(b => !b.isHidden).length;
+  const allCount = sourceBookings.filter(b => !b.isHidden).length;
   const inHouseCount = inHouseStays.length;
   const upcomingCount = upcomingStays.length;
   const completedCount = completedStays.length;
   const hiddenCount = hiddenBookings.length;
+  const draftCount = draftStays.length;
 
   const renderBookingGroup = (title, list) => {
     const filteredList = filterBySearch(list);
@@ -152,11 +260,13 @@ export const Bookings = () => {
             const isUpcoming = b.computedStatus === 'Upcoming';
             const isInHouse = b.computedStatus === 'In-House';
             const isCompleted = b.computedStatus === 'Completed';
+            // Archived (no check-in) stays can still be checked in until their checkout date passes
+            const canCheckIn = isUpcoming || (b.computedStatus === 'Archived' && (b.checkOut || '') >= todayStr);
             const nights = calculateNights(b.checkIn, b.checkOut);
 
             return (
-              <div 
-                key={b.id} 
+              <div
+                key={b.id}
                 className="card-container"
                 style={{
                   padding: '16px 20px',
@@ -207,6 +317,7 @@ export const Bookings = () => {
                     <span className="mono" style={{ fontWeight: 600, color: '#475569' }}>#{b.manualId || b.id}</span>
                     <span style={{ color: '#cbd5e1' }}>&bull;</span>
                     <span className="mono" style={{ color: '#0284c7', fontWeight: 700 }}>ASZ ID: {b.id}</span>
+                    {viewAll && <span className="mono" style={{ fontWeight: 700, color: '#0f766e', background: '#ccfbf1', border: '1px solid #99f6e4', padding: '1px 6px', borderRadius: '4px' }}>{b.propertyCode || 'Property'}</span>}
                   </div>
 
                   {/* Contact Details */}
@@ -227,7 +338,7 @@ export const Bookings = () => {
                 {/* Middle Info: Duration & Room Suite */}
                 <div style={{ flex: '1.2', minWidth: '220px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'nowrap' }}>
-                    {currentUser?.propertyCode && (
+                    {activeCode && (
                       <span style={{
                         background: '#f1f5f9',
                         color: '#334155',
@@ -239,7 +350,7 @@ export const Bookings = () => {
                         border: '1px solid #cbd5e1',
                         whiteSpace: 'nowrap'
                       }}>
-                        {currentUser.propertyCode}
+                        {activeCode}
                       </span>
                     )}
                     {(() => {
@@ -252,7 +363,7 @@ export const Bookings = () => {
                             </span>
                             {/* Room cannot be changed after checkin; only before arrival */}
                             {isUpcoming && (
-                              <button 
+                              <button
                                 className="btn-change-room"
                                 onClick={() => setAllottingBooking(b)}
                                 title="Change or re-assign room suite prior to check-in"
@@ -269,7 +380,7 @@ export const Bookings = () => {
                               <AlertCircle size={12} /> Invalid ({b.room})
                             </span>
                             {isUpcoming && (
-                              <button 
+                              <button
                                 className="btn-change-room"
                                 onClick={() => setAllottingBooking(b)}
                                 title="Allot a valid physical room suite"
@@ -327,11 +438,6 @@ export const Bookings = () => {
                   <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px', fontWeight: 600 }}>
                     Paid via {b.paidVia || 'Cash'}
                   </div>
-                  {b.txnId && (
-                    <div style={{ fontSize: '10px', color: '#0284c7', fontFamily: 'var(--font-mono)', marginTop: '2px', fontWeight: 700 }} title={`Txn Reference: ${b.txnId}`}>
-                      Txn: {b.txnId}
-                    </div>
-                  )}
                 </div>
 
                 {/* Status Badge */}
@@ -356,17 +462,17 @@ export const Bookings = () => {
                 {/* ID Document & Actions */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'flex-end', flexWrap: 'nowrap' }}>
                   {b.idCard ? (
-                    <button 
-                      className="id-status-badge has-id"
+                    <button
+                      className="id-status-badge has-id" style={{ whiteSpace: 'nowrap' }}
                       onClick={() => setSelectedIDBooking(b)}
                       title="View ID Card"
                     >
                       <CheckCircle2 size={12} /> {b.idCardType ? b.idCardType.split(' ')[0] : 'ID'} Scan
                     </button>
                   ) : (
-                    <button 
+                    <button
                       className="id-status-badge no-id"
-                      disabled={!isRegisterOpen}
+                      disabled={!isRegisterOpen || viewAll}
                       onClick={() => handleEdit(b)}
                       title="Upload Guest Document"
                     >
@@ -375,10 +481,10 @@ export const Bookings = () => {
                   )}
 
                   {/* Primary Action Buttons */}
-                  {isUpcoming && !b.isHidden && (
+                  {canCheckIn && !b.isHidden && !viewAll && (
                     (!b.room || (roomsList && !roomsList.includes(b.room))) ? (
                       <button
-                        className="btn-action-allot"
+                        className="btn-action-allot" style={{ whiteSpace: 'nowrap' }}
                         disabled={!isRegisterOpen}
                         onClick={() => setAllottingBooking(b)}
                         title="Allot Room Suite & Check-In"
@@ -387,7 +493,7 @@ export const Bookings = () => {
                       </button>
                     ) : (
                       <button
-                        className="btn-action-checkin"
+                        className="btn-action-checkin" style={{ whiteSpace: 'nowrap' }}
                         disabled={!isRegisterOpen}
                         onClick={() => checkInBooking(b.id)}
                         title="Check-In Guest"
@@ -398,9 +504,9 @@ export const Bookings = () => {
                   )}
 
                   {/* Check-Out Button: Strictly ONLY for In-House guests (NOT upcoming) */}
-                  {isInHouse && !b.isHidden && (
+                  {isInHouse && !b.isHidden && !viewAll && (
                     <button
-                      className="btn-action-checkout"
+                      className="btn-action-checkout" style={{ whiteSpace: 'nowrap' }}
                       disabled={!isRegisterOpen}
                       onClick={() => handleCheckoutClick(b)}
                       title="Check-Out Guest"
@@ -410,7 +516,7 @@ export const Bookings = () => {
                   )}
 
                   {/* Generate Bill Button (For In-House & Completed, Non-Hidden) */}
-                  {(isInHouse || isCompleted) && !b.isHidden && (
+                  {(isInHouse || isCompleted) && !b.isHidden && !viewAll && (
                     <button
                       className="btn-sub"
                       style={{ padding: '6px 10px', fontSize: '11px', color: '#0284c7', borderColor: '#bae6fd', background: '#f0f9ff', whiteSpace: 'nowrap' }}
@@ -422,9 +528,9 @@ export const Bookings = () => {
                   )}
 
                   {/* Edit & Delete Action Buttons (Super Admin / Admin) */}
-                  {!isCompleted && (isSuperAdmin || isAdmin) && (
+                  {!isCompleted && !isInHouse && (isSuperAdmin || isAdmin) && !viewAll && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <button 
+                      <button
                         className="icon-btn"
                         disabled={!isRegisterOpen}
                         onClick={() => handleEdit(b)}
@@ -433,7 +539,7 @@ export const Bookings = () => {
                         <Edit2 size={14} />
                       </button>
 
-                      <button 
+                      <button
                         className="icon-btn"
                         style={{ color: '#e11d48' }}
                         disabled={!isRegisterOpen}
@@ -457,41 +563,50 @@ export const Bookings = () => {
     <div className="bookings-view">
       <div className="page-header-row">
         <div>
-          <h1 className="page-heading">Property Booking & Stay History</h1>
+          <h1 className="page-heading">Booking & History</h1>
           <p className="page-subheading">Manage upcoming arrivals, active in-house guests, and completed stay logs for this property.</p>
         </div>
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-          {(isSuperAdmin || isAdmin) && (
-            <button 
-              className="btn-sub"
-              disabled={!isRegisterOpen}
-              onClick={() => {
-                if (!isRegisterOpen) {
-                  alert('Shift Register is Closed. Please open shift register to import external bookings.');
-                  return;
-                }
-                setIsImportModalOpen(true);
-              }}
-              style={{ padding: '9px 14px', fontSize: '13px', gap: '6px' }}
-              title={isRegisterOpen ? 'Import bookings from OYO or CSV file' : 'Shift Register is Closed (View-Only Mode)'}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'flex-end' }}>
+          <PropertySwitcher
+            compact
+            allOption
+            isAllSelected={viewAll}
+            onSelectAll={() => setViewAll(true)}
+            onSelectProperty={() => setViewAll(false)}
+          />
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+            {(isSuperAdmin || isAdmin) && (
+              <button
+                className="btn-sub"
+                disabled={!isRegisterOpen}
+                onClick={() => {
+                  if (!isRegisterOpen) {
+                    alert('Shift Register is Closed. Please open shift register to import external bookings.');
+                    return;
+                  }
+                  setIsImportModalOpen(true);
+                }}
+                style={{ padding: '9px 14px', fontSize: '13px', gap: '6px' }}
+                title={isRegisterOpen ? 'Import bookings from OYO or CSV file' : 'Shift Register is Closed (View-Only Mode)'}
+              >
+                <UploadCloud size={16} color="#0284c7" /> Import OYO / CSV
+              </button>
+            )}
+            <button
+              className="btn-main"
+              disabled={!isRegisterOpen || viewAll}
+              onClick={() => navigateToCreateBooking()}
+              title={isRegisterOpen ? 'Open Dedicated Booking Console' : 'Shift Register is Closed (View-Only Mode)'}
             >
-              <UploadCloud size={16} color="#0284c7" /> Import OYO / CSV
+              <Plus size={17} /> New Booking
             </button>
-          )}
-          <button 
-            className="btn-main"
-            disabled={!isRegisterOpen}
-            onClick={() => openNewBookingModal()}
-            title={isRegisterOpen ? 'New Booking' : 'Shift Register is Closed (View-Only Mode)'}
-          >
-            <Plus size={17} /> New Booking
-          </button>
+          </div>
         </div>
       </div>
 
       {/* Executive Metric Cards */}
       <div className="metrics-row" style={{ gridTemplateColumns: 'repeat(3, 1fr)', marginBottom: '18px' }}>
-        <div className="metric-card">
+        <div className="metric-card with-watermark">
           <div className="metric-card-header">
             <span className="metric-card-label">Active In-House Stays</span>
             <div className="metric-icon-badge emerald">
@@ -502,13 +617,14 @@ export const Bookings = () => {
             <span className="metric-card-value" style={{ color: '#047857' }}>{inHouseCount}</span>
             <span className="metric-tag-sub">Suites</span>
           </div>
+          <LogIn size={84} className="metric-watermark" style={{ color: '#047857' }} />
           <div className="metric-card-footer">
             <span className="metric-status-dot emerald" />
             <span>Guests actively lodged on premises</span>
           </div>
         </div>
 
-        <div className="metric-card">
+        <div className="metric-card with-watermark">
           <div className="metric-card-header">
             <span className="metric-card-label">Upcoming Arrivals</span>
             <div className="metric-icon-badge blue">
@@ -519,13 +635,14 @@ export const Bookings = () => {
             <span className="metric-card-value">{upcomingCount}</span>
             <span className="metric-tag-sub">Bookings</span>
           </div>
+          <Clock size={84} className="metric-watermark" style={{ color: '#2563eb' }} />
           <div className="metric-card-footer">
             <span className="metric-status-dot blue" />
             <span>Confirmed arrivals & reservations</span>
           </div>
         </div>
 
-        <div className="metric-card">
+        <div className="metric-card with-watermark">
           <div className="metric-card-header">
             <span className="metric-card-label">Total Reservations</span>
             <div className="metric-icon-badge amber">
@@ -536,6 +653,7 @@ export const Bookings = () => {
             <span className="metric-card-value">{allCount}</span>
             <span className="metric-tag-sub">Records</span>
           </div>
+          <UserCheck size={84} className="metric-watermark" style={{ color: '#d97706' }} />
           <div className="metric-card-footer">
             <span className="metric-status-dot amber" />
             <span>All active property stay records</span>
@@ -543,32 +661,58 @@ export const Bookings = () => {
         </div>
       </div>
 
+      <div style={{ marginBottom: '16px' }}>
+        <PaymentBreakdownBar items={computeMonthBreakdown(sourceBookings)} />
+      </div>
+
+      {viewAll && (
+        <div style={{ marginBottom: '16px', padding: '10px 14px', borderRadius: '10px', background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1e40af', fontSize: '13px', fontWeight: 600 }}>
+          Showing bookings from all properties (read-only). Select a property at the top to check in, check out or edit stays.
+        </div>
+      )}
+
       {/* Filter Tabs */}
       <div style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
         <div className="booking-tabs-container">
-          <button 
+          <button
             className={`booking-tab-btn in-house ${activeTab === 'in-house' ? 'active' : ''}`}
             onClick={() => setActiveTab('in-house')}
           >
             <LogIn size={15} /> In-House Stays
             <span className="tab-badge-count">{inHouseCount}</span>
           </button>
-          <button 
+          <button
             className={`booking-tab-btn upcoming ${activeTab === 'upcoming' ? 'active' : ''}`}
             onClick={() => setActiveTab('upcoming')}
           >
             <Clock size={15} /> Upcoming Stays
             <span className="tab-badge-count">{upcomingCount}</span>
           </button>
-          <button 
+          <button
+            className={`booking-tab-btn ${activeTab === 'drafts' ? 'active' : ''}`}
+            onClick={() => setActiveTab('drafts')}
+            style={{ color: '#64748b' }}
+          >
+            <FileText size={15} /> Drafts
+            <span className="tab-badge-count">{draftCount}</span>
+          </button>
+          <button
             className={`booking-tab-btn completed ${activeTab === 'completed' ? 'active' : ''}`}
             onClick={() => setActiveTab('completed')}
           >
             <LogOut size={15} /> Completed History
             <span className="tab-badge-count">{completedCount}</span>
           </button>
+          <button
+            className={`booking-tab-btn ${activeTab === 'archived' ? 'active' : ''}`}
+            onClick={() => setActiveTab('archived')}
+            style={{ color: '#64748b' }}
+          >
+            <Clock size={15} /> Archived
+            <span className="tab-badge-count" style={{ background: '#f1f5f9', color: '#475569' }}>{archivedStays.length}</span>
+          </button>
           {hiddenCount > 0 && currentUser?.role === 'Overall Admin' && (
-            <button 
+            <button
               className={`booking-tab-btn ${activeTab === 'hidden' ? 'active' : ''}`}
               onClick={() => setActiveTab('hidden')}
               style={{ color: '#b45309' }}
@@ -577,7 +721,7 @@ export const Bookings = () => {
               <span className="tab-badge-count" style={{ background: '#fef3c7', color: '#b45309' }}>{hiddenCount}</span>
             </button>
           )}
-          <button 
+          <button
             className={`booking-tab-btn ${activeTab === 'all' ? 'active' : ''}`}
             onClick={() => setActiveTab('all')}
           >
@@ -611,6 +755,7 @@ export const Bookings = () => {
           >
             <option value="in-house">In-House Stays ({inHouseCount})</option>
             <option value="upcoming">Upcoming Reservations ({upcomingCount})</option>
+            <option value="drafts">Drafts ({draftCount})</option>
             <option value="completed">Completed History ({completedCount})</option>
             {hiddenCount > 0 && currentUser?.role === 'Overall Admin' && (
               <option value="hidden">Hidden Bookings ({hiddenCount})</option>
@@ -622,7 +767,7 @@ export const Bookings = () => {
 
       {/* Grouped Bookings Content */}
       <div className="card-container" style={{ padding: '20px', background: 'transparent', boxShadow: 'none', border: 'none' }}>
-        {bookings.length === 0 ? (
+        {sourceBookings.length === 0 ? (
           <div className="card-container" style={{ textAlign: 'center', padding: '48px 24px' }}>
             <BedDouble size={44} color="#94a3b8" style={{ marginBottom: '12px' }} />
             <h3 style={{ fontSize: '16px', fontWeight: 700, color: 'var(--text-main)' }}>No Stay Records Registered Yet</h3>
@@ -645,6 +790,14 @@ export const Bookings = () => {
                 <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>Future bookings will appear here.</p>
               </div>
             )}
+            {(activeTab === 'all' || activeTab === 'drafts') && renderBookingGroup('Draft Bookings (Not Confirmed)', draftStays)}
+            {activeTab === 'drafts' && draftStays.length === 0 && (
+              <div className="card-container" style={{ textAlign: 'center', padding: '36px 20px', color: 'var(--text-secondary)' }}>
+                <FileText size={36} color="#94a3b8" style={{ marginBottom: '8px' }} />
+                <p style={{ fontWeight: 600, fontSize: '14px', color: 'var(--text-main)', margin: '0 0 4px 0' }}>No Draft Bookings</p>
+                <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>Bookings saved as draft will appear here.</p>
+              </div>
+            )}
             {(activeTab === 'all' || activeTab === 'completed') && renderBookingGroup('Completed Stay History', completedStays)}
             {activeTab === 'completed' && completedStays.length === 0 && (
               <div className="card-container" style={{ textAlign: 'center', padding: '36px 20px', color: 'var(--text-secondary)' }}>
@@ -653,6 +806,7 @@ export const Bookings = () => {
                 <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>Checked-out guests will be listed in this history log.</p>
               </div>
             )}
+            {(activeTab === 'all' || activeTab === 'archived') && renderBookingGroup('Archived / Delayed Check-in Stays (Past Buffer)', archivedStays)}
             {(activeTab === 'all' || activeTab === 'hidden') && currentUser?.role === 'Overall Admin' && renderBookingGroup('Hidden Bookings / Early Released Slots', hiddenBookings)}
           </>
         )}
@@ -682,11 +836,9 @@ export const Bookings = () => {
         <GenerateBillModal
           booking={generatingBillBooking}
           onClose={() => setGeneratingBillBooking(null)}
-          onGenerate={async (billPayload) => {
+          onGenerate={(billPayload) => {
+            // Preview only: the bill is saved when the user presses Save Bill
             setGeneratingBillBooking(null);
-            if (addBill) {
-              await addBill(billPayload);
-            }
             setSelectedBillForInvoice(billPayload);
           }}
         />
@@ -696,6 +848,11 @@ export const Bookings = () => {
         <BillInvoiceModal
           bill={selectedBillForInvoice}
           onClose={() => setSelectedBillForInvoice(null)}
+          onSave={async (billPayload) => {
+            const saved = addBill ? await addBill(billPayload) : false;
+            // Reopen the saved bill (no onSave) so its invoice is stored in Dropbox; keep the preview open if the save failed
+            if (saved) setSelectedBillForInvoice(saved);
+          }}
         />
       )}
 
@@ -711,6 +868,121 @@ export const Bookings = () => {
         <ImportBookingsModal
           onClose={() => setIsImportModalOpen(false)}
         />
+      )}
+
+      {/* Settle Outstanding Balance to Checkout Modal (Requirements 7 & 11) */}
+      {settleCheckoutBooking && (
+        <div className="modal-overlay" onClick={() => setSettleCheckoutBooking(null)}>
+          <div
+            className="modal-card"
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: '480px', background: '#ffffff', padding: '24px' }}
+          >
+            <div className="modal-header-row" style={{ marginBottom: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <AlertCircle size={20} color="#dc2626" />
+                <h3 className="modal-heading" style={{ fontSize: '16px', margin: 0, color: '#991b1b' }}>
+                  Checkout Blocked: Unpaid Balance Due
+                </h3>
+              </div>
+              <button className="icon-btn" onClick={() => setSettleCheckoutBooking(null)}><X size={16} /></button>
+            </div>
+
+            <div style={{
+              background: '#fef2f2',
+              border: '1px solid #fecaca',
+              borderRadius: '8px',
+              padding: '14px',
+              marginBottom: '16px'
+            }}>
+              <p style={{ margin: 0, fontSize: '13px', color: '#7f1d1d', lineHeight: 1.5 }}>
+                Guest <strong>{settleCheckoutBooking.guestName}</strong> in <strong>Room {settleCheckoutBooking.room || 'Suite'}</strong> has an outstanding unpaid balance.
+                Full payment is mandatory before completing check-out.
+              </p>
+            </div>
+
+            <div style={{
+              background: '#f8fafc',
+              border: '1px solid #e2e8f0',
+              borderRadius: '8px',
+              padding: '14px',
+              marginBottom: '16px'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', fontSize: '13px' }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Total Room Tariff:</span>
+                <span style={{ fontWeight: 700 }}>{formatCurrency(settleCheckoutBooking.total)}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', fontSize: '13px' }}>
+                <span style={{ color: '#059669' }}>Already Paid:</span>
+                <span style={{ fontWeight: 700, color: '#059669' }}>{formatCurrency(settleCheckoutBooking.paid)}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '8px', borderTop: '1px dashed #cbd5e1', fontSize: '14px' }}>
+                <span style={{ fontWeight: 800, color: '#b91c1c' }}>Outstanding Due Now:</span>
+                <span style={{ fontWeight: 800, color: '#b91c1c', fontFamily: 'var(--font-mono)' }}>
+                  {formatCurrency(settleCheckoutBooking.balanceDue)}
+                </span>
+              </div>
+            </div>
+
+            <form onSubmit={(e) => { e.preventDefault(); handleSettleAndCheckout(); }}>
+              <div className="form-group" style={{ marginBottom: '12px' }}>
+                <label className="form-label" style={{ fontWeight: 700 }}>
+                  Settlement Payment Channel
+                </label>
+                <select
+                  className="form-input"
+                  value={settleChannel}
+                  onChange={(e) => setSettleChannel(e.target.value)}
+                >
+                  <option value="Cash">Cash</option>
+                  <option value="UPI (Owner UPI)">UPI (Owner UPI)</option>
+                  <option value="Other UPI">Other UPI</option>
+                </select>
+              </div>
+
+              {settleChannel.toLowerCase().includes('upi') && (
+                <div className="form-group" style={{ marginBottom: '14px' }}>
+                  <label className="form-label" style={{ fontWeight: 700 }}>
+                    Transaction ID / UTR Reference <span style={{ color: '#dc2626' }}>*</span>
+                  </label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="Enter UPI UTR / Ref Number"
+                    value={settleTxnId}
+                    onChange={(e) => setSettleTxnId(e.target.value)}
+                    required
+                  />
+                </div>
+              )}
+
+              {settleError && (
+                <div style={{ color: '#dc2626', fontSize: '12px', marginBottom: '12px', fontWeight: 600 }}>
+                  {settleError}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '16px' }}>
+                <button
+                  type="button"
+                  className="btn-sub"
+                  onClick={() => setSettleCheckoutBooking(null)}
+                  disabled={settleLoading}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn-main"
+                  disabled={settleLoading}
+                  style={{ background: '#059669' }}
+                >
+                  {settleLoading ? 'Settling...' : `Collect ${formatCurrency(settleCheckoutBooking.balanceDue)} & Check-out`}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );

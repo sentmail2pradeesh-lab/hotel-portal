@@ -112,6 +112,11 @@ const getAuthHeaders = () => {
   };
 };
 
+// Per-request property override (e.g. booking a stay on another property without switching the active one)
+const propertyHeaderOptions = (firmId) => (
+  firmId ? { headers: { 'X-Property-ID': firmId } } : {}
+);
+
 export async function apiFetch(endpoint, options = {}, retries = 2, fallbackMsg = 'Request failed.') {
   const url = endpoint.startsWith('http') ? endpoint : `${API_BASE_URL}${endpoint.startsWith('/') ? endpoint : '/' + endpoint}`;
   const defaultHeaders = getAuthHeaders();
@@ -125,6 +130,29 @@ export async function apiFetch(endpoint, options = {}, retries = 2, fallbackMsg 
   const res = await fetchWithRetry(url, mergedOptions, retries);
   return await parseJsonResponse(res, fallbackMsg);
 }
+
+// Stores a generated file (bill image, report) in Dropbox through the backend.
+// Uploads are not retried, so a slow response cannot create the same document twice.
+export const storeDocument = async (blob, fileName, { docType, refId = null }) => {
+  const form = new FormData();
+  form.append('file', blob, fileName);
+  form.append('doc_type', docType);
+  if (refId) form.append('ref_id', refId);
+
+  // The browser sets the multipart Content-Type (with boundary) itself
+  const headers = { ...getAuthHeaders() };
+  delete headers['Content-Type'];
+
+  const res = await fetchWithRetry(`${API_BASE_URL}/documents`, { method: 'POST', headers, body: form }, 0, 1500, 60000);
+  return await parseJsonResponse(res, 'Failed to store document in Dropbox.');
+};
+
+export const listDocuments = async ({ docType, refId } = {}) => {
+  const params = new URLSearchParams();
+  if (docType) params.set('doc_type', docType);
+  if (refId) params.set('ref_id', refId);
+  return await apiFetch(`/documents?${params.toString()}`, {}, 2, 'Failed to load documents.');
+};
 
 export const api = {
   async getSystemStatus() {
@@ -291,8 +319,8 @@ export const api = {
     }, 2, 'Profile update failed.');
   },
 
-  async syncPropertyData() {
-    return await apiFetch('/sync', {}, 2, 'Failed to sync property data.');
+  async syncPropertyData(firmId = null) {
+    return await apiFetch('/sync', propertyHeaderOptions(firmId), 2, 'Failed to sync property data.');
   },
 
   async getRooms() {
@@ -339,10 +367,15 @@ export const api = {
     return await apiFetch('/bookings', {}, 2, 'Failed to fetch bookings.');
   },
 
-  async createBooking(bookingData) {
+  async getAllPropertyBookings() {
+    return await apiFetch('/bookings/all-properties', {}, 2, 'Failed to fetch bookings for all properties.');
+  },
+
+  async createBooking(bookingData, firmId = null) {
     return await apiFetch('/bookings', {
       method: 'POST',
-      body: JSON.stringify(bookingData)
+      body: JSON.stringify(bookingData),
+      ...propertyHeaderOptions(firmId)
     }, 2, 'Failed to create booking.');
   },
 
@@ -353,10 +386,11 @@ export const api = {
     }, 2, 'Failed to import external bookings.');
   },
 
-  async updateBooking(bookingId, updatedFields) {
+  async updateBooking(bookingId, updatedFields, firmId = null) {
     return await apiFetch(`/bookings/${encodeURIComponent(bookingId)}`, {
       method: 'PUT',
-      body: JSON.stringify(updatedFields)
+      body: JSON.stringify(updatedFields),
+      ...propertyHeaderOptions(firmId)
     }, 2, 'Failed to update booking.');
   },
 
@@ -509,6 +543,47 @@ export const api = {
     return await apiFetch(`/auth/impersonate/${encodeURIComponent(userId)}`, {
       method: 'POST'
     }, 2, 'Failed to impersonate user.');
+  },
+
+  // Employees API (Requirements 16 & 20)
+  async getEmployees(firmId) {
+    return await apiFetch(`/properties/${encodeURIComponent(firmId)}/employees`, {}, 2, 'Failed to fetch employees.');
+  },
+
+  async createEmployee(firmId, employeeData) {
+    return await apiFetch(`/properties/${encodeURIComponent(firmId)}/employees`, {
+      method: 'POST',
+      body: JSON.stringify(employeeData)
+    }, 2, 'Failed to add employee.');
+  },
+
+  async updateEmployee(employeeId, employeeData) {
+    return await apiFetch(`/employees/${encodeURIComponent(employeeId)}`, {
+      method: 'PUT',
+      body: JSON.stringify(employeeData)
+    }, 2, 'Failed to update employee.');
+  },
+
+  async deleteEmployee(employeeId) {
+    return await apiFetch(`/employees/${encodeURIComponent(employeeId)}`, {
+      method: 'DELETE'
+    }, 2, 'Failed to delete employee.');
+  },
+
+  // Admin Consolidated Dashboard & Financial Logs (Requirements 4 & 19)
+  async getAdminPropertiesSummary() {
+    return await apiFetch('/admin/properties-summary', {}, 2, 'Failed to fetch properties summary.');
+  },
+
+  async getConsolidatedFinancialLogs() {
+    return await apiFetch('/admin/consolidated-financial-logs', {}, 2, 'Failed to fetch consolidated financial logs.');
+  },
+
+  // Check-in Buffer & Auto-Archive (Requirement 22)
+  async checkAutoArchive() {
+    return await apiFetch('/bookings/check-auto-archive', {
+      method: 'POST'
+    }, 2, 'Failed to check auto-archive.');
   }
 };
 

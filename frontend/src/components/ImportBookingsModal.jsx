@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useHotel } from '../context/HotelContext';
-import { formatCurrency, formatDate } from '../utils/formatters';
+import { localDateStr, formatCurrency, formatDate } from '../utils/formatters';
 import { 
   UploadCloud, 
   FileText, 
@@ -62,10 +62,10 @@ export const ImportBookingsModal = ({ onClose }) => {
     ];
 
     const today = new Date();
-    const todayStr = today.toISOString().split('T')[0];
+    const todayStr = localDateStr(today);
     const nextWeek = new Date(today);
     nextWeek.setDate(nextWeek.getDate() + 4);
-    const nextWeekStr = nextWeek.toISOString().split('T')[0];
+    const nextWeekStr = localDateStr(nextWeek);
 
     const sampleRows = [
       ['OYO-98241', 'Vikram Rathore', '9876543210', 'vikram@gmail.com', '101', todayStr, nextWeekStr, '4800', 'Online Pre-paid', 'OYO', '2'],
@@ -236,7 +236,7 @@ export const ImportBookingsModal = ({ onClose }) => {
     try {
       const d = new Date(clean);
       if (!isNaN(d.getTime())) {
-        return d.toISOString().split('T')[0];
+        return localDateStr(d);
       }
     } catch {}
     return clean;
@@ -244,7 +244,7 @@ export const ImportBookingsModal = ({ onClose }) => {
 
   // Mapped Rows for Preview & Import
   const mappedRecords = useMemo(() => {
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = localDateStr();
 
     return parsedRows.map((row, index) => {
       const refId = (row[columnMapping.bookingId] || '').trim();

@@ -1,12 +1,36 @@
-import React, { useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { formatCurrency, formatDate, calculateNights } from '../utils/formatters';
 import { toPng } from 'html-to-image';
-import { Download, Printer, X, Building2, Edit3, FileText } from 'lucide-react';
+import { Download, Printer, X, Building2, Edit3, FileText, CheckCircle2 } from 'lucide-react';
 import { useHotel } from '../context/HotelContext';
+import { listDocuments, storeDocument } from '../services/api';
 
-export const BillInvoiceModal = ({ bill, onClose, onEditBill }) => {
+// onSave is given only for a new, unsaved bill; saved bills are opened without it
+export const BillInvoiceModal = ({ bill, onClose, onEditBill, onSave }) => {
   const { currentUser, isRegisterOpen, bookings = [] } = useHotel();
   const invoiceRef = useRef(null);
+  const [saving, setSaving] = useState(false);
+  const storedBillIdRef = useRef(null);
+
+  // A saved bill's invoice image is stored in Dropbox once, the first time it is shown
+  useEffect(() => {
+    if (!bill?.id || onSave || storedBillIdRef.current === bill.id) return;
+    storedBillIdRef.current = bill.id;
+
+    const storeInvoiceImage = async () => {
+      try {
+        const existing = await listDocuments({ docType: 'bill', refId: bill.id });
+        if (existing.length > 0 || !invoiceRef.current) return;
+        const dataUrl = await toPng(invoiceRef.current, { quality: 0.95 });
+        const blob = await (await fetch(dataUrl)).blob();
+        const fileName = `${bill.id}_${(bill.guestName || 'bill').replace(/\s+/g, '_')}.png`;
+        await storeDocument(blob, fileName, { docType: 'bill', refId: bill.id });
+      } catch (err) {
+        alert(`The bill is saved, but its copy could not be stored in Dropbox: ${err.message}`);
+      }
+    };
+    storeInvoiceImage();
+  }, [bill?.id, onSave]);
 
   if (!bill) return null;
 
@@ -71,7 +95,7 @@ export const BillInvoiceModal = ({ bill, onClose, onEditBill }) => {
               </div>
               <div>
                 <h1 style={{ fontFamily: 'var(--font-sans)', fontSize: '22px', fontWeight: 800, color: '#0f172a', margin: 0, letterSpacing: '-0.02em' }}>
-                  {currentUser?.firmName || 'Property Receipt Statement'}
+                  {bill.propertyName || currentUser?.firmName || 'Cardelia Hotel'}
                 </h1>
                 <p style={{ fontSize: '11px', color: '#d97706', fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
                   Official Front Desk Receipt
@@ -79,7 +103,9 @@ export const BillInvoiceModal = ({ bill, onClose, onEditBill }) => {
               </div>
             </div>
             <div style={{ textAlign: 'right' }}>
-              <span className="tag-badge" style={{ fontSize: '13px', background: '#fffbeb', color: '#b45309', border: '1px solid #fde68a' }}>{bill.id}</span>
+              <span className="tag-badge" style={{ fontSize: '13px', background: '#fffbeb', color: '#b45309', border: '1px solid #fde68a' }}>
+                {bill.billNumber || bill.id}
+              </span>
               <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '6px' }}>
                 Date: {formatDate(bill.date || new Date().toISOString())}
               </div>
@@ -158,9 +184,9 @@ export const BillInvoiceModal = ({ bill, onClose, onEditBill }) => {
                   <strong style={{ fontFamily: 'var(--font-mono)', color: '#0f172a' }}>{formatCurrency(bill.taxAmount)}</strong>
                 </div>
               )}
-              <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #e2e8f0', paddingTop: '8px', marginTop: '4px' }}>
-                <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 800, letterSpacing: '0.05em' }}>GRAND TOTAL DUE</span>
-                <div style={{ fontFamily: 'var(--font-mono)', fontSize: '24px', fontWeight: 800, color: '#d97706' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px', borderTop: '1px solid #e2e8f0', paddingTop: '8px', marginTop: '4px' }}>
+                <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 800, letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>GRAND TOTAL DUE</span>
+                <div style={{ fontFamily: 'var(--font-mono)', fontSize: '24px', fontWeight: 800, color: '#d97706', whiteSpace: 'nowrap', textAlign: 'right' }}>
                   {formatCurrency(bill.total)}
                 </div>
               </div>
@@ -188,8 +214,27 @@ export const BillInvoiceModal = ({ bill, onClose, onEditBill }) => {
           </div>
         </div>
 
-        <div className="modal-actions">
-          <button className="btn-sub" onClick={onClose}>Close</button>
+        <div className="modal-actions" style={{ flexWrap: 'nowrap', alignItems: 'center' }}>
+          <button className="btn-sub" style={{ whiteSpace: 'nowrap' }} onClick={onClose} disabled={saving}>{onSave ? 'Discard' : 'Close'}</button>
+
+          {onSave && (
+            <button
+              className="btn-main"
+              style={{ background: '#047857', whiteSpace: 'nowrap' }}
+              disabled={saving}
+              onClick={async () => {
+                setSaving(true);
+                try {
+                  await onSave(bill);
+                } finally {
+                  setSaving(false);
+                }
+              }}
+              title="Save this bill to Bills & Add-ons"
+            >
+              <CheckCircle2 size={15} /> {saving ? 'Saving...' : 'Save Bill'}
+            </button>
+          )}
           
           {onEditBill && (
             <button 
@@ -210,11 +255,11 @@ export const BillInvoiceModal = ({ bill, onClose, onEditBill }) => {
             </button>
           )}
 
-          <button className="btn-sub" onClick={handlePrint}>
+          <button className="btn-sub" style={{ whiteSpace: 'nowrap' }} onClick={handlePrint}>
             <Printer size={15} /> Print Receipt
           </button>
           
-          <button className="btn-main" onClick={handleDownloadImage}>
+          <button className="btn-main" style={{ whiteSpace: 'nowrap' }} onClick={handleDownloadImage}>
             <Download size={15} /> Download Bill Image
           </button>
         </div>

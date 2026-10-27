@@ -40,6 +40,7 @@ export const ConnectingScreen = ({ onRetry, onSkipToAuth }) => {
     >
       {/* Brand Logo */}
       <div
+        className="aszen-logo-animated"
         style={{
           width: 72,
           height: 72,
@@ -54,6 +55,7 @@ export const ConnectingScreen = ({ onRetry, onSkipToAuth }) => {
         }}
       >
         <img
+          className="aszen-logo-img"
           src="/aszen_ventures.jpeg"
           alt="Aszen Ventures"
           style={{ width: '100%', height: '100%', objectFit: 'cover' }}

@@ -19,7 +19,6 @@ import {
 } from 'lucide-react';
 import { useHotel } from '../context/HotelContext';
 import { AddPropertyModal } from './AddPropertyModal';
-import { EditPropertyModal } from './EditPropertyModal';
 import { CreateManagerModal } from './CreateManagerModal';
 
 export const Navbar = () => {
@@ -27,9 +26,6 @@ export const Navbar = () => {
     activeTab, 
     setActiveTab, 
     currentUser,
-    propertiesList,
-    activePropertyId,
-    switchProperty,
     updateUserProfile,
     logout,
     isRegisterOpen, 
@@ -39,27 +35,22 @@ export const Navbar = () => {
     isSuperAdmin,
     isAdmin,
     isManager,
-    openNewBookingModal
+    openNewBookingModal,
+    navigateToCreateBooking
   } = useHotel();
 
   const [showShiftModal, setShowShiftModal] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
-  const [showPropertyMenu, setShowPropertyMenu] = useState(false);
   const [showAddPropertyModal, setShowAddPropertyModal] = useState(false);
   const [showCreateManagerModal, setShowCreateManagerModal] = useState(false);
-  const [editingProp, setEditingProp] = useState(null);
 
   const profileMenuRef = useRef(null);
-  const propertyMenuRef = useRef(null);
 
   // Close dropdowns when clicking outside
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (profileMenuRef.current && !profileMenuRef.current.contains(event.target)) {
         setShowProfileMenu(false);
-      }
-      if (propertyMenuRef.current && !propertyMenuRef.current.contains(event.target)) {
-        setShowPropertyMenu(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -84,150 +75,22 @@ export const Navbar = () => {
 
   return (
     <aside className="sidebar-nav">
-      {/* Brand & Property Switcher Header */}
-      <div className="sidebar-brand-section" ref={propertyMenuRef}>
-        <div 
-          className="property-switcher-trigger"
-          onClick={() => setShowPropertyMenu((prev) => !prev)}
-          title="Click to switch property"
-        >
-          <div className="brand-logo">
-            <img 
-              src={currentUser?.firmLogo || "/aszen_ventures.jpeg"} 
-              alt={currentUser?.firmName || 'Aszen Ventures'} 
-              style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+      {/* Brand header: logo tile, company name, divider and system name */}
+      <div className="sidebar-brand-section">
+        <div className="sidebar-brand-row">
+          <div className="sidebar-logo-tile">
+            <img
+              src={currentUser?.firmLogo || "/aszen_ventures.jpeg"}
+              alt={currentUser?.firmName || 'Aszen Ventures'}
+              style={{ width: '100%', height: '100%', objectFit: 'contain' }}
             />
           </div>
-          <div className="brand-text">
-            {currentUser?.propertyCode ? (
-              <>
-                <div className="brand-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span>{currentUser.propertyCode}</span>
-                  <ChevronDown size={14} className={`dropdown-chevron ${showPropertyMenu ? 'open' : ''}`} color="#d97706" />
-                </div>
-                <div className="brand-subtitle">
-                  {currentUser.firmName}
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="brand-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span>{currentUser?.firmName || 'Property Register'}</span>
-                  <ChevronDown size={14} className={`dropdown-chevron ${showPropertyMenu ? 'open' : ''}`} color="#d97706" />
-                </div>
-                <div className="brand-subtitle">
-                  {isSuperAdmin ? 'Super Admin Portal' : (isAdmin ? 'Admin Operations' : 'Front-Desk Portal')}
-                </div>
-              </>
-            )}
+          <div className="sidebar-brand-text">
+            <div className="sidebar-brand-company">AZEN <span>VENTURES</span></div>
+            <div className="sidebar-brand-divider" />
+            <div className="sidebar-brand-system">Hotel Operations Console</div>
           </div>
         </div>
-
-        {/* Property Switcher Dropdown */}
-        {showPropertyMenu && (
-          <div className="property-dropdown-menu">
-            <div className="property-dropdown-header">
-              <span>{isSuperAdmin ? `MY PROPERTIES (${propertiesList.length})` : (isAdmin ? `MANAGED PROPERTIES (${propertiesList.length})` : 'ASSIGNED PROPERTY')}</span>
-              {isSuperAdmin && (
-                <button 
-                  className="add-prop-btn-pill"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setShowAddPropertyModal(true);
-                    setShowPropertyMenu(false);
-                  }}
-                >
-                  <Plus size={12} /> Add
-                </button>
-              )}
-            </div>
-            <div className="dropdown-divider" />
-            <div className="property-list-group">
-              {propertiesList.map((p) => {
-                const isSelected = p.firmId === activePropertyId;
-                return (
-                  <div
-                    key={p.firmId}
-                    className={`property-select-item ${isSelected ? 'active' : ''}`}
-                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
-                  >
-                    <div 
-                      style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, cursor: 'pointer', overflow: 'hidden' }}
-                      onClick={() => {
-                        switchProperty(p.firmId);
-                        setShowPropertyMenu(false);
-                      }}
-                    >
-                      <div className="prop-item-logo">
-                        <img 
-                          src={p.firmLogo || "/aszen_ventures.jpeg"} 
-                          alt={p.firmName} 
-                          style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
-                        />
-                      </div>
-                      <div className="prop-item-info">
-                        {p.propertyCode && (
-                          <div style={{
-                            fontFamily: 'monospace',
-                            fontSize: '11px',
-                            fontWeight: 800,
-                            color: '#0f766e',
-                            background: '#ccfbf1',
-                            border: '1px solid #99f6e4',
-                            padding: '1px 5px',
-                            borderRadius: '3px',
-                            width: 'fit-content',
-                            marginBottom: '2px'
-                          }}>
-                            {p.propertyCode}
-                          </div>
-                        )}
-                        <div className="prop-item-name" style={{ fontWeight: 600 }}>
-                          {p.firmName}
-                        </div>
-                        <div className="prop-item-sub">
-                          Firm ID: {p.firmId}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      {isSuperAdmin && (
-                        <button
-                          className="icon-btn"
-                          style={{ padding: '4px', color: '#0284c7' }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setEditingProp(p);
-                            setShowPropertyMenu(false);
-                          }}
-                          title="Edit Property Details"
-                        >
-                          <Edit2 size={13} />
-                        </button>
-                      )}
-                      {isSelected && <Check size={16} color="#047857" />}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            {isSuperAdmin && (
-              <>
-                <div className="dropdown-divider" />
-                <button
-                  className="dropdown-item-btn primary-action"
-                  onClick={() => {
-                    setShowAddPropertyModal(true);
-                    setShowPropertyMenu(false);
-                  }}
-                >
-                  <Plus size={14} /> Add Another Property
-                </button>
-              </>
-            )}
-          </div>
-        )}
       </div>
 
       {/* Navigation Tabs List */}
@@ -267,9 +130,9 @@ export const Navbar = () => {
             boxShadow: isRegisterOpen ? '0 4px 14px rgba(217, 119, 6, 0.3)' : 'none',
             cursor: isRegisterOpen ? 'pointer' : 'not-allowed'
           }}
-          onClick={() => openNewBookingModal()}
+          onClick={() => navigateToCreateBooking()}
           disabled={!isRegisterOpen}
-          title={isRegisterOpen ? 'Open New Stay Registration Popup' : 'Shift Register is Closed'}
+          title={isRegisterOpen ? 'Open Dedicated Stay Registration Console' : 'Shift Register is Closed'}
         >
           <Plus size={16} />
           <span>New Stay Booking</span>
@@ -283,9 +146,10 @@ export const Navbar = () => {
               type="button"
               className="sidebar-action-button emerald"
               onClick={() => setShowCreateManagerModal(true)}
+              title="Add Employees, Managers or Staff"
             >
               <UserPlus size={15} />
-              <span>Create Manager</span>
+              <span>Add Employees</span>
             </button>
             {isSuperAdmin && (
               <button 
@@ -377,9 +241,9 @@ export const Navbar = () => {
                   <UserPlus size={16} color="#047857" />
                   <div className="dropdown-item-text">
                     <span className="item-title" style={{ fontWeight: 700, color: '#047857' }}>
-                      {isSuperAdmin ? '+ Create Admin / Manager' : '+ Create Manager'}
+                      {isSuperAdmin ? '+ Add Employees / Admins' : '+ Add Employees'}
                     </span>
-                    <span className="item-sub">Add team credentials</span>
+                    <span className="item-sub">Add team & staff credentials</span>
                   </div>
                 </button>
               )}
@@ -509,15 +373,6 @@ export const Navbar = () => {
             </div>
           </div>
         </div>
-      )}
-
-      {/* Edit Property Details Modal */}
-      {editingProp && (
-        <EditPropertyModal
-          isOpen={!!editingProp}
-          property={editingProp}
-          onClose={() => setEditingProp(null)}
-        />
       )}
 
       {/* Create Manager / Admin Modal */}

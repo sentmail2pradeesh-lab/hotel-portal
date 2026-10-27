@@ -4,9 +4,10 @@ import { formatCurrency, confirmDouble } from '../utils/formatters';
 import { BillModal } from './BillModal';
 import { BillInvoiceModal } from './BillInvoiceModal';
 import { Plus, Search, Trash2, Eye, FileText, Edit2 } from 'lucide-react';
+import { PropertySwitcher } from './PropertySwitcher';
 
 export const Bills = () => {
-  const { bills = [], deleteBill, isRegisterOpen } = useHotel();
+  const { bills = [], deleteBill, isRegisterOpen, currentUser } = useHotel();
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingBill, setEditingBill] = useState(null);
@@ -49,21 +50,24 @@ export const Bills = () => {
             Itemized room billing statements — stay charges, extra amenities, and exportable guest receipts.
           </p>
         </div>
-        <button 
-          className="btn-main" 
-          disabled={!isRegisterOpen}
-          onClick={() => {
-            if (!isRegisterOpen) {
-              alert('Shift Register is Closed. Please open the shift register to create new bills.');
-              return;
-            }
-            setEditingBill(null); 
-            setIsModalOpen(true); 
-          }}
-          title={isRegisterOpen ? 'New Bill Statement' : 'Shift Register is Closed (View-Only Mode)'}
-        >
-          <Plus size={17} /> New Bill Statement
-        </button>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'flex-end' }}>
+          <PropertySwitcher compact />
+          <button
+            className="btn-main"
+            disabled={!isRegisterOpen}
+            onClick={() => {
+              if (!isRegisterOpen) {
+                alert('Shift Register is Closed. Please open the shift register to create new bills.');
+                return;
+              }
+              setEditingBill(null);
+              setIsModalOpen(true);
+            }}
+            title={isRegisterOpen ? 'New Bill Statement' : 'Shift Register is Closed (View-Only Mode)'}
+          >
+            <Plus size={17} /> New Bill Statement
+          </button>
+        </div>
       </div>
 
       {/* Executive Metric Cards */}
@@ -121,6 +125,7 @@ export const Bills = () => {
       </div>
 
       <div className="toolbar-row">
+
         <div className="search-box">
           <Search size={16} color="var(--text-muted)" />
           <input
@@ -144,16 +149,16 @@ export const Bills = () => {
               Click "+ Issue First Bill" to create an itemized room billing statement.
             </p>
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-              <button 
-                className="btn-main" 
+              <button
+                className="btn-main"
                 disabled={!isRegisterOpen}
                 onClick={() => {
                   if (!isRegisterOpen) {
                     alert('Shift Register is Closed. Please open the shift register to issue bills.');
                     return;
                   }
-                  setEditingBill(null); 
-                  setIsModalOpen(true); 
+                  setEditingBill(null);
+                  setIsModalOpen(true);
                 }}
                 title={isRegisterOpen ? 'Issue First Bill' : 'Shift Register is Closed (View-Only Mode)'}
               >
@@ -185,7 +190,10 @@ export const Bills = () => {
                 filteredBills.map((b) => (
                   <tr key={b.id}>
                     <td>
-                      <span className="tag-badge">{b.id}</span>
+                      <span className="tag-badge" style={{ fontWeight: 800 }}>{b.billNumber || b.id}</span>
+                      <div style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600, marginTop: '2px' }}>
+                        {b.propertyName || currentUser?.firmName || 'Cardelia Hotel'}
+                      </div>
                     </td>
                     <td>
                       <div style={{ fontWeight: 700, color: 'var(--text-main)' }}>{b.guestName || 'Walk-in Guest'}</div>
@@ -213,7 +221,7 @@ export const Bills = () => {
                         onClick={() => setViewingInvoiceBill(b)}
                         title="Preview bill & export receipt"
                       >
-                        <Eye size={14} color="#d97706" /> Preview Receipt
+                        <Eye size={14} color="#d97706" /> Preview
                       </button>
                     </td>
                     <td style={{ textAlign: 'right' }}>

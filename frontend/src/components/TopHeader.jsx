@@ -16,7 +16,8 @@ import {
   X,
   AlertCircle,
   AlertTriangle,
-  Info
+  Info,
+  ArrowLeft
 } from 'lucide-react';
 
 export const TopHeader = () => {
@@ -25,9 +26,11 @@ export const TopHeader = () => {
     bookings, 
     roomsList, 
     setActiveTab, 
+    activeTab,
     logout,
     openNewBookingModal,
-    isServerConnected
+    isServerConnected,
+    goBack
   } = useHotel();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -172,8 +175,29 @@ export const TopHeader = () => {
     return outDate === todayDateStr && b.status === 'In-House';
   });
 
+  // Unpaid Stays in house (Requirement 7)
+  const unpaidBookings = (bookings || []).filter(b => {
+    if (b.isHidden || b.status === 'Completed' || b.status === 'Archived' || b.status === 'Cancelled') return false;
+    const paid = parseFloat(b.amountPaid || 0);
+    const total = parseFloat(b.totalAmount || b.amountPaid || 0);
+    return b.paidVia === 'Pending' || b.paymentOption === 'Unpaid' || paid < total;
+  });
+
   // Activity notifications
   const recentNotifications = [
+    ...unpaidBookings.map(b => {
+      const paid = parseFloat(b.amountPaid || 0);
+      const total = parseFloat(b.totalAmount || b.amountPaid || 0);
+      const due = Math.max(0, total - paid);
+      return {
+        id: `unpaid-${b.id}`,
+        title: `⚠️ Unpaid Stay: Room ${b.room || '—'} (${b.guestName})`,
+        time: `Due: ₹${due} • Checkout blocked until settled`,
+        unread: true,
+        icon: AlertTriangle,
+        color: '#dc2626'
+      };
+    }),
     ...overdueBookings.map(b => ({
       id: `overdue-${b.id}`,
       title: `Overdue Check-out: Room ${b.room || '—'} (${b.guestName})`,
@@ -208,7 +232,7 @@ export const TopHeader = () => {
     }
   ];
 
-  const totalUnreadNotifs = overdueBookings.length + (dueTodayBookings.length > 0 ? 1 : 0);
+  const totalUnreadNotifs = overdueBookings.length + unpaidBookings.length + (dueTodayBookings.length > 0 ? 1 : 0);
 
   // Filtered search results
   const searchResults = React.useMemo(() => {

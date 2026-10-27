@@ -8,7 +8,11 @@ for path_dir in (BASE_DIR, PARENT_DIR):
         sys.path.insert(0, path_dir)
 
 from sqlalchemy import Column, Integer, String, Float, Text, Boolean, DateTime
+from sqlalchemy.dialects.mysql import LONGTEXT
 from datetime import datetime
+
+# Base64 document scans can exceed MySQL/MariaDB's 64 KB TEXT limit, which silently truncates them
+DocumentText = Text().with_variant(LONGTEXT(), "mysql")
 
 try:
     from backend.database import Base
@@ -53,6 +57,8 @@ class PropertyAccount(Base):
     session_timeout_minutes = Column(Integer, default=15)
     role = Column(String(64), default="Property Manager")
     initials = Column(String(20), nullable=True)
+    map_location = Column(Text, nullable=True)
+    checkin_buffer_minutes = Column(Integer, default=120)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 class RoomModel(Base):
@@ -83,7 +89,7 @@ class BookingModel(Base):
     paid_via = Column(String(50), default="Cash")
     txn_id = Column(String(128), nullable=True)
     notes = Column(Text, nullable=True)
-    id_card = Column(Text, nullable=True)
+    id_card = Column(DocumentText, nullable=True)
     id_card_name = Column(String(255), nullable=True)
     status = Column(String(64), default="Upcoming", nullable=True)
     booking_type = Column(String(64), default="Walk-in")  # "Walk-in", "Online Pre-paid", "OTA"
@@ -94,7 +100,10 @@ class BookingModel(Base):
     payment_status = Column(String(64), default="Fully Paid", nullable=True)
     id_card_type = Column(String(64), nullable=True)
     id_card_number = Column(String(128), nullable=True)
+    documents = Column(DocumentText, default="[]")  # JSON string array of up to 5 documents
     created_at = Column(String(64), nullable=True)
+    confirmed_at = Column(String(64), nullable=True)  # When the booking first became Upcoming (used for no-show archiving)
+    payment_option = Column(String(64), nullable=True)  # Cash, UPI (owner upi), Pre paid, Partially paid, Unpaid, Other UPI
 
 class ExpenseModel(Base):
     __tablename__ = "expenses"
@@ -113,12 +122,28 @@ class BillModel(Base):
     id = Column(String(128), primary_key=True, index=True)
     firm_id = Column(String(191), index=True, nullable=False)
     booking_id = Column(String(128), nullable=True)
+    bill_number = Column(String(128), nullable=True)
+    property_name = Column(String(255), nullable=True)
     guest_name = Column(String(255), nullable=False)
     room_no = Column(String(64), nullable=False)
     room_charge = Column(Float, default=0.0)
     add_ons = Column(Text, default="[]")  # JSON string
     total = Column(Float, default=0.0)
     date = Column(String(50), nullable=False)
+
+class DocumentModel(Base):
+    __tablename__ = "documents"
+
+    id = Column(String(64), primary_key=True, index=True)
+    firm_id = Column(String(191), index=True, nullable=False)
+    doc_type = Column(String(32), index=True, nullable=False)  # id_scan, bill, report, backup
+    ref_id = Column(String(128), index=True, nullable=True)  # booking id or bill id
+    file_name = Column(String(255), nullable=False)
+    mime_type = Column(String(128), nullable=True)
+    size_bytes = Column(Integer, default=0)
+    dropbox_path = Column(String(512), nullable=False)
+    created_by = Column(String(191), nullable=True)
+    created_at = Column(String(64), nullable=True)
 
 class RegisterStateModel(Base):
     __tablename__ = "register_states"
@@ -142,5 +167,17 @@ class FeatureToggleModel(Base):
 
     role = Column(String(64), primary_key=True, index=True)  # "Admin", "Manager"
     features_json = Column(Text, default="{}")
+
+class EmployeeModel(Base):
+    __tablename__ = "employees"
+
+    id = Column(String(128), primary_key=True, index=True)
+    firm_id = Column(String(191), index=True, nullable=False)
+    name = Column(String(255), nullable=False, index=True)
+    role = Column(String(64), nullable=False)  # "Property Manager", "Front Desk", "House Keeping"
+    phone = Column(String(50), nullable=True)
+    email = Column(String(191), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
 
 

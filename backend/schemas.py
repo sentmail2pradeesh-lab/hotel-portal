@@ -24,7 +24,10 @@ class PropertyCreateRequest(BaseModel):
     address: Optional[str] = None
     phone: Optional[str] = None
     email: Optional[str] = None
+    mapLocation: Optional[str] = None
+    checkinBufferMinutes: Optional[int] = 120
     initialRooms: Optional[List[Any]] = None
+    initialEmployees: Optional[List[Any]] = None
 
 class PropertyUpdateRequest(BaseModel):
     propertyCode: Optional[str] = None
@@ -40,6 +43,8 @@ class PropertyUpdateRequest(BaseModel):
     address: Optional[str] = None
     phone: Optional[str] = None
     email: Optional[str] = None
+    mapLocation: Optional[str] = None
+    checkinBufferMinutes: Optional[int] = None
 
 class PropertyResponse(BaseModel):
     firmId: str
@@ -55,6 +60,8 @@ class PropertyResponse(BaseModel):
     eSignature: Optional[str] = None
     address: Optional[str] = None
     phone: Optional[str] = None
+    mapLocation: Optional[str] = None
+    checkinBufferMinutes: int = 120
     sessionTimeoutMinutes: int = 15
     role: str = "Property Manager"
     initials: str
@@ -137,11 +144,13 @@ class BookingBase(BaseModel):
     idCardName: Optional[str] = "ID Photo"
     idCardType: Optional[str] = None
     idCardNumber: Optional[str] = None
+    documents: Optional[List[Any]] = []
     status: Optional[str] = "Upcoming"
     bookingType: Optional[str] = "Walk-in"
     isPrepaid: Optional[bool] = False
     isGuaranteed: Optional[bool] = False
     isHidden: Optional[bool] = False
+    paymentOption: Optional[str] = None
 
 class BookingCreate(BookingBase):
     manualId: Optional[str] = None
@@ -167,6 +176,8 @@ class BookingUpdate(BaseModel):
     idCardName: Optional[str] = None
     idCardType: Optional[str] = None
     idCardNumber: Optional[str] = None
+    documents: Optional[List[Any]] = None
+    paymentOption: Optional[str] = None
     status: Optional[str] = None
     bookingType: Optional[str] = None
     isPrepaid: Optional[bool] = None
@@ -176,6 +187,7 @@ class BookingUpdate(BaseModel):
 class BookingResponse(BookingBase):
     id: str
     createdAt: Optional[str] = None
+    confirmedAt: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -248,6 +260,8 @@ class AddOnItem(BaseModel):
 
 class BillBase(BaseModel):
     id: Optional[str] = None
+    billNumber: Optional[str] = None
+    propertyName: Optional[str] = None
     bookingId: Optional[str] = None
     guestName: str
     roomNo: str
@@ -260,6 +274,8 @@ class BillCreate(BillBase):
     pass
 
 class BillUpdate(BaseModel):
+    billNumber: Optional[str] = None
+    propertyName: Optional[str] = None
     guestName: Optional[str] = None
     roomNo: Optional[str] = None
     roomCharge: Optional[float] = None
@@ -332,3 +348,28 @@ class FeatureToggleRequest(BaseModel):
 class ChangePasswordRequest(BaseModel):
     currentPassword: str
     newPassword: str
+
+class EmployeeCreate(BaseModel):
+    name: str
+    role: str
+    phone: Optional[str] = None
+    email: Optional[str] = None
+
+class EmployeeUpdate(BaseModel):
+    name: Optional[str] = None
+    role: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+
+class EmployeeResponse(BaseModel):
+    id: str
+    firmId: str
+    name: str
+    role: str
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    createdAt: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+

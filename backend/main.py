@@ -2,9 +2,10 @@ import os
 import sys
 import json
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
-from fastapi import FastAPI, Depends, HTTPException, status, Header, Request, Query
+from fastapi import FastAPI, Depends, HTTPException, status, Header, Request, Query, UploadFile, File, Form
+from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -38,7 +39,7 @@ try:
     from backend.models import (
         ManagerAccount, PropertyAccount, RoomModel, BookingModel,
         ExpenseModel, BillModel, RegisterStateModel, InvitationModel,
-        FeatureToggleModel
+        FeatureToggleModel, EmployeeModel, DocumentModel
     )
     from backend.schemas import (
         ManagerRegisterRequest, ManagerLoginRequest, ManagerResponse,
@@ -50,14 +51,15 @@ try:
         BillCreate, BillUpdate, BillResponse,
         RoomCreate, RoomUpdate, BulkRoomsCreate, RoomDetailResponse, RegisterStateResponse,
         InvitationCreateRequest, InvitationResponse, AcceptInvitationRequest,
-        ManagerCreateRequest, ChangePasswordRequest, FeatureToggleRequest
+        ManagerCreateRequest, ChangePasswordRequest, FeatureToggleRequest,
+        EmployeeCreate, EmployeeUpdate, EmployeeResponse
     )
 except (ModuleNotFoundError, ImportError):
     from database import engine, Base, get_db, SessionLocal
     from models import (
         ManagerAccount, PropertyAccount, RoomModel, BookingModel,
         ExpenseModel, BillModel, RegisterStateModel, InvitationModel,
-        FeatureToggleModel
+        FeatureToggleModel, EmployeeModel, DocumentModel
     )
     from schemas import (
         ManagerRegisterRequest, ManagerLoginRequest, ManagerResponse,
@@ -69,7 +71,8 @@ except (ModuleNotFoundError, ImportError):
         BillCreate, BillUpdate, BillResponse,
         RoomCreate, RoomUpdate, BulkRoomsCreate, RoomDetailResponse, RegisterStateResponse,
         InvitationCreateRequest, InvitationResponse, AcceptInvitationRequest,
-        ManagerCreateRequest, ChangePasswordRequest, FeatureToggleRequest
+        ManagerCreateRequest, ChangePasswordRequest, FeatureToggleRequest,
+        EmployeeCreate, EmployeeUpdate, EmployeeResponse
     )
 
 # Initialize database tables
@@ -125,6 +128,8 @@ try:
         ensure_column("property_accounts", "e_signature", "TEXT")
         ensure_column("property_accounts", "session_timeout_minutes", "INTEGER DEFAULT 15")
         ensure_column("property_accounts", "initials", "VARCHAR(191)")
+        ensure_column("property_accounts", "map_location", "TEXT")
+        ensure_column("property_accounts", "checkin_buffer_minutes", "INTEGER DEFAULT 120")
 
         # Manager accounts
         ensure_column("manager_accounts", "temp_password_hash", "VARCHAR(191)")
@@ -137,6 +142,13 @@ try:
         ensure_column("rooms", "is_staff_room", "BOOLEAN DEFAULT 0" if engine.name == "sqlite" else "BOOLEAN DEFAULT FALSE")
 
         # Bookings
+        # Widen existing MySQL/MariaDB TEXT columns so multi-document scans are not truncated
+        if engine.dialect.name == "mysql" and "bookings" in table_names:
+            for doc_col in insp.get_columns("bookings"):
+                if doc_col["name"] in ("id_card", "documents") and str(doc_col["type"]).upper() == "TEXT":
+                    conn.execute(text(f"ALTER TABLE bookings MODIFY {doc_col['name']} LONGTEXT"))
+                    conn.commit()
+
         ensure_column("bookings", "status", "VARCHAR(191) DEFAULT 'Upcoming'")
         ensure_column("bookings", "manual_id", "VARCHAR(191)")
         ensure_column("bookings", "email", "VARCHAR(191)")
@@ -152,10 +164,17 @@ try:
         ensure_column("bookings", "payment_status", "VARCHAR(191) DEFAULT 'Fully Paid'")
         ensure_column("bookings", "id_card_type", "VARCHAR(191)")
         ensure_column("bookings", "id_card_number", "VARCHAR(191)")
+        ensure_column("bookings", "documents", "TEXT")
         ensure_column("bookings", "notes", "TEXT")
         ensure_column("bookings", "id_card", "TEXT")
         ensure_column("bookings", "id_card_name", "VARCHAR(191)")
         ensure_column("bookings", "created_at", "VARCHAR(191)")
+        ensure_column("bookings", "confirmed_at", "VARCHAR(64)")
+        ensure_column("bookings", "payment_option", "VARCHAR(64)")
+
+        # Bills
+        ensure_column("bills", "bill_number", "VARCHAR(191)")
+        ensure_column("bills", "property_name", "VARCHAR(255)")
 
         # Initialize default feature toggles if table exists and is empty
         if "feature_toggles" in table_names:
@@ -177,7 +196,10 @@ def auto_seed_backup_data():
     try:
         with SessionLocal() as db:
             existing_bookings = db.query(BookingModel).count()
-            if existing_bookings == 0:
+            existing_properties = db.query(PropertyAccount).count()
+            # Only a brand-new database (no bookings AND no properties) gets the golden backup.
+            # A database whose data was cleared on purpose must not be refilled on the next restart.
+            if existing_bookings == 0 and existing_properties == 0:
                 print("[BACKUP RESTORE] Remote database has 0 bookings. Restoring golden backup dataset...", flush=True)
                 with open(seed_path, "r", encoding="utf-8") as f:
                     seed_data = json.load(f)
@@ -385,6 +407,7 @@ def get_current_property(
     if manager_id:
         mgr = db.query(ManagerAccount).filter(ManagerAccount.id == manager_id).first()
         is_privileged = mgr and (mgr.role in ["Overall Admin", "Super Admin", "Admin"])
+        # Never fall back to another property: a wrong or missing property must not receive writes silently
         if x_property_id:
             if is_privileged:
                 prop = db.query(PropertyAccount).filter(
@@ -397,11 +420,10 @@ def get_current_property(
                 ).first()
             if prop:
                 return prop
-        # Fallback to first property
+            raise HTTPException(status_code=404, detail="Selected property was not found or is not assigned to this account.")
         if is_privileged:
-            prop = db.query(PropertyAccount).first()
-        else:
-            prop = db.query(PropertyAccount).filter(PropertyAccount.manager_id == manager_id).first()
+            raise HTTPException(status_code=400, detail="Select a property before continuing.")
+        prop = db.query(PropertyAccount).filter(PropertyAccount.manager_id == manager_id).first()
         if prop:
             return prop
         raise HTTPException(status_code=404, detail="No properties found under this manager account.")
@@ -515,6 +537,29 @@ def register_manager(req: ManagerRegisterRequest, db: Session = Depends(get_db))
     }
 
 
+def format_property_response(p: PropertyAccount) -> PropertyResponse:
+    return PropertyResponse(
+        firmId=p.firm_id,
+        propertyCode=p.property_code,
+        firmName=p.firm_name,
+        name=p.name,
+        managerId=p.manager_id,
+        ownerName=p.owner_name,
+        ownerPhone=p.owner_phone,
+        tnebNumber=p.tneb_number,
+        email=p.email,
+        firmLogo=p.firm_logo,
+        eSignature=p.e_signature,
+        address=p.address,
+        phone=p.phone,
+        mapLocation=getattr(p, "map_location", None),
+        checkinBufferMinutes=getattr(p, "checkin_buffer_minutes", 120) or 120,
+        sessionTimeoutMinutes=p.session_timeout_minutes or 15,
+        role=p.role or "Property Manager",
+        initials=p.initials or "PM"
+    )
+
+
 @app.post("/api/auth/manager/login")
 def login_manager(req: ManagerLoginRequest, db: Session = Depends(get_db)):
     clean_id = req.identity.strip().lower()
@@ -572,27 +617,7 @@ def login_manager(req: ManagerLoginRequest, db: Session = Depends(get_db)):
     else:
         props = db.query(PropertyAccount).filter(PropertyAccount.manager_id == matched.id).all()
 
-    prop_responses = [
-        PropertyResponse(
-            firmId=p.firm_id,
-            propertyCode=p.property_code,
-            firmName=p.firm_name,
-            name=p.name,
-            managerId=p.manager_id,
-            ownerName=p.owner_name,
-            ownerPhone=p.owner_phone,
-            tnebNumber=p.tneb_number,
-            email=p.email,
-            firmLogo=p.firm_logo,
-            eSignature=p.e_signature,
-            address=p.address,
-            phone=p.phone,
-            sessionTimeoutMinutes=p.session_timeout_minutes or 15,
-            role=p.role or "Property Manager",
-            initials=p.initials or "PM"
-        )
-        for p in props
-    ]
+    prop_responses = [format_property_response(p) for p in props]
 
     effective_role = "Super Admin" if is_super else ("Admin" if is_admin else "Manager")
     token = create_access_token({
@@ -642,27 +667,7 @@ def get_manager_me(
         else:
             props = db.query(PropertyAccount).filter(PropertyAccount.manager_id == mgr.id).all()
 
-        prop_responses = [
-            PropertyResponse(
-                firmId=p.firm_id,
-                propertyCode=p.property_code,
-                firmName=p.firm_name,
-                name=p.name,
-                managerId=p.manager_id,
-                ownerName=p.owner_name,
-                ownerPhone=p.owner_phone,
-                tnebNumber=p.tneb_number,
-                email=p.email,
-                firmLogo=p.firm_logo,
-                eSignature=p.e_signature,
-                address=p.address,
-                phone=p.phone,
-                sessionTimeoutMinutes=p.session_timeout_minutes or 15,
-                role=p.role or "Property Manager",
-                initials=p.initials or "PM"
-            )
-            for p in props
-        ]
+        prop_responses = [format_property_response(p) for p in props]
 
         active_prop = None
         if x_property_id:
@@ -684,24 +689,7 @@ def get_manager_me(
         prop = db.query(PropertyAccount).filter(PropertyAccount.firm_id == firm_id).first()
         if not prop:
             raise HTTPException(status_code=404, detail="Property not found.")
-        prop_resp = PropertyResponse(
-            firmId=prop.firm_id,
-            propertyCode=prop.property_code,
-            firmName=prop.firm_name,
-            name=prop.name,
-            managerId=prop.manager_id,
-            ownerName=prop.owner_name,
-            ownerPhone=prop.owner_phone,
-            tnebNumber=prop.tneb_number,
-            email=prop.email,
-            firmLogo=prop.firm_logo,
-            eSignature=prop.e_signature,
-            address=prop.address,
-            phone=prop.phone,
-            sessionTimeoutMinutes=prop.session_timeout_minutes or 15,
-            role=prop.role or "Property Manager",
-            initials=prop.initials or "PM"
-        )
+        prop_resp = format_property_response(prop)
         return {
             "id": f"mgr_{prop.firm_id}",
             "name": prop.name,
@@ -735,27 +723,7 @@ def get_manager_properties(
         props = db.query(PropertyAccount).all()
     else:
         props = db.query(PropertyAccount).filter(PropertyAccount.manager_id == manager_id).all()
-    return [
-        PropertyResponse(
-            firmId=p.firm_id,
-            propertyCode=p.property_code,
-            firmName=p.firm_name,
-            name=p.name,
-            managerId=p.manager_id,
-            ownerName=p.owner_name,
-            ownerPhone=p.owner_phone,
-            tnebNumber=p.tneb_number,
-            email=p.email,
-            firmLogo=p.firm_logo,
-            eSignature=p.e_signature,
-            address=p.address,
-            phone=p.phone,
-            sessionTimeoutMinutes=p.session_timeout_minutes or 15,
-            role=p.role or "Property Manager",
-            initials=p.initials or "PM"
-        )
-        for p in props
-    ]
+    return [format_property_response(p) for p in props]
 
 
 @app.post("/api/properties", response_model=PropertyResponse)
@@ -834,7 +802,9 @@ def create_property(
         firm_logo=req.firmLogo,
         e_signature=req.eSignature,
         initials=initials,
-        session_timeout_minutes=15
+        session_timeout_minutes=15,
+        map_location=req.mapLocation.strip() if req.mapLocation and req.mapLocation.strip() else None,
+        checkin_buffer_minutes=req.checkinBufferMinutes if req.checkinBufferMinutes is not None else 120
     )
     db.add(new_prop)
 
@@ -858,30 +828,27 @@ def create_property(
         for rm in DEFAULT_ROOMS:
             db.add(RoomModel(firm_id=firm_id, room_number=rm))
 
+    # Initialize employees if provided (Requirement 20)
+    if req.initialEmployees and isinstance(req.initialEmployees, list):
+        for emp in req.initialEmployees:
+            if isinstance(emp, dict) and emp.get("name") and emp.get("name").strip():
+                emp_id = f"emp_{int(datetime.utcnow().timestamp())}_{uuid.uuid4().hex[:4]}"
+                db.add(EmployeeModel(
+                    id=emp_id,
+                    firm_id=firm_id,
+                    name=emp["name"].strip(),
+                    role=emp.get("role", "Front Desk").strip(),
+                    phone=emp.get("phone", "").strip() or None,
+                    email=emp.get("email", "").strip() or None
+                ))
+
     # Initialize register state
     db.add(RegisterStateModel(firm_id=firm_id, is_open=True))
 
     db.commit()
     db.refresh(new_prop)
 
-    return PropertyResponse(
-        firmId=new_prop.firm_id,
-        propertyCode=new_prop.property_code,
-        firmName=new_prop.firm_name,
-        name=new_prop.name,
-        managerId=new_prop.manager_id,
-        ownerName=new_prop.owner_name,
-        ownerPhone=new_prop.owner_phone,
-        tnebNumber=new_prop.tneb_number,
-        email=new_prop.email,
-        firmLogo=new_prop.firm_logo,
-        eSignature=new_prop.e_signature,
-        address=new_prop.address,
-        phone=new_prop.phone,
-        sessionTimeoutMinutes=new_prop.session_timeout_minutes or 15,
-        role=new_prop.role or "Property Manager",
-        initials=new_prop.initials or "PM"
-    )
+    return format_property_response(new_prop)
 
 
 @app.put("/api/properties/{firm_id}", response_model=PropertyResponse)
@@ -978,27 +945,16 @@ def update_property(
     if req.eSignature is not None:
         prop.e_signature = req.eSignature
 
+    if req.mapLocation is not None:
+        prop.map_location = req.mapLocation.strip() or None
+
+    if req.checkinBufferMinutes is not None:
+        prop.checkin_buffer_minutes = req.checkinBufferMinutes
+
     db.commit()
     db.refresh(prop)
 
-    return PropertyResponse(
-        firmId=prop.firm_id,
-        propertyCode=prop.property_code,
-        firmName=prop.firm_name,
-        name=prop.name,
-        managerId=prop.manager_id,
-        ownerName=prop.owner_name,
-        ownerPhone=prop.owner_phone,
-        tnebNumber=prop.tneb_number,
-        email=prop.email,
-        firmLogo=prop.firm_logo,
-        eSignature=prop.e_signature,
-        address=prop.address,
-        phone=prop.phone,
-        sessionTimeoutMinutes=prop.session_timeout_minutes or 15,
-        role=prop.role or "Property Manager",
-        initials=prop.initials or "PM"
-    )
+    return format_property_response(prop)
 
 
 @app.delete("/api/properties/{firm_id}")
@@ -1281,6 +1237,17 @@ def update_profile(
     )
 
 
+def derive_payment_status(total, paid, paid_via, is_prepaid) -> str:
+    """Payment status from the amounts: Fully Paid only when the full total has been paid."""
+    if is_prepaid:
+        return "Fully Paid"
+    if paid_via == "Pending" or not paid or paid <= 0:
+        return "Unpaid"
+    if total and total > 0 and paid < total:
+        return "Partially Paid"
+    return "Fully Paid"
+
+
 def format_booking_response(b: BookingModel) -> BookingResponse:
     tot = getattr(b, "total_amount", None)
     amt_paid = b.amount_paid or 0.0
@@ -1288,13 +1255,27 @@ def format_booking_response(b: BookingModel) -> BookingResponse:
         tot = amt_paid
     
     p_status = getattr(b, "payment_status", None)
-    if not p_status:
-        if b.is_prepaid or (amt_paid > 0 and b.paid_via != "Pending" and (tot == 0.0 or amt_paid >= tot)):
-            p_status = "Fully Paid"
-        elif amt_paid > 0 and b.paid_via != "Pending":
-            p_status = "Partially Paid"
-        else:
-            p_status = "Unpaid"
+    # Recheck "Fully Paid" against the amounts, so bookings saved with a partial payment show correctly
+    if not p_status or p_status == "Fully Paid":
+        p_status = derive_payment_status(tot, amt_paid, b.paid_via, bool(b.is_prepaid))
+
+    docs_raw = getattr(b, "documents", None)
+    docs_list = []
+    if docs_raw:
+        try:
+            docs_list = json.loads(docs_raw)
+            if not isinstance(docs_list, list):
+                docs_list = []
+        except Exception:
+            docs_list = []
+    if not docs_list and b.id_card:
+        docs_list = [{
+            "id": "doc_1",
+            "type": getattr(b, "id_card_type", None) or "Aadhaar Card",
+            "number": getattr(b, "id_card_number", None) or "",
+            "name": b.id_card_name or "ID Photo",
+            "dataUrl": b.id_card
+        }]
 
     return BookingResponse(
         id=b.id,
@@ -1318,12 +1299,34 @@ def format_booking_response(b: BookingModel) -> BookingResponse:
         idCardName=b.id_card_name or "ID Photo",
         idCardType=getattr(b, "id_card_type", None) or "Aadhaar Card",
         idCardNumber=getattr(b, "id_card_number", None) or "",
+        documents=docs_list,
         status=b.status or "Upcoming",
         bookingType=b.booking_type or "Walk-in",
         isPrepaid=bool(b.is_prepaid),
         isGuaranteed=bool(b.is_guaranteed),
         isHidden=bool(b.is_hidden),
-        createdAt=b.created_at
+        createdAt=b.created_at,
+        confirmedAt=b.confirmed_at,
+        paymentOption=b.payment_option
+    )
+
+
+def format_bill_response(b: BillModel, prop_name: Optional[str] = None) -> BillResponse:
+    try:
+        add_ons_list = json.loads(b.add_ons) if b.add_ons else []
+    except Exception:
+        add_ons_list = []
+    return BillResponse(
+        id=b.id,
+        billNumber=getattr(b, "bill_number", None) or b.id,
+        propertyName=getattr(b, "property_name", None) or prop_name or "Property Stay",
+        bookingId=b.booking_id,
+        guestName=b.guest_name,
+        roomNo=b.room_no,
+        roomCharge=b.room_charge,
+        addOns=add_ons_list,
+        total=b.total,
+        date=b.date
     )
 
 
@@ -1397,17 +1400,7 @@ def sync_property_data(
 
     # Bills
     bills = db.query(BillModel).filter(BillModel.firm_id == current_user.firm_id).all()
-    bill_list = []
-    for b in bills:
-        try:
-            add_ons_list = json.loads(b.add_ons) if b.add_ons else []
-        except Exception:
-            add_ons_list = []
-        bill_list.append(BillResponse(
-            id=b.id, bookingId=b.booking_id, guestName=b.guest_name,
-            roomNo=b.room_no, roomCharge=b.room_charge, addOns=add_ons_list,
-            total=b.total, date=b.date
-        ))
+    bill_list = [format_bill_response(b, current_user.firm_name) for b in bills]
 
     # Register state
     reg_state = db.query(RegisterStateModel).filter(RegisterStateModel.firm_id == current_user.firm_id).first()
@@ -1684,6 +1677,25 @@ def delete_room(
 
 # --- BOOKINGS ENDPOINTS ---
 
+@app.get("/api/bookings/all-properties")
+def list_bookings_all_properties(
+    mgr_payload: dict = Depends(get_manager_me),
+    db: Session = Depends(get_db)
+):
+    """Read-only view of bookings across every property, for admin accounts only."""
+    if mgr_payload.get("role") not in ["Overall Admin", "Super Admin", "Admin"]:
+        raise HTTPException(status_code=403, detail="Only admin accounts can view bookings across all properties.")
+    props = {p.firm_id: p for p in db.query(PropertyAccount).all()}
+    rows = []
+    for b in db.query(BookingModel).order_by(BookingModel.created_at.desc()).all():
+        data = format_booking_response(b).model_dump()
+        prop = props.get(b.firm_id)
+        data["propertyCode"] = (prop.property_code if prop else None) or ""
+        data["propertyName"] = (prop.firm_name if prop else None) or ""
+        rows.append(data)
+    return rows
+
+
 @app.get("/api/bookings", response_model=List[BookingResponse])
 def get_bookings(
     current_user: PropertyAccount = Depends(get_current_property),
@@ -1751,8 +1763,10 @@ def create_booking(
     children_cnt = req.children if (req.children is not None and req.children >= 0) else 0
     total_guest_cnt = req.guestCount if (req.guestCount is not None and req.guestCount > 0) else (adults_cnt + children_cnt)
 
+    is_draft = (req.status == "Draft")
+
     allocated_room = req.room.strip() if (req.room and req.room.strip()) else ""
-    if allocated_room:
+    if allocated_room and not is_draft:
         room_rec = db.query(RoomModel).filter(
             RoomModel.firm_id == current_user.firm_id,
             RoomModel.room_number == allocated_room
@@ -1762,11 +1776,41 @@ def create_booking(
         if room_rec.is_staff_room:
             raise HTTPException(status_code=400, detail=f"Room '{allocated_room}' is a designated staff room and cannot be assigned to guests.")
 
+    # Document type is mandatory (Requirement 3) for confirmed stays, optional for draft saves
+    doc_type = req.idCardType
+    if not doc_type and req.documents and len(req.documents) > 0:
+        doc_type = req.documents[0].get("type")
+    if not is_draft and (not doc_type or not str(doc_type).strip()):
+        raise HTTPException(status_code=400, detail="Identity Document Type is mandatory for stay registration.")
+
+    # Txn ID mandatory only for UPI (Requirement 14)
+    clean_paid_via = req.paidVia or "Cash"
+    if not is_draft and clean_paid_via in ["UPI", "UPI (Owner UPI)", "Other UPI"] and not (req.txnId and req.txnId.strip()):
+        raise HTTPException(status_code=400, detail="Transaction ID / UTR is mandatory for UPI payments.")
+
+    # Process documents up to 5 (Requirement 5)
+    docs_json = json.dumps(req.documents[:5]) if req.documents else "[]"
+    id_card_val = req.idCard
+    id_card_name_val = req.idCardName or "ID Document"
+    id_card_type_val = doc_type or "Aadhaar Card"
+    id_card_num_val = req.idCardNumber or ""
+    if req.documents and len(req.documents) > 0:
+        first_doc = req.documents[0]
+        if isinstance(first_doc, dict):
+            id_card_val = first_doc.get("dataUrl") or id_card_val
+            id_card_name_val = first_doc.get("name") or id_card_name_val
+            id_card_type_val = first_doc.get("type") or id_card_type_val
+            id_card_num_val = first_doc.get("number") or id_card_num_val
+
+    clean_guest_name = req.guestName.strip() if (req.guestName and req.guestName.strip()) else ("Draft Booking" if is_draft else "")
+    if not clean_guest_name:
+        raise HTTPException(status_code=400, detail="Guest name is required.")
+
     new_b = BookingModel(
         id=booking_id,
         manual_id=req.manualId.strip() if req.manualId else booking_id,
         firm_id=current_user.firm_id,
-        guest_name=req.guestName.strip(),
+        guest_name=clean_guest_name,
         phone=req.phone,
         email=req.email,
         room=allocated_room,
@@ -1777,20 +1821,25 @@ def create_booking(
         check_out=req.checkOut,
         amount_paid=req.amountPaid,
         total_amount=req.totalAmount if (req.totalAmount is not None and req.totalAmount > 0) else req.amountPaid,
-        payment_status=req.paymentStatus or ("Fully Paid" if (effective_is_prepaid or (req.amountPaid and req.amountPaid > 0 and req.paidVia != "Pending")) else "Unpaid"),
-        paid_via=req.paidVia or "Cash",
+        payment_status=req.paymentStatus or derive_payment_status(
+            req.totalAmount if (req.totalAmount is not None and req.totalAmount > 0) else req.amountPaid,
+            req.amountPaid or 0.0, clean_paid_via, effective_is_prepaid),
+        paid_via=clean_paid_via,
         txn_id=req.txnId.strip() if req.txnId else None,
         notes=req.notes,
-        id_card=req.idCard,
-        id_card_name=req.idCardName or "ID Photo",
-        id_card_type=req.idCardType or "Aadhaar Card",
-        id_card_number=req.idCardNumber or "",
+        id_card=id_card_val,
+        id_card_name=id_card_name_val,
+        id_card_type=id_card_type_val,
+        id_card_number=id_card_num_val,
+        documents=docs_json,
         status=req.status or "Upcoming",
         booking_type=effective_booking_type,
         is_prepaid=effective_is_prepaid,
         is_guaranteed=effective_is_guaranteed,
         is_hidden=bool(req.isHidden),
-        created_at=now_iso
+        created_at=now_iso,
+        confirmed_at=now_iso if (req.status or "Upcoming") == "Upcoming" else None,
+        payment_option=req.paymentOption
     )
     db.add(new_b)
     db.commit()
@@ -1983,6 +2032,16 @@ def checkout_booking(
     if not b:
         raise HTTPException(status_code=404, detail="Booking not found.")
 
+    # Requirement 11 & Requirement 7: Checkout not possible if full amount is not paid
+    tot = float(b.total_amount or 0.0)
+    paid = float(b.amount_paid or 0.0)
+    if b.payment_status == "Unpaid" or (tot > 0 and paid < tot and b.payment_status not in ["Fully Paid", "Pre paid"]):
+        outstanding = tot - paid
+        raise HTTPException(
+            status_code=400,
+            detail=f"Checkout blocked: Full payment is required before checkout. Outstanding balance: ₹{outstanding:,.2f}. Please collect full payment to proceed."
+        )
+
     b.status = "Completed"
     db.commit()
     db.refresh(b)
@@ -2004,6 +2063,16 @@ def early_checkout_booking(
 
     if not b:
         raise HTTPException(status_code=404, detail="Booking not found.")
+
+    # Requirement 11 & Requirement 7: Checkout not possible if full amount is not paid
+    tot = float(b.total_amount or 0.0)
+    paid = float(b.amount_paid or 0.0)
+    if b.payment_status == "Unpaid" or (tot > 0 and paid < tot and b.payment_status not in ["Fully Paid", "Pre paid"]):
+        outstanding = tot - paid
+        raise HTTPException(
+            status_code=400,
+            detail=f"Checkout blocked: Full payment is required before checkout. Outstanding balance: ₹{outstanding:,.2f}. Please collect full payment to proceed."
+        )
 
     today_str = datetime.now().strftime("%Y-%m-%d")
     orig_checkout = b.check_out
@@ -2063,6 +2132,7 @@ def confirm_booking(
         raise HTTPException(status_code=404, detail="Booking not found.")
 
     b.status = "Upcoming"
+    b.confirmed_at = b.confirmed_at or datetime.utcnow().isoformat(timespec="seconds") + "Z"
     db.commit()
     db.refresh(b)
 
@@ -2177,10 +2247,23 @@ def update_booking(
         b.payment_status = req.paymentStatus
     if req.paidVia is not None:
         b.paid_via = req.paidVia
+        if req.paidVia in ["UPI", "UPI (Owner UPI)", "Other UPI"] and not ((req.txnId and req.txnId.strip()) or (b.txn_id and b.txn_id.strip())):
+            raise HTTPException(status_code=400, detail="Transaction ID / UTR is mandatory for UPI payments.")
+    if req.paymentOption is not None:
+        b.payment_option = req.paymentOption
     if req.txnId is not None:
         b.txn_id = req.txnId.strip() if req.txnId else None
     if req.notes is not None:
         b.notes = req.notes
+    if req.documents is not None:
+        b.documents = json.dumps(req.documents[:5])
+        if len(req.documents) > 0:
+            first_doc = req.documents[0]
+            if isinstance(first_doc, dict):
+                if first_doc.get("dataUrl"): b.id_card = first_doc["dataUrl"]
+                if first_doc.get("name"): b.id_card_name = first_doc["name"]
+                if first_doc.get("type"): b.id_card_type = first_doc["type"]
+                if first_doc.get("number"): b.id_card_number = first_doc["number"]
     if req.idCard is not None:
         b.id_card = req.idCard
     if req.idCardName is not None:
@@ -2191,6 +2274,8 @@ def update_booking(
         b.id_card_number = req.idCardNumber
     if req.status is not None:
         b.status = req.status
+        if req.status == "Upcoming" and not b.confirmed_at:
+            b.confirmed_at = datetime.utcnow().isoformat(timespec="seconds") + "Z"
     if req.bookingType is not None:
         b.booking_type = req.bookingType
     if req.isPrepaid is not None:
@@ -2200,6 +2285,9 @@ def update_booking(
     if req.isHidden is not None:
         b.is_hidden = req.isHidden
 
+    # Recalculate the payment status from the amounts unless one was given explicitly
+    if req.paymentStatus is None:
+        b.payment_status = derive_payment_status(float(b.total_amount or 0.0), float(b.amount_paid or 0.0), b.paid_via, bool(b.is_prepaid))
     db.commit()
     db.refresh(b)
 
@@ -2300,25 +2388,8 @@ def get_bills(
     current_user: PropertyAccount = Depends(get_current_property),
     db: Session = Depends(get_db)
 ):
-    bills = db.query(BillModel).filter(BillModel.firm_id == current_user.firm_id).all()
-    res = []
-    for b in bills:
-        try:
-            add_ons_list = json.loads(b.add_ons) if b.add_ons else []
-        except Exception:
-            add_ons_list = []
-
-        res.append(BillResponse(
-            id=b.id,
-            bookingId=b.booking_id,
-            guestName=b.guest_name,
-            roomNo=b.room_no,
-            roomCharge=b.room_charge,
-            addOns=add_ons_list,
-            total=b.total,
-            date=b.date
-        ))
-    return res
+    bills = db.query(BillModel).filter(BillModel.firm_id == current_user.firm_id).order_by(BillModel.date.desc()).all()
+    return [format_bill_response(b, current_user.firm_name) for b in bills]
 
 
 @app.post("/api/bills", response_model=BillResponse)
@@ -2332,10 +2403,17 @@ def create_bill(
         bill_id = f"BILL-{int(uuid.uuid4().int % 90000 + 1000)}"
     add_ons_json = json.dumps(req.addOns) if req.addOns else "[]"
 
+    # Requirement 21: Persistent bill numbers and property name
+    bill_count = db.query(BillModel).filter(BillModel.firm_id == current_user.firm_id).count()
+    bill_num = req.billNumber.strip() if req.billNumber and req.billNumber.strip() else f"BILL-{datetime.now().strftime('%Y')}-{bill_count + 1:04d}"
+    prop_name = req.propertyName.strip() if req.propertyName and req.propertyName.strip() else current_user.firm_name
+
     new_b = BillModel(
         id=bill_id,
         firm_id=current_user.firm_id,
         booking_id=req.bookingId,
+        bill_number=bill_num,
+        property_name=prop_name,
         guest_name=req.guestName,
         room_no=req.roomNo,
         room_charge=req.roomCharge,
@@ -2347,16 +2425,7 @@ def create_bill(
     db.commit()
     db.refresh(new_b)
 
-    return BillResponse(
-        id=new_b.id,
-        bookingId=new_b.booking_id,
-        guestName=new_b.guest_name,
-        roomNo=new_b.room_no,
-        roomCharge=new_b.room_charge,
-        addOns=req.addOns or [],
-        total=new_b.total,
-        date=new_b.date
-    )
+    return format_bill_response(new_b, current_user.firm_name)
 
 
 @app.put("/api/bills/{bill_id}", response_model=BillResponse)
@@ -2374,6 +2443,10 @@ def update_bill(
     if not b:
         raise HTTPException(status_code=404, detail="Bill not found.")
 
+    if req.billNumber is not None:
+        b.bill_number = req.billNumber.strip()
+    if req.propertyName is not None:
+        b.property_name = req.propertyName.strip()
     if req.guestName is not None:
         b.guest_name = req.guestName
     if req.roomNo is not None:
@@ -2390,21 +2463,7 @@ def update_bill(
     db.commit()
     db.refresh(b)
 
-    try:
-        parsed_addons = json.loads(b.add_ons) if b.add_ons else []
-    except Exception:
-        parsed_addons = []
-
-    return BillResponse(
-        id=b.id,
-        bookingId=b.booking_id,
-        guestName=b.guest_name,
-        roomNo=b.room_no,
-        roomCharge=b.room_charge,
-        addOns=parsed_addons,
-        total=b.total,
-        date=b.date
-    )
+    return format_bill_response(b, current_user.firm_name)
 
 
 @app.delete("/api/bills/{bill_id}")
@@ -2956,6 +3015,450 @@ def impersonate_user(
             "role": target_role
         }
     }
+
+
+# --- PROPERTY EMPLOYEES ENDPOINTS (Requirements 16 & 20) ---
+
+def require_property_staff_access(authorization: Optional[str], db: Session, firm_id: str):
+    """Allow admins for any property, managers for their own properties, and property logins for their own firm."""
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid authentication token.")
+    try:
+        payload = jwt.decode(authorization.split(" ")[1], SECRET_KEY, algorithms=[ALGORITHM])
+    except Exception:
+        raise HTTPException(status_code=401, detail="Could not validate credentials.")
+
+    manager_id = payload.get("manager_id")
+    if manager_id:
+        mgr = db.query(ManagerAccount).filter(ManagerAccount.id == manager_id).first()
+        if mgr and mgr.role in ["Overall Admin", "Super Admin", "Admin"]:
+            return
+        if mgr and db.query(PropertyAccount).filter(
+            PropertyAccount.firm_id == firm_id,
+            PropertyAccount.manager_id == mgr.id
+        ).first():
+            return
+    elif payload.get("firm_id") == firm_id:
+        return
+    raise HTTPException(status_code=403, detail="You do not have access to this property's staff.")
+
+
+@app.get("/api/properties/{firm_id}/employees", response_model=List[EmployeeResponse])
+def get_property_employees(
+    firm_id: str,
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+):
+    require_property_staff_access(authorization, db, firm_id)
+    employees =db.query(EmployeeModel).filter(EmployeeModel.firm_id == firm_id).order_by(EmployeeModel.created_at.desc()).all()
+    return [
+        EmployeeResponse(
+            id=e.id,
+            firmId=e.firm_id,
+            name=e.name,
+            role=e.role,
+            phone=e.phone,
+            email=e.email,
+            createdAt=e.created_at.isoformat() if e.created_at else None
+        )
+        for e in employees
+    ]
+
+
+@app.post("/api/properties/{firm_id}/employees", response_model=EmployeeResponse)
+def create_property_employee(
+    firm_id: str,
+    req: EmployeeCreate,
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+):
+    require_property_staff_access(authorization, db, firm_id)
+    clean_name = req.name.strip()
+    if not clean_name:
+        raise HTTPException(status_code=400, detail="Employee full name is required.")
+
+    clean_role = req.role.strip() if req.role and req.role.strip() else "Front Desk"
+    emp_id = f"emp_{int(datetime.utcnow().timestamp())}_{uuid.uuid4().hex[:4]}"
+    new_emp = EmployeeModel(
+        id=emp_id,
+        firm_id=firm_id,
+        name=clean_name,
+        role=clean_role,
+        phone=req.phone.strip() if req.phone and req.phone.strip() else None,
+        email=req.email.strip().lower() if req.email and req.email.strip() else None
+    )
+    db.add(new_emp)
+    db.commit()
+    db.refresh(new_emp)
+
+    return EmployeeResponse(
+        id=new_emp.id,
+        firmId=new_emp.firm_id,
+        name=new_emp.name,
+        role=new_emp.role,
+        phone=new_emp.phone,
+        email=new_emp.email,
+        createdAt=new_emp.created_at.isoformat() if new_emp.created_at else None
+    )
+
+
+@app.put("/api/employees/{employee_id}", response_model=EmployeeResponse)
+def update_property_employee(
+    employee_id: str,
+    req: EmployeeUpdate,
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+):
+    emp = db.query(EmployeeModel).filter(EmployeeModel.id == employee_id).first()
+    if not emp:
+        raise HTTPException(status_code=404, detail="Employee not found.")
+    require_property_staff_access(authorization, db, emp.firm_id)
+
+    if req.name is not None and req.name.strip():
+        emp.name = req.name.strip()
+    if req.role is not None and req.role.strip():
+        emp.role = req.role.strip()
+    if req.phone is not None:
+        emp.phone = req.phone.strip() or None
+    if req.email is not None:
+        emp.email = req.email.strip().lower() or None
+
+    db.commit()
+    db.refresh(emp)
+
+    return EmployeeResponse(
+        id=emp.id,
+        firmId=emp.firm_id,
+        name=emp.name,
+        role=emp.role,
+        phone=emp.phone,
+        email=emp.email,
+        createdAt=emp.created_at.isoformat() if emp.created_at else None
+    )
+
+
+@app.delete("/api/employees/{employee_id}")
+def delete_property_employee(
+    employee_id: str,
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+):
+    emp = db.query(EmployeeModel).filter(EmployeeModel.id == employee_id).first()
+    if emp:
+        require_property_staff_access(authorization, db, emp.firm_id)
+        db.delete(emp)
+        db.commit()
+    return {"success": True}
+
+
+# --- CONSOLIDATED ALL-PROPERTIES DASHBOARD & FINANCIAL LOGS (Requirements 4 & 19) ---
+
+@app.get("/api/admin/properties-summary")
+def get_admin_properties_summary(
+    mgr_payload: dict = Depends(get_manager_me),
+    db: Session = Depends(get_db)
+):
+    caller_role = mgr_payload.get("role")
+    if caller_role not in ["Overall Admin", "Super Admin", "Admin"]:
+        raise HTTPException(status_code=403, detail="Unauthorized.")
+
+    properties = db.query(PropertyAccount).all()
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    current_month_prefix = datetime.now().strftime("%Y-%m")
+
+    results = []
+    for p in properties:
+        rooms = db.query(RoomModel).filter(RoomModel.firm_id == p.firm_id, RoomModel.is_staff_room == False).all()
+        total_rooms = len(rooms)
+        all_bookings = db.query(BookingModel).filter(BookingModel.firm_id == p.firm_id, BookingModel.is_hidden == False).all()
+
+        in_house_stays = [b for b in all_bookings if b.status in ["In-House", "Checked-In"]]
+        occupied_rooms = len(set(b.room for b in in_house_stays if b.room))
+
+        # Financials
+        today_income = sum(b.amount_paid or 0.0 for b in all_bookings if b.check_in == today_str and b.payment_status != "Unpaid")
+        monthly_income = sum(b.amount_paid or 0.0 for b in all_bookings if (b.check_in or "").startswith(current_month_prefix) and b.payment_status != "Unpaid")
+
+        expenses = db.query(ExpenseModel).filter(ExpenseModel.firm_id == p.firm_id).all()
+        today_expense = sum(e.amount or 0.0 for e in expenses if e.date == today_str)
+        monthly_expense = sum(e.amount or 0.0 for e in expenses if (e.date or "").startswith(current_month_prefix))
+
+        unpaid_balance = sum(
+            max(0.0, (b.total_amount or b.amount_paid or 0.0) - (b.amount_paid or 0.0))
+            for b in in_house_stays
+        )
+
+        emp_count = db.query(EmployeeModel).filter(EmployeeModel.firm_id == p.firm_id).count()
+
+        results.append({
+            "firmId": p.firm_id,
+            "propertyCode": p.property_code or "PR",
+            "firmName": p.firm_name,
+            "address": p.address,
+            "phone": p.phone,
+            "mapLocation": getattr(p, "map_location", None),
+            "checkinBufferMinutes": getattr(p, "checkin_buffer_minutes", 120) or 120,
+            "totalRooms": total_rooms,
+            "occupiedRooms": occupied_rooms,
+            "availableRooms": max(0, total_rooms - occupied_rooms),
+            "occupancyRate": round((occupied_rooms / total_rooms * 100), 1) if total_rooms > 0 else 0.0,
+            "inHouseGuests": len(in_house_stays),
+            "todayIncome": today_income,
+            "todayExpense": today_expense,
+            "monthlyIncome": monthly_income,
+            "monthlyExpense": monthly_expense,
+            "netMonthlyProfit": monthly_income - monthly_expense,
+            "unpaidBalance": unpaid_balance,
+            "employeeCount": emp_count
+        })
+
+    return results
+
+
+@app.get("/api/admin/consolidated-financial-logs")
+def get_consolidated_financial_logs(
+    mgr_payload: dict = Depends(get_manager_me),
+    db: Session = Depends(get_db)
+):
+    caller_role = mgr_payload.get("role")
+    if caller_role not in ["Overall Admin", "Super Admin", "Admin"]:
+        raise HTTPException(status_code=403, detail="Unauthorized.")
+
+    properties = {p.firm_id: p for p in db.query(PropertyAccount).all()}
+    all_bills = db.query(BillModel).order_by(BillModel.date.desc()).all()
+    all_expenses = db.query(ExpenseModel).order_by(ExpenseModel.date.desc()).all()
+    all_bookings = db.query(BookingModel).filter(BookingModel.is_hidden == False).order_by(BookingModel.check_in.desc()).all()
+
+    bill_logs = []
+    for b in all_bills:
+        prop = properties.get(b.firm_id)
+        bill_logs.append({
+            "type": "Bill",
+            "id": b.id,
+            "billNumber": getattr(b, "bill_number", None) or b.id,
+            "propertyName": getattr(b, "property_name", None) or (prop.firm_name if prop else "Unknown"),
+            "propertyCode": prop.property_code if prop else "",
+            "guestName": b.guest_name,
+            "roomNo": b.room_no,
+            "amount": b.total,
+            "date": b.date,
+            "category": "Room Billing & Add-ons"
+        })
+
+    expense_logs = []
+    for e in all_expenses:
+        prop = properties.get(e.firm_id)
+        expense_logs.append({
+            "type": "Expense",
+            "id": e.id,
+            "propertyName": prop.firm_name if prop else "Unknown",
+            "propertyCode": prop.property_code if prop else "",
+            "category": e.category,
+            "description": e.description,
+            "amount": e.amount,
+            "date": e.date
+        })
+
+    booking_logs = []
+    for bk in all_bookings:
+        prop = properties.get(bk.firm_id)
+        tot = float(bk.total_amount or bk.amount_paid or 0.0)
+        paid = float(bk.amount_paid or 0.0)
+        due = max(0.0, tot - paid)
+        booking_logs.append({
+            "type": "Booking Payment",
+            "id": bk.id,
+            "manualId": bk.manual_id or bk.id,
+            "propertyName": prop.firm_name if prop else "Unknown",
+            "propertyCode": prop.property_code if prop else "",
+            "guestName": bk.guest_name,
+            "roomNo": bk.room,
+            "totalAmount": tot,
+            "amountPaid": paid,
+            "balanceDue": due,
+            "paidVia": bk.paid_via,
+            "paymentStatus": bk.payment_status,
+            "date": bk.check_in,
+            "status": bk.status
+        })
+
+    total_revenue = sum(b.total for b in all_bills) + sum(bk.amount_paid or 0.0 for bk in all_bookings if bk.payment_status != "Unpaid")
+    total_expenses = sum(e.amount for e in all_expenses)
+    total_dues = sum(max(0.0, (bk.total_amount or 0.0) - (bk.amount_paid or 0.0)) for bk in all_bookings if bk.status in ["In-House", "Checked-In"])
+
+    return {
+        "summary": {
+            "totalRevenue": total_revenue,
+            "totalExpenses": total_expenses,
+            "netProfit": total_revenue - total_expenses,
+            "totalDues": total_dues,
+            "totalProperties": len(properties)
+        },
+        "bills": bill_logs,
+        "expenses": expense_logs,
+        "bookingPayments": booking_logs
+    }
+
+
+# --- CHECK-IN BUFFER & AUTO-ARCHIVE ENDPOINT (Requirement 22) ---
+
+def _local_day_of(timestamp, tz) -> Optional[str]:
+    """Calendar day (YYYY-MM-DD) in the hotel's timezone for an ISO timestamp."""
+    if not timestamp:
+        return None
+    try:
+        parsed = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(tz).strftime("%Y-%m-%d")
+    except Exception:
+        return None
+
+
+@app.post("/api/bookings/check-auto-archive")
+def run_auto_archive_check(
+    current_user: PropertyAccount = Depends(get_current_property),
+    db: Session = Depends(get_db)
+):
+    # Hotels run on India time; the server may be on UTC
+    hotel_tz = timezone(timedelta(hours=5, minutes=30))  # India has no daylight saving, so a fixed offset is exact
+    now = datetime.now(hotel_tz)
+    today_str = now.strftime("%Y-%m-%d")
+    buffer_mins = getattr(current_user, "checkin_buffer_minutes", 120) or 120
+
+    upcoming = db.query(BookingModel).filter(
+        BookingModel.firm_id == current_user.firm_id,
+        BookingModel.status == "Upcoming",
+        BookingModel.is_hidden == False
+    ).all()
+
+    archived_count = 0
+    for b in upcoming:
+        # A booking confirmed today is never archived today: its check-in window has not been missed yet
+        confirmed_day = _local_day_of(b.confirmed_at or b.created_at, hotel_tz)
+        if confirmed_day and confirmed_day >= today_str:
+            continue
+        # If check-in date is in the past (< today)
+        if b.check_in < today_str:
+            b.status = "Archived"
+            b.notes = ((b.notes or "") + f" [Auto-Archived: No-show on {b.check_in}]").strip()
+            archived_count += 1
+        elif b.check_in == today_str:
+            # If standard check-in 12:00 PM + buffer has passed
+            checkin_hour = 12
+            cutoff_minutes = checkin_hour * 60 + buffer_mins
+            current_minutes = now.hour * 60 + now.minute
+            if current_minutes > cutoff_minutes:
+                b.status = "Archived"
+                b.notes = ((b.notes or "") + f" [Auto-Archived: Check-in buffer of {buffer_mins} mins expired]").strip()
+                archived_count += 1
+
+    if archived_count > 0:
+        db.commit()
+
+    return {"success": True, "archivedCount": archived_count}
+
+
+try:
+    from backend import dropbox_storage
+except (ModuleNotFoundError, ImportError):
+    import dropbox_storage
+
+DOCUMENT_TYPES = {"id_scan", "bill", "report", "backup"}
+MAX_DOCUMENT_BYTES = 15 * 1024 * 1024
+
+
+def document_to_dict(doc: DocumentModel) -> dict:
+    return {
+        "id": doc.id,
+        "docType": doc.doc_type,
+        "refId": doc.ref_id,
+        "fileName": doc.file_name,
+        "mimeType": doc.mime_type,
+        "sizeBytes": doc.size_bytes,
+        "createdBy": doc.created_by,
+        "createdAt": doc.created_at,
+    }
+
+
+@app.post("/api/documents")
+async def upload_document(
+    file: UploadFile = File(...),
+    doc_type: str = Form(...),
+    ref_id: Optional[str] = Form(None),
+    current_user: PropertyAccount = Depends(get_current_property),
+    db: Session = Depends(get_db)
+):
+    if doc_type not in DOCUMENT_TYPES:
+        raise HTTPException(status_code=400, detail="Unknown document type.")
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="The file is empty.")
+    if len(data) > MAX_DOCUMENT_BYTES:
+        raise HTTPException(status_code=413, detail="The file is larger than 15 MB.")
+
+    file_name = os.path.basename(file.filename or "document")
+    try:
+        dropbox_path = dropbox_storage.upload_file(data, f"{current_user.firm_id}/{doc_type}", file_name)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Dropbox upload failed: {e}")
+
+    doc = DocumentModel(
+        id=uuid.uuid4().hex,
+        firm_id=current_user.firm_id,
+        doc_type=doc_type,
+        ref_id=ref_id,
+        file_name=file_name,
+        mime_type=file.content_type,
+        size_bytes=len(data),
+        dropbox_path=dropbox_path,
+        created_by=current_user.name,
+        created_at=datetime.now(timezone.utc).isoformat(),
+    )
+    db.add(doc)
+    db.commit()
+    db.refresh(doc)
+    return document_to_dict(doc)
+
+
+@app.get("/api/documents")
+def list_documents(
+    doc_type: Optional[str] = Query(None),
+    ref_id: Optional[str] = Query(None),
+    current_user: PropertyAccount = Depends(get_current_property),
+    db: Session = Depends(get_db)
+):
+    query = db.query(DocumentModel).filter(DocumentModel.firm_id == current_user.firm_id)
+    if doc_type:
+        query = query.filter(DocumentModel.doc_type == doc_type)
+    if ref_id:
+        query = query.filter(DocumentModel.ref_id == ref_id)
+    docs = query.order_by(DocumentModel.created_at.desc()).all()
+    return [document_to_dict(d) for d in docs]
+
+
+@app.get("/api/documents/{doc_id}/file")
+def get_document_file(
+    doc_id: str,
+    current_user: PropertyAccount = Depends(get_current_property),
+    db: Session = Depends(get_db)
+):
+    doc = db.query(DocumentModel).filter(
+        DocumentModel.id == doc_id,
+        DocumentModel.firm_id == current_user.firm_id
+    ).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found.")
+    try:
+        data = dropbox_storage.download_file(doc.dropbox_path)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Dropbox download failed: {e}")
+    safe_name = doc.file_name.replace('"', "")
+    return Response(
+        content=data,
+        media_type=doc.mime_type or "application/octet-stream",
+        headers={"Content-Disposition": f'inline; filename="{safe_name}"'},
+    )
 
 
 if __name__ == "__main__":

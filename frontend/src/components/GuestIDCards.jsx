@@ -3,11 +3,15 @@ import { useHotel } from '../context/HotelContext';
 import { formatDate } from '../utils/formatters';
 import { IDCardViewerModal } from './IDCardViewerModal';
 import { Search, IdCard, Eye, Upload, CheckCircle2, AlertCircle, FileText } from 'lucide-react';
+import { PropertySwitcher } from './PropertySwitcher';
 
 export const GuestIDCards = () => {
-  const { bookings, updateBooking, isRegisterOpen } = useHotel();
+  const { bookings: allBookings, updateBooking, isRegisterOpen } = useHotel();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedBookingForView, setSelectedBookingForView] = useState(null);
+
+  // Documents of unconfirmed drafts stay in the Drafts section until the booking is confirmed
+  const bookings = allBookings.filter((b) => b.status !== 'Draft');
 
   const filteredBookings = bookings.filter((b) => {
     const term = searchTerm.toLowerCase();
@@ -19,7 +23,16 @@ export const GuestIDCards = () => {
     );
   });
 
-  const totalUploadedIDs = bookings.filter((b) => Boolean(b.idCard)).length;
+  // Each saved document is shown as its own card; a booking with no document list falls back to its single ID scan
+  const documentsOf = (booking) => {
+    const docs = (booking.documents || []).filter((d) => d && d.dataUrl);
+    if (docs.length > 0) return docs;
+    return booking.idCard
+      ? [{ dataUrl: booking.idCard, fileName: booking.idCardName, type: booking.idCardType, number: booking.idCardNumber }]
+      : [];
+  };
+
+  const totalUploadedIDs = bookings.reduce((count, b) => count + documentsOf(b).length, 0);
 
   const handleFileUploadForBooking = (bookingId, e) => {
     if (!isRegisterOpen) {
@@ -47,6 +60,10 @@ export const GuestIDCards = () => {
           <p className="page-subheading">
             Government identity verification cards (Photos & PDFs) mapped to active guest stay profiles.
           </p>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'flex-end' }}>
+          <PropertySwitcher compact />
+
         </div>
       </div>
 
@@ -107,6 +124,7 @@ export const GuestIDCards = () => {
       </div>
 
       <div className="toolbar-row">
+
         <div className="search-box">
           <Search size={16} color="var(--text-muted)" />
           <input
@@ -128,24 +146,32 @@ export const GuestIDCards = () => {
         </div>
       ) : (
         <div className="id-gallery">
-          {filteredBookings.map((booking) => {
-            const isPdf = (booking.idCardName && booking.idCardName.toLowerCase().endsWith('.pdf')) || 
-                          (booking.idCard && booking.idCard.startsWith('data:application/pdf'));
+          {filteredBookings.flatMap((booking) => {
+            const docs = documentsOf(booking);
+            if (docs.length === 0) {
+              return [{ booking, doc: null, index: 0, total: 0 }];
+            }
+            return docs.map((doc, index) => ({ booking, doc, index, total: docs.length }));
+          }).map(({ booking, doc, index, total }) => {
+            const isPdf = doc && (
+              (doc.fileName && doc.fileName.toLowerCase().endsWith('.pdf')) ||
+              (doc.dataUrl && doc.dataUrl.startsWith('data:application/pdf'))
+            );
 
             return (
-              <div key={booking.id} className="id-card-box">
+              <div key={`${booking.id}-${index}`} className="id-card-box">
                 <div className="id-card-img-wrapper">
-                  {booking.idCard ? (
+                  {doc ? (
                     isPdf ? (
                       <div style={{ textAlign: 'center', color: '#be123c', padding: '24px', background: '#fff1f2', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
                         <FileText size={42} color="#dc2626" style={{ marginBottom: '8px' }} />
                         <div style={{ fontSize: '13px', fontWeight: 700, color: '#991b1b' }}>PDF Document</div>
                         <div style={{ fontSize: '11px', color: '#7f1d1d', marginTop: '2px', wordBreak: 'break-all', padding: '0 8px' }}>
-                          {booking.idCardName || 'identity_scan.pdf'}
+                          {doc.fileName || 'identity_scan.pdf'}
                         </div>
                       </div>
                     ) : (
-                      <img src={booking.idCard} alt={`ID Document for ${booking.guestName}`} />
+                      <img src={doc.dataUrl} alt={`ID Document for ${booking.guestName}`} />
                     )
                   ) : (
                     <div style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: '24px' }}>
@@ -155,11 +181,16 @@ export const GuestIDCards = () => {
                     </div>
                   )}
 
-                  <div style={{ position: 'absolute', top: '12px', right: '12px' }}>
-                    {booking.idCard ? (
-                      <span className="id-status-badge has-id">
-                        <CheckCircle2 size={12} /> {isPdf ? 'PDF Verified' : 'Photo Verified'}
-                      </span>
+                  <div style={{ position: 'absolute', top: '12px', right: '12px', display: 'flex', gap: '6px' }}>
+                    {doc ? (
+                      <>
+                        {total > 1 && (
+                          <span className="id-status-badge has-id">Doc {index + 1} of {total}</span>
+                        )}
+                        <span className="id-status-badge has-id">
+                          <CheckCircle2 size={12} /> {isPdf ? 'PDF Verified' : 'Photo Verified'}
+                        </span>
+                      </>
                     ) : (
                       <span className="id-status-badge no-id">
                         Missing Scan
@@ -188,40 +219,50 @@ export const GuestIDCards = () => {
                   </div>
 
                   <div style={{ marginTop: '6px', paddingTop: '12px', borderTop: '1px solid var(--border-color)', display: 'flex', gap: '8px' }}>
-                    {booking.idCard && (
+                    {doc && (
                       <button
                         className="btn-sub"
                         style={{ flex: 1, padding: '7px', fontSize: '12px', justifyContent: 'center' }}
-                        onClick={() => setSelectedBookingForView(booking)}
+                        onClick={() => setSelectedBookingForView({
+                          ...booking,
+                          idCard: doc.dataUrl,
+                          idCardName: doc.fileName,
+                          idCardType: doc.type,
+                          idCardNumber: doc.number
+                        })}
                       >
                         <Eye size={14} color="#d97706" /> Inspect Document
                       </button>
                     )}
 
-                    <input
-                      type="file"
-                      accept="image/*,application/pdf,.pdf"
-                      id={`id-upload-gallery-${booking.id}`}
-                      disabled={!isRegisterOpen}
-                      style={{ display: 'none' }}
-                      onChange={(e) => handleFileUploadForBooking(booking.id, e)}
-                    />
-                    <label
-                      htmlFor={`id-upload-gallery-${booking.id}`}
-                      className="btn-sub"
-                      style={{
-                        flex: 1,
-                        padding: '7px',
-                        fontSize: '12px',
-                        justify: 'center',
-                        margin: 0,
-                        cursor: isRegisterOpen ? 'pointer' : 'not-allowed',
-                        opacity: isRegisterOpen ? 1 : 0.55
-                      }}
-                      title={isRegisterOpen ? "Upload or replace ID card" : "Shift Register is Closed (View-Only Mode)"}
-                    >
-                      <Upload size={14} color="#047857" /> {booking.idCard ? 'Replace' : 'Upload ID'}
-                    </label>
+                    {index === 0 && (
+                      <>
+                        <input
+                          type="file"
+                          accept="image/*,application/pdf,.pdf"
+                          id={`id-upload-gallery-${booking.id}`}
+                          disabled={!isRegisterOpen}
+                          style={{ display: 'none' }}
+                          onChange={(e) => handleFileUploadForBooking(booking.id, e)}
+                        />
+                        <label
+                          htmlFor={`id-upload-gallery-${booking.id}`}
+                          className="btn-sub"
+                          style={{
+                            flex: 1,
+                            padding: '7px',
+                            fontSize: '12px',
+                            justify: 'center',
+                            margin: 0,
+                            cursor: isRegisterOpen ? 'pointer' : 'not-allowed',
+                            opacity: isRegisterOpen ? 1 : 0.55
+                          }}
+                          title={isRegisterOpen ? "Upload or replace ID card" : "Shift Register is Closed (View-Only Mode)"}
+                        >
+                          <Upload size={14} color="#047857" /> {doc ? 'Replace' : 'Upload ID'}
+                        </label>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
@@ -229,6 +270,7 @@ export const GuestIDCards = () => {
           })}
         </div>
       )}
+
 
       {selectedBookingForView && (
         <IDCardViewerModal

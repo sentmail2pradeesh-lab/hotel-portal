@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useHotel } from '../context/HotelContext';
-import { generateSystemBookingId, getAutoStayStatus, calculateNights, formatCurrency } from '../utils/formatters';
+import { localDateStr, generateSystemBookingId, getAutoStayStatus, calculateNights, formatCurrency } from '../utils/formatters';
 import { IDCardViewerModal } from './IDCardViewerModal';
 import { 
   Upload, X, CheckCircle2, FileText, Sparkles, User, Phone, 
@@ -32,10 +32,10 @@ export const BookingModal = ({ isOpen, onClose, initialData = null }) => {
   }, [guestSellableRooms, occupiedRooms]);
 
   // Default dates: check-in today, check-out tomorrow
-  const todayIso = new Date().toISOString().split('T')[0];
+  const todayIso = localDateStr();
   const tomorrowObj = new Date();
   tomorrowObj.setDate(tomorrowObj.getDate() + 1);
-  const tomorrowIso = tomorrowObj.toISOString().split('T')[0];
+  const tomorrowIso = localDateStr(tomorrowObj);
 
   const isHiddenAllocation = Boolean(initialData?.isHidden);
   const [id] = useState(initialData?.id || generateSystemBookingId(bookings));
@@ -197,8 +197,9 @@ export const BookingModal = ({ isOpen, onClose, initialData = null }) => {
       alert('Phone number is mandatory for reservation.');
       return;
     }
-    if (!email.trim()) {
-      alert('Guest Email address is mandatory for reservation.');
+    // Requirement 3: Guest email is NOT mandatory, but doc type is mandatory
+    if (!idCardType || !idCardType.trim()) {
+      alert('Document type is mandatory for stay registration.');
       return;
     }
     
@@ -230,13 +231,15 @@ export const BookingModal = ({ isOpen, onClose, initialData = null }) => {
       }
     }
 
-    if (isNetPayment && !txnId.trim()) {
-      alert(`Please enter the Transaction ID / Reference Number for ${paidVia} payment.`);
+    // Requirement 14: Txn ID / UTR is mandatory ONLY for UPI
+    const isUpi = paymentOption === 'UPI (owner upi)' || paymentOption === 'Other UPI' || paidVia.toLowerCase().includes('upi');
+    if (isUpi && !txnId.trim()) {
+      alert(`Please enter the Transaction ID / UTR Reference Number for UPI payment.`);
       return;
     }
 
     // Auto-calculate stay status from stay dates
-    const autoStatus = getAutoStayStatus(checkIn, checkOut, initialData?.status);
+    const autoStatus = getAutoStayStatus(checkIn, checkOut, initialData?.status, 120, initialData?.confirmedAt);
 
     const finalTotal = parseFloat(totalAmount) || parseFloat(amountPaid) || 0;
     const finalAmountPaid = paymentOption === 'Unpaid' 
@@ -406,7 +409,7 @@ export const BookingModal = ({ isOpen, onClose, initialData = null }) => {
                   <div className="form-group">
                     <label className="form-label-pro">
                       <span>Guest Mail ID</span>
-                      <span style={{ color: '#dc2626' }}>*</span>
+                      <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 500 }}>Optional</span>
                     </label>
                     <div className="form-input-wrapper">
                       <Mail size={15} className="form-input-icon" />
@@ -416,7 +419,6 @@ export const BookingModal = ({ isOpen, onClose, initialData = null }) => {
                         placeholder="guest@domain.com"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
-                        required
                       />
                     </div>
                   </div>

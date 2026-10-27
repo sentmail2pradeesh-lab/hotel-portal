@@ -7,26 +7,33 @@ import {
   CheckCircle2, 
   Copy, 
   Check, 
-  Building2, 
-  Mail, 
-  Lock, 
-  User, 
-  RefreshCw, 
+  Building2,
+  Lock,
+  User,
+  RefreshCw,
   ShieldAlert,
   Users,
-  Shield,
-  Eye,
-  Briefcase
+  Eye
 } from 'lucide-react';
 
+// account: true roles get a login (manager/admin accounts); false roles are staff records on the property
+const ROLE_OPTIONS = [
+  { value: 'Manager', hint: 'Front-desk & bookings operations', color: '#047857', bg: '#ecfdf5', account: true },
+  { value: 'Admin', hint: 'All properties oversight & staff', color: '#4f46e5', bg: '#eef2ff', account: true },
+  { value: 'Front Desk', hint: 'Guest reception & check-in desk', color: '#0284c7', bg: '#f0f9ff', account: false },
+  { value: 'House Keeping', hint: 'Room cleaning & upkeep', color: '#d97706', bg: '#fffbeb', account: false }
+];
+
 export const CreateManagerModal = ({ isOpen, onClose }) => {
-  const { propertiesList, createManager, currentUser, isSuperAdmin, impersonateUser } = useHotel();
+  const { propertiesList, createManager, addEmployee, isSuperAdmin, impersonateUser } = useHotel();
 
   const [activeTab, setActiveTab] = useState('create'); // 'create' | 'list'
   const [selectedPropertyId, setSelectedPropertyId] = useState('');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
-  const [role, setRole] = useState('Manager'); // 'Manager' | 'Admin'
+  const [role, setRole] = useState('Manager'); // one of ROLE_OPTIONS
+  const [staffSaved, setStaffSaved] = useState('');
+  const isLoginRole = ROLE_OPTIONS.find(r => r.value === role)?.account ?? true;
   const [tempPassword, setTempPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -81,6 +88,24 @@ export const CreateManagerModal = ({ isOpen, onClose }) => {
       setError('Please enter the full name.');
       return;
     }
+
+    // Front Desk / House Keeping are property staff records without a login
+    if (!isLoginRole) {
+      setLoading(true);
+      try {
+        const res = await addEmployee(effectivePropertyId, { name: name.trim(), role });
+        if (res.success) {
+          setStaffSaved(`${role} "${name.trim()}" added to the property.`);
+          setName('');
+        } else {
+          setError(res.message || 'Failed to add staff member.');
+        }
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
     if (!email.trim() || email.trim().length < 3) {
       setError('Please enter a valid username or email (at least 3 characters).');
       return;
@@ -167,12 +192,12 @@ Login Portal: ${loginUrl}
             </div>
             <div>
               <h3 className="modal-heading" style={{ fontSize: '18px' }}>
-                {isSuperAdmin ? 'Create Admin or Manager' : 'Create Property Manager'}
+                {isSuperAdmin ? 'Add Employees & Managers' : 'Add Property Employee / Manager'}
               </h3>
               <p style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
                 {isSuperAdmin 
-                  ? 'Provision Admin or Manager login credentials and assign to properties' 
-                  : 'Provision manager credentials for front-desk operations'}
+                  ? 'Provision Admin, Manager, or Staff login credentials and assign to properties' 
+                  : 'Provision employee & staff credentials for front-desk operations'}
               </p>
             </div>
           </div>
@@ -333,61 +358,41 @@ Login Portal: ${loginUrl}
                       Account Role <span style={{ color: '#e11d48' }}>*</span>
                     </label>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                      <label style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        padding: '10px 12px',
-                        borderRadius: 'var(--radius-md)',
-                        border: `1.5px solid ${role === 'Manager' ? '#047857' : '#e2e8f0'}`,
-                        background: role === 'Manager' ? '#ecfdf5' : '#ffffff',
-                        cursor: 'pointer'
-                      }}>
-                        <input
-                          type="radio"
-                          name="userRole"
-                          value="Manager"
-                          checked={role === 'Manager'}
-                          onChange={() => setRole('Manager')}
-                          style={{ accentColor: '#047857' }}
-                        />
-                        <div>
-                          <div style={{ fontSize: '13px', fontWeight: 700, color: role === 'Manager' ? '#047857' : 'var(--text-main)' }}>
-                            Manager
-                          </div>
-                          <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                            Front-desk & bookings operations
-                          </div>
-                        </div>
-                      </label>
-
-                      <label style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        padding: '10px 12px',
-                        borderRadius: 'var(--radius-md)',
-                        border: `1.5px solid ${role === 'Admin' ? '#4f46e5' : '#e2e8f0'}`,
-                        background: role === 'Admin' ? '#eef2ff' : '#ffffff',
-                        cursor: 'pointer'
-                      }}>
-                        <input
-                          type="radio"
-                          name="userRole"
-                          value="Admin"
-                          checked={role === 'Admin'}
-                          onChange={() => setRole('Admin')}
-                          style={{ accentColor: '#4f46e5' }}
-                        />
-                        <div>
-                          <div style={{ fontSize: '13px', fontWeight: 700, color: role === 'Admin' ? '#4f46e5' : 'var(--text-main)' }}>
-                            Admin
-                          </div>
-                          <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                            All properties oversight & staff
-                          </div>
-                        </div>
-                      </label>
+                      {ROLE_OPTIONS.map((opt) => {
+                        const selected = role === opt.value;
+                        return (
+                          <label
+                            key={opt.value}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '8px',
+                              padding: '10px 12px',
+                              borderRadius: 'var(--radius-md)',
+                              border: `1.5px solid ${selected ? opt.color : '#e2e8f0'}`,
+                              background: selected ? opt.bg : '#ffffff',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            <input
+                              type="radio"
+                              name="userRole"
+                              value={opt.value}
+                              checked={selected}
+                              onChange={() => { setRole(opt.value); setStaffSaved(''); }}
+                              style={{ accentColor: opt.color }}
+                            />
+                            <div>
+                              <div style={{ fontSize: '13px', fontWeight: 700, color: selected ? opt.color : 'var(--text-main)' }}>
+                                {opt.value}
+                              </div>
+                              <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                                {opt.hint}
+                              </div>
+                            </div>
+                          </label>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
@@ -419,6 +424,12 @@ Login Portal: ${loginUrl}
                   </span>
                 </div>
 
+                {staffSaved && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 12px', borderRadius: 'var(--radius-md)', background: '#ecfdf5', border: '1px solid #a7f3d0', color: '#047857', fontSize: '13px', fontWeight: 600 }}>
+                    <CheckCircle2 size={15} /> {staffSaved}
+                  </div>
+                )}
+
                 {/* Name */}
                 <div className="form-group">
                   <label className="form-label">
@@ -437,6 +448,7 @@ Login Portal: ${loginUrl}
                   </div>
                 </div>
 
+                {isLoginRole && (<>
                 {/* Username / Email */}
                 <div className="form-group">
                   <label className="form-label">
@@ -498,6 +510,8 @@ Login Portal: ${loginUrl}
                   </span>
                 </div>
 
+                </>)}
+
                 {/* Submit button */}
                 <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
                   <button
@@ -506,7 +520,11 @@ Login Portal: ${loginUrl}
                     disabled={loading || propertiesList.length === 0}
                     style={{ flex: 1, padding: '12px', fontSize: '14px' }}
                   >
-                    {loading ? 'Creating Account...' : <><UserPlus size={16} /> Create {role} Account</>}
+                    {loading
+                      ? 'Saving...'
+                      : (isLoginRole
+                        ? <><UserPlus size={16} /> Create {role} Account</>
+                        : <><UserPlus size={16} /> Add {role}</>)}
                   </button>
                   <button
                     type="button"

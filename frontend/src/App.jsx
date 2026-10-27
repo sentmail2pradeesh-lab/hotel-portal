@@ -10,6 +10,7 @@ import { GuestIDCards } from './components/GuestIDCards';
 import { SettingsView } from './components/SettingsView';
 import { AuthView } from './components/AuthView';
 import { BookingModal } from './components/BookingModal';
+import { CreateBookingPage } from './components/CreateBookingPage';
 import { ConnectingScreen } from './components/ConnectingScreen';
 import { Lock } from 'lucide-react';
 
@@ -21,6 +22,8 @@ const MainView = () => {
       return <Overview />;
     case 'bookings':
       return <Bookings />;
+    case 'create-booking':
+      return <CreateBookingPage />;
     case 'expenses':
       return <Expenses />;
     case 'bills':

@@ -1,4 +1,5 @@
 // Currency and date formatting utilities
+import { storeDocument } from '../services/api';
 
 export const ALL_PROPERTY_ROOMS = [
   '101', '102', '103', '104', '105',
@@ -53,7 +54,8 @@ export const generateSystemBookingId = (existingBookings = []) => {
 /**
  * CSV file export helper.
  */
-export const exportToCSV = (filename, headers, rows) => {
+// storeAs ({ docType, refId }) also saves the generated report to Dropbox
+export const exportToCSV = (filename, headers, rows, storeAs = null) => {
   const csvContent = [
     headers.join(','),
     ...rows.map(row => row.map(val => `"${String(val ?? '').replace(/"/g, '""')}"`).join(','))
@@ -67,14 +69,34 @@ export const exportToCSV = (filename, headers, rows) => {
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
+
+  if (storeAs) {
+    storeDocument(blob, filename, storeAs).catch((err) => {
+      alert(`The report was downloaded, but saving it to Dropbox failed: ${err.message}`);
+    });
+  }
 };
 
-export const getAutoStayStatus = (checkInStr, checkOutStr, currentStatus) => {
+// Local calendar date as YYYY-MM-DD. Avoids toISOString(), which is UTC and shifts the date for India (UTC+5:30).
+export const localDateStr = (date = new Date()) => {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
+
+// statusSetAt: when the booking became Upcoming (confirmation time). Only bookings confirmed before today
+// can be archived as no-shows, so a booking confirmed today stays Upcoming even after the check-in deadline.
+export const getAutoStayStatus = (checkInStr, checkOutStr, currentStatus, bufferMinutes = 120, statusSetAt = null) => {
+  if (currentStatus === 'Archived') return 'Archived';
   if (currentStatus === 'Completed') return 'Completed';
-  
-  const today = new Date();
+  if (currentStatus === 'Draft') return 'Draft';
+
+  const now = new Date();
+  const today = new Date(now);
   today.setHours(0, 0, 0, 0);
-  const todayStr = today.toISOString().split('T')[0];
+  const todayStr = localDateStr(today);
+  const confirmedBeforeToday = !statusSetAt || localDateStr(new Date(statusSetAt)) < todayStr;
 
   const inDate = checkInStr ? checkInStr.split('T')[0] : '';
   const outDate = checkOutStr ? checkOutStr.split('T')[0] : '';
@@ -86,9 +108,22 @@ export const getAutoStayStatus = (checkInStr, checkOutStr, currentStatus) => {
 
   if (currentStatus === 'In-House') return 'In-House';
 
-  if (inDate && inDate <= todayStr && (!outDate || outDate >= todayStr)) {
-    return 'In-House';
+  // Check-in buffer check: if stay was scheduled for past date and guest never checked in
+  if (inDate && inDate < todayStr && currentStatus !== 'In-House' && confirmedBeforeToday) {
+    return 'Archived';
   }
+
+  // Check-in buffer check for today: 12:00 PM standard check-in + bufferMinutes
+  if (inDate && inDate === todayStr && currentStatus !== 'In-House') {
+    const checkinDeadline = new Date(today);
+    checkinDeadline.setHours(12, 0, 0, 0); // 12:00 PM standard check-in time
+    checkinDeadline.setMinutes(checkinDeadline.getMinutes() + (parseInt(bufferMinutes, 10) || 120));
+    if (now > checkinDeadline && currentStatus === 'Upcoming' && confirmedBeforeToday) {
+      return 'Archived';
+    }
+    return 'Upcoming';
+  }
+
   if (inDate && inDate > todayStr) {
     return 'Upcoming';
   }

@@ -4,9 +4,9 @@ import { generateId, formatCurrency } from '../utils/formatters';
 import { X, Plus, FileText } from 'lucide-react';
 
 export const BillModal = ({ isOpen, onClose, onCreated, initialData = null }) => {
-  const { bookings, addBill, updateBill, isRegisterOpen } = useHotel();
+  const { bookings, addBill, updateBill, isRegisterOpen, currentUser } = useHotel();
 
-  const [billNo, setBillNo] = useState(initialData?.id || generateId('BILL'));
+  const [billNo, setBillNo] = useState(initialData?.billNumber || initialData?.id || generateId('BILL'));
   const [selectedBookingId, setSelectedBookingId] = useState(initialData?.bookingId || '');
   const [guestName, setGuestName] = useState(initialData?.guestName || '');
   const [roomNo, setRoomNo] = useState(initialData?.roomNo || '');
@@ -66,6 +66,8 @@ export const BillModal = ({ isOpen, onClose, onCreated, initialData = null }) =>
 
     const finalBill = {
       id: billNo.trim() || generateId('BILL'),
+      billNumber: initialData?.billNumber || billNo.trim() || `BILL-${currentUser?.propertyCode || 'ASZ'}-${Date.now().toString().slice(-4)}`,
+      propertyName: initialData?.propertyName || currentUser?.firmName || 'Cardelia Hotel',
       bookingId: selectedBookingId || null,
       guestName: guestName || 'Walk-in Guest',
       roomNo: roomNo || 'N/A',
@@ -203,11 +205,12 @@ export const BillModal = ({ isOpen, onClose, onCreated, initialData = null }) =>
             border: '1px solid #fde68a',
             borderRadius: 'var(--radius-md)', 
             display: 'flex', 
-            justify: 'space-between', 
-            alignItems: 'center' 
+            justifyContent: 'space-between', 
+            alignItems: 'center',
+            gap: '16px'
           }}>
-            <span style={{ fontSize: '14px', fontWeight: 800, color: '#0f172a' }}>TOTAL INVOICE AMOUNT</span>
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '24px', fontWeight: 800, color: '#d97706' }}>
+            <span style={{ fontSize: '14px', fontWeight: 800, color: '#0f172a', whiteSpace: 'nowrap' }}>TOTAL INVOICE AMOUNT</span>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '24px', fontWeight: 800, color: '#d97706', whiteSpace: 'nowrap', textAlign: 'right' }}>
               {formatCurrency(grandTotal)}
             </span>
           </div>

@@ -38,6 +38,7 @@ import {
 } from 'lucide-react';
 import { AddPropertyModal } from './AddPropertyModal';
 import { EditPropertyModal } from './EditPropertyModal';
+import { PropertySwitcher } from './PropertySwitcher';
 import { CreateManagerModal } from './CreateManagerModal';
 
 export const SettingsView = () => {
@@ -67,14 +68,37 @@ export const SettingsView = () => {
     bookings,
     expenses,
     bills,
-    isRegisterOpen
+    isRegisterOpen,
+    employees = [],
+    loadEmployees,
+    addEmployee,
+    editEmployee,
+    removeEmployee
   } = useHotel();
 
-  // Active section tab inside Settings: 'analytics' | 'rooms' | 'profile' | 'features' | 'vault'
+  // Active section tab inside Settings: 'analytics' | 'rooms' | 'profile' | 'features' | 'vault' | 'employees'
   const [section, setSection] = useState('analytics');
   const [showAddPropertyModal, setShowAddPropertyModal] = useState(false);
   const [showCreateManagerModal, setShowCreateManagerModal] = useState(false);
   const [timeoutSuccess, setTimeoutSuccess] = useState('');
+
+  // Employees Roster State (Requirement 16)
+  const [empFirmId, setEmpFirmId] = useState(activePropertyId || currentUser?.propertyId || '');
+
+  // Follow the active property: when it changes, the roster moves to it and reloads its staff
+  useEffect(() => {
+    if (!activePropertyId) return;
+    setEmpFirmId(activePropertyId);
+    if (section === 'employees' && loadEmployees) loadEmployees(activePropertyId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activePropertyId]);
+  const [empRole, setEmpRole] = useState('Front Desk');
+  const [empName, setEmpName] = useState('');
+  const [empPhone, setEmpPhone] = useState('');
+  const [empEmail, setEmpEmail] = useState('');
+  const [empFeedback, setEmpFeedback] = useState('');
+  const [empLoading, setEmpLoading] = useState(false);
+  const [editingEmployee, setEditingEmployee] = useState(null);
 
   // Delete Property Modal State
   const [propertyToDelete, setPropertyToDelete] = useState(null);
@@ -383,7 +407,8 @@ Login Portal: ${loginUrl}
     return true; // 'all'
   };
 
-  const filteredBookings = bookings.filter((b) => isDateInFilter(b.checkIn || b.createdAt));
+  // Drafts are unconfirmed, so their amounts are not counted as intake
+  const filteredBookings = bookings.filter((b) => b.status !== 'Draft' && isDateInFilter(b.checkIn || b.createdAt));
   const filteredExpenses = expenses.filter((e) => isDateInFilter(e.date));
   const filteredBills = bills.filter((b) => isDateInFilter(b.date));
 
@@ -434,7 +459,7 @@ Login Portal: ${loginUrl}
       item.amount,
       item.paidVia
     ]);
-    exportToCSV(`property_financial_report_${filterMode}_${todayStr}.csv`, headers, rows);
+    exportToCSV(`property_financial_report_${filterMode}_${todayStr}.csv`, headers, rows, { docType: 'report' });
   };
 
   const handlePrintSummary = () => {
@@ -443,14 +468,69 @@ Login Portal: ${loginUrl}
 
   const occupiedRoomsSet = new Set(bookings.map(b => b.room));
 
+  // Active property snapshot shown above the tabs (same figures the main dashboard uses)
+  const activeInHouseCount = roomsDetails.filter(r => r.isOccupied).length;
+  const activeStaffCount = roomsDetails.filter(r => r.isStaffRoom).length;
+  const activeSellableCount = Math.max(0, roomsList.length - activeStaffCount);
+  const activeAvailableCount = Math.max(0, activeSellableCount - activeInHouseCount);
+  const activeProperty = propertiesList.find(p => p.firmId === activePropertyId);
+
   return (
     <div className="settings-view">
       <div className="page-header-row">
         <div>
           <h1 className="page-heading">Settings & Executive Analytics</h1>
-          <p className="page-subheading">Manage property rooms, view filtered financial audit logs, and export summary reports.</p>
+          <p className="page-subheading">Common controls and active property overview. Choose a section below to manage its details.</p>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'flex-end' }}>
+          <PropertySwitcher compact />
+
         </div>
       </div>
+
+      {/* Common bar: property switcher + active property summary, shared by every tab below */}
+      {propertiesList.length > 0 && (
+        <div className="settings-common-bar" style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginBottom: '20px' }}>
+          <div className="metrics-row" style={{ gridTemplateColumns: 'repeat(4, 1fr)', marginBottom: 0 }}>
+            <div className="metric-card">
+              <div className="metric-card-header">
+                <span className="metric-card-label">Sellable Rooms</span>
+              </div>
+              <div className="metric-card-value-row">
+                <span className="metric-card-value">{activeSellableCount}</span>
+              </div>
+              <div className="metric-card-footer"><span>{activeProperty?.firmName || 'Active property'}</span></div>
+            </div>
+            <div className="metric-card">
+              <div className="metric-card-header">
+                <span className="metric-card-label">In-House Now</span>
+              </div>
+              <div className="metric-card-value-row">
+                <span className="metric-card-value" style={{ color: '#d97706' }}>{activeInHouseCount}</span>
+              </div>
+              <div className="metric-card-footer"><span>Currently checked-in rooms</span></div>
+            </div>
+            <div className="metric-card">
+              <div className="metric-card-header">
+                <span className="metric-card-label">Available Now</span>
+              </div>
+              <div className="metric-card-value-row">
+                <span className="metric-card-value" style={{ color: '#047857' }}>{activeAvailableCount}</span>
+              </div>
+              <div className="metric-card-footer"><span>Ready for new stays</span></div>
+            </div>
+            <div className="metric-card">
+              <div className="metric-card-header">
+                <span className="metric-card-label">Staff Quarters</span>
+              </div>
+              <div className="metric-card-value-row">
+                <span className="metric-card-value">{activeStaffCount}</span>
+              </div>
+              <div className="metric-card-footer"><span>Excluded from guest inventory</span></div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Settings Navigation Tabs */}
       <div className="settings-pro-tabs">
@@ -493,6 +573,18 @@ Login Portal: ${loginUrl}
             }}
           >
             <ShieldCheck size={16} /> Staff Credentials Vault
+          </button>
+        )}
+        {(isSuperAdmin || isAdmin) && (
+          <button 
+            className={`settings-pro-tab-btn ${section === 'employees' ? 'active' : ''}`}
+            onClick={() => {
+              setSection('employees');
+              const target = empFirmId || activePropertyId || currentUser?.propertyId;
+              if (target && loadEmployees) loadEmployees(target);
+            }}
+          >
+            <Users size={16} /> Employee Roster
           </button>
         )}
       </div>
@@ -1793,26 +1885,19 @@ Login Portal: ${loginUrl}
                         <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>{feat.desc}</div>
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={() => handleToggleChange('Admin', feat.key, isEnabled)}
-                        style={{
-                          background: isEnabled ? '#4f46e5' : '#cbd5e1',
-                          color: '#ffffff',
-                          border: 'none',
-                          borderRadius: '20px',
-                          padding: '4px 12px',
-                          fontSize: '11px',
-                          fontWeight: 800,
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '4px',
-                          transition: 'background 0.2s ease'
-                        }}
-                      >
-                        {isEnabled ? <><Check size={12} /> RELEASED</> : 'RESTRICTED'}
-                      </button>
+                      <label className="sliding-toggle-wrapper">
+                        <span className={`switch-label-badge ${isEnabled ? 'active-admin' : 'inactive'}`}>
+                          {isEnabled ? 'RELEASED' : 'RESTRICTED'}
+                        </span>
+                        <div className="switch-slider">
+                          <input
+                            type="checkbox"
+                            checked={isEnabled}
+                            onChange={() => handleToggleChange('Admin', feat.key, isEnabled)}
+                          />
+                          <span className="switch-track" />
+                        </div>
+                      </label>
                     </div>
                   );
                 })}
@@ -1869,26 +1954,19 @@ Login Portal: ${loginUrl}
                         <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>{feat.desc}</div>
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={() => handleToggleChange('Manager', feat.key, isEnabled)}
-                        style={{
-                          background: isEnabled ? '#047857' : '#cbd5e1',
-                          color: '#ffffff',
-                          border: 'none',
-                          borderRadius: '20px',
-                          padding: '4px 12px',
-                          fontSize: '11px',
-                          fontWeight: 800,
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '4px',
-                          transition: 'background 0.2s ease'
-                        }}
-                      >
-                        {isEnabled ? <><Check size={12} /> RELEASED</> : 'RESTRICTED'}
-                      </button>
+                      <label className="sliding-toggle-wrapper">
+                        <span className={`switch-label-badge ${isEnabled ? 'active-manager' : 'inactive'}`}>
+                          {isEnabled ? 'RELEASED' : 'RESTRICTED'}
+                        </span>
+                        <div className="switch-slider">
+                          <input
+                            type="checkbox"
+                            checked={isEnabled}
+                            onChange={() => handleToggleChange('Manager', feat.key, isEnabled)}
+                          />
+                          <span className="switch-track manager-track" />
+                        </div>
+                      </label>
                     </div>
                   );
                 })}
@@ -2083,6 +2161,404 @@ Login Portal: ${loginUrl}
         </div>
       )}
 
+      {/* SECTION: PROPERTY EMPLOYEES ROSTER (Requirement 16) */}
+      {section === 'employees' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          
+          {/* Header & Property Selector */}
+          <div className="pro-card">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', marginBottom: '20px' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 800, color: 'var(--text-main)' }}>
+                  Property Staff &amp; Employee Roster
+                </h3>
+                <p style={{ margin: '4px 0 0', fontSize: '13px', color: 'var(--text-secondary)' }}>
+                  Manage staffing headcounts and assign staff across Manager, Front Desk, and Housekeeping roles.
+                </p>
+              </div>
+
+              {/* Property Selector for Super Admin */}
+              {isSuperAdmin && propertiesList && propertiesList.length > 0 && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-secondary)' }}>Selected Property:</span>
+                  <select
+                    className="form-input"
+                    value={empFirmId || activePropertyId || ''}
+                    onChange={(e) => {
+                      const newFirmId = e.target.value;
+                      setEmpFirmId(newFirmId);
+                      if (loadEmployees) loadEmployees(newFirmId);
+                    }}
+                    style={{ padding: '6px 12px', fontSize: '13px', fontWeight: 600, width: 'auto' }}
+                  >
+                    {propertiesList.map(p => (
+                      <option key={p.firmId} value={p.firmId}>
+                        {p.firmName} ({p.propertyCode || p.firmId})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+
+            {/* Headcount Breakdown Metrics */}
+            {(() => {
+              const currentFirmTarget = empFirmId || activePropertyId || currentUser?.propertyId;
+              const firmEmployees = (employees || []).filter(e => !currentFirmTarget || e.firm_id === currentFirmTarget || e.firmId === currentFirmTarget);
+              const managersCount = firmEmployees.filter(e => e.role === 'Manager').length;
+              const frontDeskCount = firmEmployees.filter(e => e.role === 'Front Desk').length;
+              const housekeepingCount = firmEmployees.filter(e => e.role === 'House Keeping' || e.role === 'Housekeeping').length;
+
+              return (
+                <div className="metrics-row" style={{ gridTemplateColumns: 'repeat(4, 1fr)', marginBottom: '20px' }}>
+                  <div className="metric-card">
+                    <div className="metric-card-header">
+                      <span className="metric-card-label">Total Staff Count</span>
+                      <div className="metric-icon-badge blue"><Users size={15} /></div>
+                    </div>
+                    <div className="metric-card-value-row">
+                      <span className="metric-card-value">{firmEmployees.length}</span>
+                      <span className="metric-tag-pill neutral">Active</span>
+                    </div>
+                    <div className="metric-card-footer"><span>All functional staff</span></div>
+                  </div>
+
+                  <div className="metric-card">
+                    <div className="metric-card-header">
+                      <span className="metric-card-label">Managers</span>
+                      <div className="metric-icon-badge emerald"><ShieldCheck size={15} /></div>
+                    </div>
+                    <div className="metric-card-value-row">
+                      <span className="metric-card-value" style={{ color: '#047857' }}>{managersCount}</span>
+                      <span className="metric-tag-pill active">Executive</span>
+                    </div>
+                    <div className="metric-card-footer"><span>Operations oversight</span></div>
+                  </div>
+
+                  <div className="metric-card">
+                    <div className="metric-card-header">
+                      <span className="metric-card-label">Front Desk Staff</span>
+                      <div className="metric-icon-badge teal"><UserPlus size={15} /></div>
+                    </div>
+                    <div className="metric-card-value-row">
+                      <span className="metric-card-value" style={{ color: '#0f766e' }}>{frontDeskCount}</span>
+                      <span className="metric-tag-pill neutral">Reception</span>
+                    </div>
+                    <div className="metric-card-footer"><span>Guest check-ins &amp; bills</span></div>
+                  </div>
+
+                  <div className="metric-card">
+                    <div className="metric-card-header">
+                      <span className="metric-card-label">Housekeeping</span>
+                      <div className="metric-icon-badge rose"><Sparkles size={15} /></div>
+                    </div>
+                    <div className="metric-card-value-row">
+                      <span className="metric-card-value" style={{ color: '#b91c1c' }}>{housekeepingCount}</span>
+                      <span className="metric-tag-pill neutral">Maintenance</span>
+                    </div>
+                    <div className="metric-card-footer"><span>Cleaning &amp; turnovers</span></div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Add Employee Form */}
+            <div style={{
+              background: '#f8fafc',
+              border: '1px solid #e2e8f0',
+              borderRadius: 'var(--radius-lg)',
+              padding: '20px',
+              marginBottom: '24px'
+            }}>
+              <h4 style={{ margin: '0 0 14px 0', fontSize: '14px', fontWeight: 800, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Plus size={16} color="#4f46e5" /> Add Staff Member to Firm
+              </h4>
+
+              <form onSubmit={async (e) => {
+                e.preventDefault();
+                if (!empName.trim()) {
+                  setEmpFeedback('Please enter employee name.');
+                  return;
+                }
+                const target = empFirmId || activePropertyId || currentUser?.propertyId;
+                if (!target) {
+                  setEmpFeedback('Please select a target property firm.');
+                  return;
+                }
+                setEmpLoading(true);
+                setEmpFeedback('');
+                try {
+                  const res = await addEmployee(target, {
+                    name: empName.trim(),
+                    role: empRole,
+                    phone: empPhone.trim() || null,
+                    email: empEmail.trim() || null
+                  });
+                  setEmpLoading(false);
+                  if (res.success) {
+                    setEmpName('');
+                    setEmpPhone('');
+                    setEmpEmail('');
+                    setEmpFeedback('Employee added successfully!');
+                    setTimeout(() => setEmpFeedback(''), 3000);
+                  } else {
+                    setEmpFeedback(res.message || 'Failed to add employee');
+                  }
+                } catch (err) {
+                  setEmpLoading(false);
+                  setEmpFeedback(err.message || 'Failed to add employee');
+                }
+              }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 2fr 1.5fr 1.8fr auto', gap: '12px', alignItems: 'end' }}>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label" style={{ fontSize: '11px', fontWeight: 700 }}>Role</label>
+                    <select
+                      className="form-input"
+                      value={empRole}
+                      onChange={(e) => setEmpRole(e.target.value)}
+                      style={{ fontSize: '13px', padding: '8px 10px' }}
+                    >
+                      <option value="Manager">Manager</option>
+                      <option value="Front Desk">Front Desk</option>
+                      <option value="House Keeping">House Keeping</option>
+                    </select>
+                  </div>
+
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label" style={{ fontSize: '11px', fontWeight: 700 }}>Full Name *</label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      placeholder="e.g. Ramesh Kumar"
+                      value={empName}
+                      onChange={(e) => setEmpName(e.target.value)}
+                      style={{ fontSize: '13px', padding: '8px 10px' }}
+                      required
+                    />
+                  </div>
+
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label" style={{ fontSize: '11px', fontWeight: 700 }}>Phone (Optional)</label>
+                    <input
+                      type="tel"
+                      className="form-input"
+                      placeholder="+91 98765 43210"
+                      value={empPhone}
+                      onChange={(e) => setEmpPhone(e.target.value)}
+                      style={{ fontSize: '13px', padding: '8px 10px' }}
+                    />
+                  </div>
+
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label" style={{ fontSize: '11px', fontWeight: 700 }}>Email (Optional)</label>
+                    <input
+                      type="email"
+                      className="form-input"
+                      placeholder="staff@hotel.com"
+                      value={empEmail}
+                      onChange={(e) => setEmpEmail(e.target.value)}
+                      style={{ fontSize: '13px', padding: '8px 10px' }}
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="btn-main"
+                    disabled={empLoading}
+                    style={{ padding: '8px 18px', fontSize: '13px', height: '38px', whiteSpace: 'nowrap' }}
+                  >
+                    {empLoading ? 'Adding...' : 'Add Employee'}
+                  </button>
+                </div>
+
+                {empFeedback && (
+                  <div style={{
+                    marginTop: '10px',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    color: empFeedback.includes('success') ? '#047857' : '#b91c1c'
+                  }}>
+                    {empFeedback}
+                  </div>
+                )}
+              </form>
+            </div>
+
+            {/* Employee Roster Table */}
+            {(() => {
+              const currentFirmTarget = empFirmId || activePropertyId || currentUser?.propertyId;
+              const firmEmployees = (employees || []).filter(e => !currentFirmTarget || e.firm_id === currentFirmTarget || e.firmId === currentFirmTarget);
+
+              if (firmEmployees.length === 0) {
+                return (
+                  <div className="empty-state" style={{ padding: '40px 0' }}>
+                    <Users size={36} color="#94a3b8" style={{ marginBottom: '10px' }} />
+                    <p style={{ margin: 0, fontWeight: 600, color: 'var(--text-secondary)' }}>
+                      No staff members registered for this property yet.
+                    </p>
+                    <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                      Use the form above to add Managers, Front Desk, or Housekeeping staff.
+                    </span>
+                  </div>
+                );
+              }
+
+              return (
+                <div className="table-responsive">
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '2px solid #e2e8f0', background: '#f8fafc', color: 'var(--text-secondary)' }}>
+                        <th style={{ textAlign: 'left', padding: '12px 14px', fontSize: '11px', fontWeight: 800 }}>ROLE</th>
+                        <th style={{ textAlign: 'left', padding: '12px 14px', fontSize: '11px', fontWeight: 800 }}>EMPLOYEE NAME</th>
+                        <th style={{ textAlign: 'left', padding: '12px 14px', fontSize: '11px', fontWeight: 800 }}>PHONE NUMBER</th>
+                        <th style={{ textAlign: 'left', padding: '12px 14px', fontSize: '11px', fontWeight: 800 }}>EMAIL ADDRESS</th>
+                        <th style={{ textAlign: 'left', padding: '12px 14px', fontSize: '11px', fontWeight: 800 }}>DATE ADDED</th>
+                        <th style={{ textAlign: 'right', padding: '12px 14px', fontSize: '11px', fontWeight: 800 }}>ACTIONS</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {firmEmployees.map((emp) => {
+                        const roleColor = emp.role === 'Manager' ? '#047857' : (emp.role === 'Front Desk' ? '#0284c7' : '#b45309');
+                        const roleBg = emp.role === 'Manager' ? '#ecfdf5' : (emp.role === 'Front Desk' ? '#f0f9ff' : '#fffbeb');
+                        return (
+                          <tr key={emp.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                            <td style={{ padding: '12px 14px' }}>
+                              <span style={{
+                                padding: '3px 8px',
+                                borderRadius: '6px',
+                                fontSize: '11px',
+                                fontWeight: 800,
+                                background: roleBg,
+                                color: roleColor,
+                                border: `1px solid ${roleColor}30`
+                              }}>
+                                {emp.role}
+                              </span>
+                            </td>
+                            <td style={{ padding: '12px 14px', fontWeight: 700, color: 'var(--text-main)' }}>
+                              {emp.name}
+                            </td>
+                            <td style={{ padding: '12px 14px', color: 'var(--text-secondary)' }}>
+                              {emp.phone || '—'}
+                            </td>
+                            <td style={{ padding: '12px 14px', color: 'var(--text-secondary)' }}>
+                              {emp.email || '—'}
+                            </td>
+                            <td style={{ padding: '12px 14px', fontSize: '12px', color: 'var(--text-muted)' }}>
+                              {emp.created_at ? formatDate(emp.created_at) : '—'}
+                            </td>
+                            <td style={{ padding: '12px 14px', textAlign: 'right' }}>
+                              <div style={{ display: 'inline-flex', gap: '6px' }}>
+                                <button
+                                  className="icon-btn"
+                                  onClick={() => setEditingEmployee(emp)}
+                                  title="Edit Employee"
+                                >
+                                  <Edit2 size={14} />
+                                </button>
+                                <button
+                                  className="icon-btn"
+                                  style={{ color: '#dc2626' }}
+                                  onClick={() => {
+                                    if (confirmDouble(
+                                      `Remove staff member "${emp.name}" (${emp.role})?`,
+                                      `Are you sure you want to delete this employee record?`
+                                    )) {
+                                      removeEmployee(emp.id);
+                                    }
+                                  }}
+                                  title="Delete Employee"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+      )}
+
+      {/* Edit Employee Modal */}
+      {editingEmployee && (
+        <div className="modal-overlay" onClick={() => setEditingEmployee(null)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '440px', background: '#ffffff', padding: '24px' }}>
+            <div className="modal-header-row" style={{ marginBottom: '16px' }}>
+              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: 'var(--text-main)' }}>
+                Edit Employee Details
+              </h3>
+              <button className="icon-btn" onClick={() => setEditingEmployee(null)}><X size={16} /></button>
+            </div>
+
+            <form onSubmit={async (e) => {
+              e.preventDefault();
+              await editEmployee(editingEmployee.id, {
+                role: editingEmployee.role,
+                name: editingEmployee.name,
+                phone: editingEmployee.phone || null,
+                email: editingEmployee.email || null
+              });
+              setEditingEmployee(null);
+            }}>
+              <div className="form-group" style={{ marginBottom: '12px' }}>
+                <label className="form-label" style={{ fontWeight: 700 }}>Staff Role</label>
+                <select
+                  className="form-input"
+                  value={editingEmployee.role}
+                  onChange={(e) => setEditingEmployee({ ...editingEmployee, role: e.target.value })}
+                >
+                  <option value="Manager">Manager</option>
+                  <option value="Front Desk">Front Desk</option>
+                  <option value="House Keeping">House Keeping</option>
+                </select>
+              </div>
+
+              <div className="form-group" style={{ marginBottom: '12px' }}>
+                <label className="form-label" style={{ fontWeight: 700 }}>Full Name</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={editingEmployee.name}
+                  onChange={(e) => setEditingEmployee({ ...editingEmployee, name: e.target.value })}
+                  required
+                />
+              </div>
+
+              <div className="form-group" style={{ marginBottom: '12px' }}>
+                <label className="form-label" style={{ fontWeight: 700 }}>Phone</label>
+                <input
+                  type="tel"
+                  className="form-input"
+                  value={editingEmployee.phone || ''}
+                  onChange={(e) => setEditingEmployee({ ...editingEmployee, phone: e.target.value })}
+                />
+              </div>
+
+              <div className="form-group" style={{ marginBottom: '20px' }}>
+                <label className="form-label" style={{ fontWeight: 700 }}>Email</label>
+                <input
+                  type="email"
+                  className="form-input"
+                  value={editingEmployee.email || ''}
+                  onChange={(e) => setEditingEmployee({ ...editingEmployee, email: e.target.value })}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                <button type="button" className="btn-sub" onClick={() => setEditingEmployee(null)}>Cancel</button>
+                <button type="submit" className="btn-main">Save Changes</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {showAddPropertyModal && (
         <AddPropertyModal
           isOpen={showAddPropertyModal}
@@ -2175,7 +2651,7 @@ Login Portal: ${loginUrl}
       {/* Delete Property Confirmation Modal (Super Admin Only) */}
       {propertyToDelete && (
         <div className="modal-overlay" style={{ zIndex: 1100 }}>
-          <div className="modal-content" style={{ maxWidth: '460px', padding: '24px' }}>
+          <div className="modal-card" style={{ maxWidth: '480px', padding: '28px', background: '#ffffff', borderRadius: 'var(--radius-xl)', boxShadow: 'var(--shadow-modal)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
               <div style={{
                 width: '42px',

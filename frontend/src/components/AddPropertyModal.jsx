@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useHotel } from '../context/HotelContext';
 import { api } from '../services/api';
 import { 
@@ -13,7 +13,8 @@ import {
   Hash, 
   User, 
   UserCheck, 
-  Zap 
+  Zap,
+  Clock 
 } from 'lucide-react';
 
 export const AddPropertyModal = ({ isOpen, onClose }) => {
@@ -21,17 +22,23 @@ export const AddPropertyModal = ({ isOpen, onClose }) => {
 
   const [propertyCode, setPropertyCode] = useState('');
   const [firmName, setFirmName] = useState('');
-  const [managerId, setManagerId] = useState('');
   const [ownerName, setOwnerName] = useState('');
   const [ownerPhone, setOwnerPhone] = useState('');
   const [tnebNumber, setTnebNumber] = useState('');
   const [address, setAddress] = useState('');
+  const [mapLocation, setMapLocation] = useState('');
+  const [checkinBufferMinutes, setCheckinBufferMinutes] = useState(120);
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [firmLogo, setFirmLogo] = useState(null);
-  const [managersList, setManagersList] = useState([]);
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Optional Employee Addition State (Requirement 20)
+  const [enableEmployees, setEnableEmployees] = useState(false);
+  const [managerCount, setManagerCount] = useState(1);
+  const [frontDeskCount, setFrontDeskCount] = useState(2);
+  const [housekeepingCount, setHousekeepingCount] = useState(2);
 
   // Bulk Rooms Setup State
   const [roomMode, setRoomMode] = useState('range'); // 'range' | 'custom' | 'default' | 'none'
@@ -39,20 +46,6 @@ export const AddPropertyModal = ({ isOpen, onClose }) => {
   const [endRoom, setEndRoom] = useState('120');
   const [roomType, setRoomType] = useState('Standard Room');
   const [customRoomsText, setCustomRoomsText] = useState('');
-
-  useEffect(() => {
-    if (isOpen) {
-      api.getManagers()
-        .then((data) => {
-          if (Array.isArray(data)) {
-            setManagersList(data);
-          }
-        })
-        .catch((err) => {
-          console.warn('Could not load managers for dropdown:', err);
-        });
-    }
-  }, [isOpen]);
 
   if (!isOpen || !isSuperAdmin) return null;
 
@@ -114,19 +107,37 @@ export const AddPropertyModal = ({ isOpen, onClose }) => {
     setIsSubmitting(true);
     try {
       const initialRooms = getComputedInitialRooms();
+
+      // Compute initial employees if enabled
+      let initialEmployeesList = [];
+      if (enableEmployees) {
+        for (let i = 1; i <= (parseInt(managerCount, 10) || 0); i++) {
+          initialEmployeesList.push({ role: 'Manager', name: `Manager ${i}` });
+        }
+        for (let i = 1; i <= (parseInt(frontDeskCount, 10) || 0); i++) {
+          initialEmployeesList.push({ role: 'Front Desk', name: `Front Desk ${i}` });
+        }
+        for (let i = 1; i <= (parseInt(housekeepingCount, 10) || 0); i++) {
+          initialEmployeesList.push({ role: 'House Keeping', name: `Housekeeper ${i}` });
+        }
+      }
+
       const res = await addProperty({
         propertyCode: propertyCode.trim().toUpperCase(),
         firmName: cleanFirm,
-        managerId: managerId || null,
+        managerId: null,
         ownerName: ownerName.trim() || null,
         ownerPhone: ownerPhone.trim() || null,
         tnebNumber: tnebNumber.trim() || null,
         address: address.trim() || null,
+        mapLocation: mapLocation.trim() || null,
+        checkinBufferMinutes: parseInt(checkinBufferMinutes, 10) || 120,
         phone: phone.trim() || null,
         email: email.trim() || null,
         firmLogo: firmLogo || '/aszen_ventures.jpeg',
         eSignature: null,
-        initialRooms
+        initialRooms,
+        initialEmployees: initialEmployeesList.length > 0 ? initialEmployeesList : null
       });
       setIsSubmitting(false);
       if (res.success) {
@@ -212,32 +223,6 @@ export const AddPropertyModal = ({ isOpen, onClose }) => {
             </div>
           </div>
 
-          {/* Row 2: Assigned Property Manager Dropdown */}
-          <div className="form-group">
-            <label className="form-label" style={{ fontWeight: 700 }}>
-              Assigned Property Manager
-            </label>
-            <div className="input-icon-wrapper">
-              <User size={16} className="input-icon" />
-              <select
-                className="form-input icon-padded"
-                value={managerId}
-                onChange={(e) => setManagerId(e.target.value)}
-                style={{ appearance: 'auto', background: '#ffffff', cursor: 'pointer' }}
-              >
-                <option value="">Unassigned / Default (Admin Managed)</option>
-                {managersList.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.propertyCode ? `[${m.propertyCode}] ` : ''}{m.name} ({m.role || 'Manager'}) — {m.email}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
-              Select a manager created by Super Admin/Admin, or leave unassigned to manage directly.
-            </div>
-          </div>
-
           {/* Row 3: Owner Name & Owner Phone Number */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
             <div className="form-group">
@@ -290,10 +275,10 @@ export const AddPropertyModal = ({ isOpen, onClose }) => {
             </div>
           </div>
 
-          {/* Row 5: Property Location / Address */}
+          {/* Row 5: Property Location / Address & Google Map (Requirement 1) */}
           <div className="form-group">
             <label className="form-label" style={{ fontWeight: 700 }}>
-              Property Location / Address
+              Property Physical Address
             </label>
             <div className="input-icon-wrapper">
               <MapPin size={16} className="input-icon" />
@@ -302,9 +287,55 @@ export const AddPropertyModal = ({ isOpen, onClose }) => {
                 className="form-input icon-padded"
                 placeholder="e.g. 12 Beach Boulevard, Goa"
                 value={address}
-                onChange={(e) => setAddress(e.target.value)}
+                onChange={(e) => {
+                  setAddress(e.target.value);
+                  if (!mapLocation) setMapLocation(e.target.value);
+                }}
               />
             </div>
+          </div>
+
+          {/* Google Maps Location Integration */}
+          <div className="form-group" style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', marginBottom: '6px', flexWrap: 'nowrap' }}>
+              <label className="form-label" style={{ fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' }}>
+                <MapPin size={15} color="#2563eb" /> Google Maps Location / Pin
+              </label>
+              <button
+                type="button"
+                className="btn-sub"
+                style={{ padding: '4px 10px', fontSize: '11px', whiteSpace: 'nowrap', flexShrink: 0 }}
+                onClick={() => {
+                  const q = mapLocation || address || firmName;
+                  if (q) window.open(`https://maps.google.com/?q=${encodeURIComponent(q)}`, '_blank');
+                }}
+              >
+                Open in Maps ↗
+              </button>
+            </div>
+
+            <input
+              type="text"
+              className="form-input"
+              placeholder="Paste Google Maps URL, Coordinates (e.g. 15.2993, 74.1240) or Landmark"
+              value={mapLocation}
+              onChange={(e) => setMapLocation(e.target.value)}
+              style={{ fontSize: '12px', padding: '7px 10px' }}
+            />
+
+            {/* Google Map Live Interactive Embed Preview */}
+            {(mapLocation || address) && (
+              <div style={{ marginTop: '10px', borderRadius: '6px', overflow: 'hidden', border: '1px solid #cbd5e1' }}>
+                <iframe
+                  title="Google Maps Location Preview"
+                  width="100%"
+                  height="130"
+                  style={{ border: 0, display: 'block' }}
+                  loading="lazy"
+                  src={`https://maps.google.com/maps?q=${encodeURIComponent(mapLocation || address)}&t=&z=14&ie=UTF8&iwloc=&output=embed`}
+                />
+              </div>
+            )}
           </div>
 
           {/* Row 6: Contact Phone & Email Grid */}
@@ -530,6 +561,76 @@ export const AddPropertyModal = ({ isOpen, onClose }) => {
             )}
           </div>
 
+          {/* Row 9: Optional Initial Employees Section (Requirement 20) */}
+          <div className="form-group" style={{
+            background: '#f8fafc',
+            border: '1px solid #e2e8f0',
+            borderRadius: 'var(--radius-md)',
+            padding: '14px'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <label className="form-label" style={{ fontWeight: 700, margin: 0 }}>
+                  Initial Employees Addition (Optional)
+                </label>
+                <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                  Add initial staff counts now, or add them anytime after creation in Settings &gt; Employee Roster.
+                </div>
+              </div>
+              <label className="sliding-toggle-wrapper">
+                <div className="switch-slider">
+                  <input
+                    type="checkbox"
+                    checked={enableEmployees}
+                    onChange={(e) => setEnableEmployees(e.target.checked)}
+                  />
+                  <span className="switch-track" />
+                </div>
+              </label>
+            </div>
+
+            {enableEmployees && (
+              <div style={{ marginTop: '14px', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label className="form-label" style={{ fontSize: '11px', fontWeight: 700 }}>Managers Count</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="50"
+                    className="form-input"
+                    value={managerCount}
+                    onChange={(e) => setManagerCount(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                    style={{ fontSize: '13px' }}
+                  />
+                </div>
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label className="form-label" style={{ fontSize: '11px', fontWeight: 700 }}>Front Desk Count</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="50"
+                    className="form-input"
+                    value={frontDeskCount}
+                    onChange={(e) => setFrontDeskCount(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                    style={{ fontSize: '13px' }}
+                  />
+                </div>
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label className="form-label" style={{ fontSize: '11px', fontWeight: 700 }}>Housekeeping Count</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="50"
+                    className="form-input"
+                    value={housekeepingCount}
+                    onChange={(e) => setHousekeepingCount(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                    style={{ fontSize: '13px' }}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Manager Assignment Note */}
           <div style={{
             display: 'flex',
@@ -545,7 +646,7 @@ export const AddPropertyModal = ({ isOpen, onClose }) => {
           }}>
             <Info size={16} color="#16a34a" style={{ flexShrink: 0, marginTop: '2px' }} />
             <span>
-              <strong>Management &amp; Staff:</strong> As Super Admin or Admin, you can assign existing managers now or update assignments anytime from <strong>Settings &gt; Properties Portfolio</strong>.
+              <strong>Management &amp; Staff:</strong> Once the property is created, add its managers and staff from its profile in <strong>Settings &gt; Properties Portfolio</strong>.
             </span>
           </div>
 

@@ -130,15 +130,38 @@ export const HotelProvider = ({ children }) => {
     localStorage.setItem('frontdesk_active_firm_id', firmId);
   };
 
+  const [previousTab, setPreviousTab] = useState('overview');
+  const [createBookingData, setCreateBookingData] = useState(null);
+
   // Sync active tab with browser history (popstate listener)
   const setActiveTab = (tabName, replaceHistory = false) => {
-    setActiveTabState(tabName);
+    setActiveTabState((current) => {
+      if (current !== tabName) {
+        setPreviousTab(current);
+      }
+      return tabName;
+    });
     const hash = '#' + tabName;
     if (replaceHistory) {
       window.history.replaceState({ tab: tabName }, '', hash);
     } else {
       window.history.pushState({ tab: tabName }, '', hash);
     }
+  };
+
+  const goBack = () => {
+    if (previousTab && previousTab !== activeTab) {
+      setActiveTab(previousTab);
+    } else if (window.history.length > 1) {
+      window.history.back();
+    } else {
+      setActiveTab('overview');
+    }
+  };
+
+  const navigateToCreateBooking = (initialData = null) => {
+    setCreateBookingData(initialData);
+    setActiveTab('create-booking');
   };
 
   useEffect(() => {
@@ -190,6 +213,8 @@ export const HotelProvider = ({ children }) => {
           setFeatureToggles(data.featureToggles);
         }
         setIsServerConnected(true);
+        // Requirement 22: Background Auto-archive check
+        api.checkAutoArchive().catch(() => {});
       }
     } catch (err) {
       console.warn('Backend server disconnected or sync error:', err);
@@ -344,7 +369,7 @@ export const HotelProvider = ({ children }) => {
   const adminRegister = async (name, phone, email, password) => {
     try {
       const res = await api.adminRegister(name, phone, email, password);
-      if (res.manager) {
+      if (res?.manager) {
         setManager(res.manager);
         setPropertiesList([]);
         setActivePropertyIdState('');
@@ -367,7 +392,7 @@ export const HotelProvider = ({ children }) => {
   const managerRegister = async (name, email, password) => {
     try {
       const res = await api.managerRegister(name, email, password);
-      if (res.manager) {
+      if (res?.manager) {
         setManager(res.manager);
         setPropertiesList([]);
         setActivePropertyIdState('');
@@ -389,7 +414,7 @@ export const HotelProvider = ({ children }) => {
   const managerLogin = async (identity, password) => {
     try {
       const res = await api.managerLogin(identity, password);
-      if (res.manager) {
+      if (res?.manager) {
         setManager({
           id: res.manager.id,
           name: res.manager.name,
@@ -865,13 +890,17 @@ export const HotelProvider = ({ children }) => {
   };
 
   // Bills Data Actions
+  // Returns the saved bill, or false when it was not saved
   const addBill = async (newBill) => {
-    if (!checkRegisterOpen()) return;
+    if (!checkRegisterOpen()) return false;
     try {
       const created = await api.createBill(newBill);
       setBills((prev) => [created, ...prev]);
+      return created;
     } catch (err) {
       console.error('Failed to add bill:', err);
+      alert(err.message || 'Failed to save bill.');
+      return false;
     }
   };
 
@@ -882,6 +911,51 @@ export const HotelProvider = ({ children }) => {
       setBills((prev) => prev.map((b) => (b.id === updated.id ? updated : b)));
     } catch (err) {
       console.error('Failed to update bill:', err);
+    }
+  };
+
+  // Employees Data Actions (Requirements 16 & 20)
+  const [employees, setEmployees] = useState([]);
+  const loadEmployees = async (firmId) => {
+    const targetFirm = firmId || activePropertyId;
+    if (!targetFirm) return [];
+    try {
+      const data = await api.getEmployees(targetFirm);
+      setEmployees(data || []);
+      return data || [];
+    } catch (err) {
+      console.warn('Failed to load employees:', err);
+      return [];
+    }
+  };
+
+  const addEmployee = async (firmId, empData) => {
+    try {
+      const created = await api.createEmployee(firmId || activePropertyId, empData);
+      setEmployees((prev) => [created, ...prev]);
+      return { success: true, employee: created };
+    } catch (err) {
+      return { success: false, message: err.message };
+    }
+  };
+
+  const editEmployee = async (employeeId, empData) => {
+    try {
+      const updated = await api.updateEmployee(employeeId, empData);
+      setEmployees((prev) => prev.map((e) => (e.id === employeeId ? updated : e)));
+      return { success: true, employee: updated };
+    } catch (err) {
+      return { success: false, message: err.message };
+    }
+  };
+
+  const removeEmployee = async (employeeId) => {
+    try {
+      await api.deleteEmployee(employeeId);
+      setEmployees((prev) => prev.filter((e) => e.id !== employeeId));
+      return { success: true };
+    } catch (err) {
+      return { success: false, message: err.message };
     }
   };
 
@@ -1026,7 +1100,17 @@ export const HotelProvider = ({ children }) => {
         setIsBookingModalOpen,
         bookingModalInitialData,
         openNewBookingModal,
-        closeBookingModal
+        closeBookingModal,
+        previousTab,
+        goBack,
+        createBookingData,
+        setCreateBookingData,
+        navigateToCreateBooking,
+        employees,
+        loadEmployees,
+        addEmployee,
+        editEmployee,
+        removeEmployee
       }}
     >
       {children}

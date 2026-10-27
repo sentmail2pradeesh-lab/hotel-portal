@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
+import { useHotel } from '../context/HotelContext';
 import { formatCurrency, calculateNights } from '../utils/formatters';
 import { FileText, X, Receipt } from 'lucide-react';
 
 export const GenerateBillModal = ({ booking, onClose, onGenerate }) => {
+  const { currentUser } = useHotel();
   const nights = calculateNights(booking?.checkIn, booking?.checkOut);
   const defaultRoomRate = booking?.amountPaid || 0;
 
@@ -41,6 +43,8 @@ export const GenerateBillModal = ({ booking, onClose, onGenerate }) => {
 
     const billPayload = {
       id: `REC-${booking.manualId || booking.id}`,
+      billNumber: `BILL-${currentUser?.propertyCode || 'ASZ'}-${Date.now().toString().slice(-4)}`,
+      propertyName: currentUser?.firmName || 'Cardelia Hotel',
       guestName: booking.guestName,
       guestEmail: booking.email || 'N/A',
       guestPhone: booking.phone || 'N/A',
@@ -190,9 +194,9 @@ export const GenerateBillModal = ({ booking, onClose, onGenerate }) => {
                 <strong style={{ fontFamily: 'var(--font-mono)' }}>{formatCurrency(taxAmount)}</strong>
               </div>
             )}
-            <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #a7f3d0', paddingTop: '8px', fontSize: '16px', fontWeight: 800, color: '#047857' }}>
-              <span>Grand Total Due:</span>
-              <span style={{ fontFamily: 'var(--font-mono)' }}>{formatCurrency(grandTotal)}</span>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px', borderTop: '1px solid #a7f3d0', paddingTop: '8px', fontSize: '16px', fontWeight: 800, color: '#047857' }}>
+              <span style={{ whiteSpace: 'nowrap' }}>Grand Total Due:</span>
+              <span style={{ fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>{formatCurrency(grandTotal)}</span>
             </div>
           </div>
 

@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import { useHotel } from '../context/HotelContext';
-import { generateId } from '../utils/formatters';
+import { localDateStr, generateId } from '../utils/formatters';
 import { X, Receipt } from 'lucide-react';
 
 export const ExpenseModal = ({ isOpen, onClose }) => {
   const { addExpense, isRegisterOpen } = useHotel();
 
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState(localDateStr());
   const [category, setCategory] = useState('Supplies');
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');

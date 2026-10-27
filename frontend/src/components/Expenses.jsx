@@ -3,6 +3,7 @@ import { useHotel } from '../context/HotelContext';
 import { formatCurrency, formatDate, confirmDouble } from '../utils/formatters';
 import { ExpenseModal } from './ExpenseModal';
 import { Plus, Search, Trash2, Receipt, Tag } from 'lucide-react';
+import { PropertySwitcher } from './PropertySwitcher';
 
 export const Expenses = () => {
   const { expenses, deleteExpense, isRegisterOpen } = useHotel();
@@ -39,20 +40,23 @@ export const Expenses = () => {
           <h1 className="page-heading">Daily Operational Expenses</h1>
           <p className="page-subheading">Track property cash outflow — room supplies, repairs, staff wages, utilities.</p>
         </div>
-        <button 
-          className="btn-main" 
-          disabled={!isRegisterOpen}
-          onClick={() => {
-            if (!isRegisterOpen) {
-              alert('Shift Register is Closed. Please open the shift register to log expenses.');
-              return;
-            }
-            setIsModalOpen(true);
-          }}
-          title={isRegisterOpen ? 'Log Expense' : 'Shift Register is Closed (View-Only Mode)'}
-        >
-          <Plus size={17} /> Log Expense
-        </button>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'flex-end' }}>
+          <PropertySwitcher compact />
+          <button 
+            className="btn-main" 
+            disabled={!isRegisterOpen}
+            onClick={() => {
+              if (!isRegisterOpen) {
+                alert('Shift Register is Closed. Please open the shift register to log expenses.');
+                return;
+              }
+              setIsModalOpen(true);
+            }}
+            title={isRegisterOpen ? 'Log Expense' : 'Shift Register is Closed (View-Only Mode)'}
+          >
+            <Plus size={17} /> Log Expense
+          </button>
+        </div>
       </div>
 
       {/* Executive Metric Cards */}
@@ -111,6 +115,7 @@ export const Expenses = () => {
       </div>
 
       <div className="toolbar-row">
+
         <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
           <div className="search-box">
             <Search size={16} color="var(--text-muted)" />

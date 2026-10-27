@@ -53,8 +53,9 @@ export const AuthLoadingScreen = ({ message, identity, onCancel }) => {
           <div className="auth-ripple-ring ring-1" />
           <div className="auth-ripple-ring ring-2" />
           <div className="auth-ripple-ring ring-3" />
-          <div className="auth-loading-logo">
+          <div className="auth-loading-logo aszen-logo-animated">
             <img
+              className="aszen-logo-img"
               src="/aszen_ventures.jpeg"
               alt="Aszen Ventures"
             />

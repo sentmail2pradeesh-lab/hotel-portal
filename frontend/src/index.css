@@ -196,6 +196,68 @@ html, body {
   object-fit: cover;
 }
 
+/* Sidebar brand header: logo tile beside company name, divider and system name */
+.sidebar-brand-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.sidebar-logo-tile {
+  width: 64px;
+  height: 64px;
+  flex-shrink: 0;
+  padding: 4px;
+  background: #0b1120;
+  border: 1.5px solid rgba(245, 158, 11, 0.75);
+  border-radius: 14px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sidebar-logo-tile img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 10px;
+}
+
+.sidebar-brand-text {
+  min-width: 0;
+  flex: 1;
+}
+
+.sidebar-brand-company {
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: #ffffff;
+  white-space: nowrap;
+}
+
+.sidebar-brand-company span {
+  margin-left: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.3em;
+  color: #cbd5e1;
+}
+
+.sidebar-brand-divider {
+  height: 2px;
+  margin: 6px 0;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #f59e0b 0%, rgba(245, 158, 11, 0.1) 100%);
+}
+
+.sidebar-brand-system {
+  font-size: 12px;
+  color: #94a3b8;
+  white-space: nowrap;
+}
+
 .brand-text {
   display: flex;
   flex-direction: column;
@@ -3506,6 +3568,7 @@ button:disabled,
 
 .booking-tab-btn.active.in-house {
   color: #059669;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08), inset 0 -3px 0 #10b981;
 }
 
 .booking-tab-btn.active.completed {
@@ -4647,6 +4710,206 @@ button:disabled,
   font-family: var(--font-mono);
 }
 
+/* --- Animated Sliding Toggle Switch (Requirement 17) --- */
+.sliding-toggle-wrapper {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.switch-slider {
+  position: relative;
+  display: inline-block;
+  width: 46px;
+  height: 24px;
+}
+
+.switch-slider input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+  position: absolute;
+}
+
+.switch-track {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #cbd5e1;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  border-radius: 24px;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.switch-track:before {
+  position: absolute;
+  content: "";
+  height: 18px;
+  width: 18px;
+  left: 3px;
+  bottom: 3px;
+  background-color: #ffffff;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  border-radius: 50%;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.switch-slider input:checked + .switch-track {
+  background-color: #4f46e5;
+}
+
+.switch-slider input:checked + .switch-track.manager-track {
+  background-color: #059669;
+}
+
+.switch-slider input:checked + .switch-track:before {
+  transform: translateX(22px);
+}
+
+.switch-label-badge {
+  font-size: 11px;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 12px;
+  transition: all 0.2s ease;
+}
+
+.switch-label-badge.active-admin {
+  background: #e0e7ff;
+  color: #3730a3;
+}
+
+.switch-label-badge.active-manager {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.switch-label-badge.inactive {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+/* --- Universal Back Button (Requirement 18) --- */
+.universal-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  background: #ffffff;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.universal-back-btn:hover {
+  background: #f8fafc;
+  color: var(--text-main);
+  border-color: #cbd5e1;
+  transform: translateX(-2px);
+}
+
+/* --- Payment Percentages Breakdown Bar (Requirement 12) --- */
+.payment-breakdown-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 12px 16px;
+  background: #f8fafc;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  margin-bottom: 20px;
+}
+
+.payment-breakdown-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+}
 
 
 
+
+
+
+/* ==========================================================================
+   ANIMATED BRAND LOGO (loading screens)
+   Reveal on load, gentle float, and a light sweep across the logo tile.
+   ========================================================================== */
+@keyframes aszenLogoReveal {
+  0% { opacity: 0; transform: scale(0.4) rotate(-12deg); filter: blur(6px); }
+  60% { opacity: 1; transform: scale(1.06) rotate(2deg); filter: blur(0); }
+  100% { opacity: 1; transform: scale(1) rotate(0deg); filter: blur(0); }
+}
+
+@keyframes aszenLogoFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+@keyframes aszenLogoShine {
+  0% { left: -60%; }
+  55%, 100% { left: 130%; }
+}
+
+.aszen-logo-animated {
+  position: relative;
+  overflow: hidden;
+  animation: aszenLogoReveal 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.aszen-logo-animated::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -60%;
+  width: 50%;
+  height: 100%;
+  background: linear-gradient(105deg, transparent 30%, rgba(255, 255, 255, 0.55) 50%, transparent 70%);
+  pointer-events: none;
+  animation: aszenLogoShine 3s ease-in-out 1.2s infinite;
+}
+
+.aszen-logo-animated .aszen-logo-img {
+  display: block;
+  animation: aszenLogoFloat 3.2s ease-in-out 1s infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aszen-logo-animated,
+  .aszen-logo-animated::after,
+  .aszen-logo-animated .aszen-logo-img {
+    animation: none;
+  }
+}
+
+/* Stat card watermark icon (decorative, bottom-right) */
+.metric-card.with-watermark {
+  position: relative;
+  overflow: hidden;
+}
+
+.metric-watermark {
+  position: absolute;
+  right: 10px;
+  bottom: 8px;
+  opacity: 0.1;
+  pointer-events: none;
+}

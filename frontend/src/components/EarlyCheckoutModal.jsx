@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
 import { LogOut, Sparkles, X, ShieldAlert } from 'lucide-react';
-import { formatDate } from '../utils/formatters';
+import { localDateStr, formatDate } from '../utils/formatters';
 
 export const EarlyCheckoutModal = ({ isOpen = true, onClose, booking, onConfirm }) => {
   const [createHiddenSlot, setCreateHiddenSlot] = useState(true);
 
   if (!booking || isOpen === false) return null;
 
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = localDateStr();
 
   const handleConfirm = () => {
     onConfirm(booking.id, createHiddenSlot);

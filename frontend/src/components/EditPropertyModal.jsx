@@ -14,7 +14,8 @@ import {
   User, 
   UserCheck, 
   Zap,
-  CheckCircle2
+  CheckCircle2,
+  Clock
 } from 'lucide-react';
 
 export const EditPropertyModal = ({ isOpen, property, onClose }) => {
@@ -27,6 +28,8 @@ export const EditPropertyModal = ({ isOpen, property, onClose }) => {
   const [ownerPhone, setOwnerPhone] = useState('');
   const [tnebNumber, setTnebNumber] = useState('');
   const [address, setAddress] = useState('');
+  const [mapLocation, setMapLocation] = useState('');
+  const [checkinBufferMinutes, setCheckinBufferMinutes] = useState(120);
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [firmLogo, setFirmLogo] = useState(null);
@@ -60,6 +63,8 @@ export const EditPropertyModal = ({ isOpen, property, onClose }) => {
       setOwnerPhone(property.ownerPhone || '');
       setTnebNumber(property.tnebNumber || '');
       setAddress(property.address || '');
+      setMapLocation(property.mapLocation || '');
+      setCheckinBufferMinutes(property.checkinBufferMinutes !== undefined ? property.checkinBufferMinutes : 120);
       setPhone(property.phone || '');
       setEmail(property.email || '');
       setFirmLogo(property.firmLogo || null);
@@ -127,6 +132,8 @@ export const EditPropertyModal = ({ isOpen, property, onClose }) => {
         ownerPhone: ownerPhone.trim() || null,
         tnebNumber: tnebNumber.trim() || null,
         address: address.trim() || null,
+        mapLocation: mapLocation.trim() || null,
+        checkinBufferMinutes: parseInt(checkinBufferMinutes, 10) || 120,
         phone: phone.trim() || null,
         email: email.trim() || null,
         firmLogo: firmLogo || '/aszen_ventures.jpeg'
@@ -317,10 +324,10 @@ export const EditPropertyModal = ({ isOpen, property, onClose }) => {
             </div>
           </div>
 
-          {/* Row 5: Property Location / Address */}
+          {/* Row 5: Property Location / Address & Google Map (Requirement 1) */}
           <div className="form-group">
             <label className="form-label" style={{ fontWeight: 700 }}>
-              Property Location / Address
+              Property Physical Address
             </label>
             <div className="input-icon-wrapper">
               <MapPin size={16} className="input-icon" />
@@ -329,8 +336,75 @@ export const EditPropertyModal = ({ isOpen, property, onClose }) => {
                 className="form-input icon-padded"
                 placeholder="e.g. 12 Beach Boulevard, Goa"
                 value={address}
-                onChange={(e) => setAddress(e.target.value)}
+                onChange={(e) => {
+                  setAddress(e.target.value);
+                  if (!mapLocation) setMapLocation(e.target.value);
+                }}
               />
+            </div>
+          </div>
+
+          {/* Google Maps Location Integration */}
+          <div className="form-group" style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', marginBottom: '6px', flexWrap: 'nowrap' }}>
+              <label className="form-label" style={{ fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' }}>
+                <MapPin size={15} color="#2563eb" /> Google Maps Location / Pin
+              </label>
+              <button
+                type="button"
+                className="btn-sub"
+                style={{ padding: '4px 10px', fontSize: '11px', whiteSpace: 'nowrap', flexShrink: 0 }}
+                onClick={() => {
+                  const q = mapLocation || address || firmName;
+                  if (q) window.open(`https://maps.google.com/?q=${encodeURIComponent(q)}`, '_blank');
+                }}
+              >
+                Open in Maps ↗
+              </button>
+            </div>
+
+            <input
+              type="text"
+              className="form-input"
+              placeholder="Paste Google Maps URL, Coordinates (e.g. 15.2993, 74.1240) or Landmark"
+              value={mapLocation}
+              onChange={(e) => setMapLocation(e.target.value)}
+              style={{ fontSize: '12px', padding: '7px 10px' }}
+            />
+
+            {(mapLocation || address) && (
+              <div style={{ marginTop: '10px', borderRadius: '6px', overflow: 'hidden', border: '1px solid #cbd5e1' }}>
+                <iframe
+                  title="Google Maps Location Preview"
+                  width="100%"
+                  height="130"
+                  style={{ border: 0, display: 'block' }}
+                  loading="lazy"
+                  src={`https://maps.google.com/maps?q=${encodeURIComponent(mapLocation || address)}&t=&z=14&ie=UTF8&iwloc=&output=embed`}
+                />
+              </div>
+            )}
+          </div>
+
+          {/* Check-in Buffer Time Setting (Requirement 22) */}
+          <div className="form-group">
+            <label className="form-label" style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Clock size={15} color="#d97706" /> Check-in Buffer Time (Minutes)
+            </label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <input
+                type="number"
+                min="30"
+                max="720"
+                step="15"
+                className="form-input"
+                value={checkinBufferMinutes}
+                onChange={(e) => setCheckinBufferMinutes(e.target.value)}
+                style={{ width: '120px' }}
+              />
+              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                Default: 120 mins (2 hrs). Unclaimed check-ins past this buffer are automatically archived.
+              </span>
             </div>
           </div>
 
