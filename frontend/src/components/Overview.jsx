@@ -1,5 +1,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useHotel } from '../context/HotelContext';
+import { computeMonthBreakdown } from '../utils/paymentBreakdown';
+import { PaymentBreakdownBar } from './PaymentBreakdownBar';
+import { MyPropertiesStrip } from './MyPropertiesStrip';
 import { localDateStr, formatCurrency, formatDate, exportToCSV } from '../utils/formatters';
 import { api } from '../services/api';
 import {
@@ -22,7 +25,6 @@ import {
   AlertTriangle,
   Key,
   DoorOpen,
-  Layers,
   Download,
   Search,
   FileText,
@@ -60,6 +62,7 @@ export const Overview = () => {
   const [consolidatedLoading, setConsolidatedLoading] = useState(false);
   const [consolidatedSearch, setConsolidatedSearch] = useState('');
   const [consolidatedType, setConsolidatedType] = useState('all');
+  const [allPropBookings, setAllPropBookings] = useState([]);
 
   useEffect(() => {
     if ((isSuperAdmin || isAdmin) && selectedPropertyTab === 'all') {
@@ -73,6 +76,16 @@ export const Overview = () => {
         setConsolidatedLoading(false);
       });
     }
+  }, [selectedPropertyTab, isSuperAdmin, isAdmin, bookings]);
+
+  // All-properties bookings feed the overall payment breakdown on this page
+  useEffect(() => {
+    if (!(isSuperAdmin || isAdmin) || selectedPropertyTab !== 'all') return;
+    let cancelled = false;
+    api.getAllPropertyBookings()
+      .then((data) => { if (!cancelled) setAllPropBookings(Array.isArray(data) ? data : []); })
+      .catch(() => { if (!cancelled) setAllPropBookings([]); });
+    return () => { cancelled = true; };
   }, [selectedPropertyTab, isSuperAdmin, isAdmin, bookings]);
 
   const summaryProps = useMemo(() => {
@@ -363,72 +376,18 @@ export const Overview = () => {
         </div>
       </div>
 
-      {/* Property Tabs Selector for Admin / Super Admin (Requirement 4) */}
+      {/* My Properties cards: pick a property or view all (Requirement 4) */}
       {(isSuperAdmin || isAdmin) && (
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          overflowX: 'auto',
-          paddingBottom: '4px',
-          marginBottom: '20px'
-        }}>
-          <button
-            type="button"
-            className={`btn-sub ${selectedPropertyTab === 'all' ? 'active' : ''}`}
-            onClick={() => setSelectedPropertyTab('all')}
-            style={{
-              padding: '8px 16px',
-              fontSize: '13px',
-              fontWeight: 800,
-              background: selectedPropertyTab === 'all' ? '#0f172a' : '#ffffff',
-              color: selectedPropertyTab === 'all' ? '#ffffff' : 'var(--text-main)',
-              borderColor: selectedPropertyTab === 'all' ? '#0f172a' : '#cbd5e1',
-              borderRadius: '8px',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '6px',
-              whiteSpace: 'nowrap',
-              boxShadow: selectedPropertyTab === 'all' ? '0 2px 8px rgba(15, 23, 42, 0.15)' : 'none'
-            }}
-          >
-            <Layers size={15} /> All Properties
-          </button>
-
-          {(propertiesList || []).map(p => {
-            const isTabActive = selectedPropertyTab === p.firmId || (selectedPropertyTab !== 'all' && activePropertyId === p.firmId);
-            return (
-              <button
-                key={p.firmId}
-                type="button"
-                className={`btn-sub ${isTabActive ? 'active' : ''}`}
-                onClick={() => {
-                  setSelectedPropertyTab(p.firmId);
-                  if (activePropertyId !== p.firmId && switchProperty) {
-                    switchProperty(p.firmId);
-                  }
-                }}
-                style={{
-                  padding: '8px 16px',
-                  fontSize: '13px',
-                  fontWeight: 700,
-                  background: isTabActive ? '#4f46e5' : '#ffffff',
-                  color: isTabActive ? '#ffffff' : 'var(--text-main)',
-                  borderColor: isTabActive ? '#4f46e5' : '#cbd5e1',
-                  borderRadius: '8px',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  whiteSpace: 'nowrap',
-                  boxShadow: isTabActive ? '0 2px 8px rgba(79, 70, 229, 0.2)' : 'none'
-                }}
-              >
-                <Building2 size={14} />
-                <span>{p.propertyCode ? `[${p.propertyCode}] ` : ''}{p.firmName}</span>
-              </button>
-            );
-          })}
-        </div>
+        <MyPropertiesStrip
+          properties={summaryProps}
+          selectedId={selectedPropertyTab}
+          isAllSelected={selectedPropertyTab === 'all'}
+          onSelect={(id) => {
+            setSelectedPropertyTab(id);
+            if (activePropertyId !== id && switchProperty) switchProperty(id);
+          }}
+          onViewAll={() => setSelectedPropertyTab('all')}
+        />
       )}
 
       {/* ALL PROPERTIES CONSOLIDATED DASHBOARD VIEW (Requirements 4 & 19) */}
@@ -524,6 +483,9 @@ export const Overview = () => {
               <div className="metric-card-footer"><span>Net operating profit</span></div>
             </div>
           </div>
+
+          {/* Overall payment breakdown across all properties */}
+          <PaymentBreakdownBar items={computeMonthBreakdown(allPropBookings)} />
 
           {/* Properties Performance Cards Grid (Requirement 4) */}
           <div className="pro-card">

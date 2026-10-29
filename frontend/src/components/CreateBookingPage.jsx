@@ -9,7 +9,7 @@ import { storeIdScan } from '../utils/storedDocuments';
 import {
   ArrowLeft, Upload, X, FileText, User, Phone,
   Mail, Calendar, CreditCard, Hash, ShieldCheck,
-  Plus, AlertCircle, Trash2, IdCard, Check, Building2
+  Plus, AlertCircle, Trash2, IdCard, Check, Building2, EyeOff
 } from 'lucide-react';
 
 const EMPTY_LIST = [];
@@ -61,6 +61,8 @@ export const CreateBookingPage = () => {
   // Property this stay is booked on. Defaults to the active property; picking another one
   // loads that property's rooms and bookings for this page only (sidebar selection is unchanged).
   const [targetFirmId, setTargetFirmId] = useState(createBookingData?.firmId || activePropertyId || '');
+  // Hidden booking: only sent when the signed-in user is allowed to create one
+  const [isConfidential, setIsConfidential] = useState(false);
   const [foreignData, setForeignData] = useState(null);
   const isActiveTarget = !targetFirmId || targetFirmId === activePropertyId;
   const targetCode = (propertiesList || []).find(p => p.firmId === targetFirmId)?.propertyCode || currentUser?.propertyCode;
@@ -218,8 +220,6 @@ export const CreateBookingPage = () => {
     const paid = parseFloat(amountPaid) || 0;
     return Math.max(0, total - paid);
   }, [totalAmount, amountPaid, paymentOption]);
-
-  const monthPaymentBreakdown = computeMonthBreakdown(bookings);
 
   // Handle Multi-Document Upload in One Section (Requirements 3 & 5)
   const handleMultipleFilesSelected = (files) => {
@@ -440,6 +440,7 @@ export const CreateBookingPage = () => {
         paidVia: paymentOption === 'Unpaid' ? 'Pending' : paidVia,
         txnId: txnId.trim() || null,
         status: finalStatus,
+        isConfidential: Boolean(currentUser?.canViewConfidential && isConfidential),
         notes: notes.trim() || null
       };
 
@@ -572,8 +573,9 @@ export const CreateBookingPage = () => {
         </div>
       </div>
 
-      {/* Month-Wise Payment Breakdown (Requirement 12) */}
-      <PaymentBreakdownBar items={monthPaymentBreakdown} />
+      <div style={{ marginBottom: '16px' }}>
+        <PaymentBreakdownBar items={computeMonthBreakdown(bookings)} />
+      </div>
 
       {errorMsg && (
         <div style={{
@@ -1210,6 +1212,22 @@ export const CreateBookingPage = () => {
                   <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Review details and create the booking.</div>
                 </div>
               </div>
+
+              {currentUser?.canViewConfidential && (
+                <button
+                  type="button"
+                  onClick={() => setIsConfidential((v) => !v)}
+                  title="Hidden bookings are left out of reports, totals and logs"
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                    border: isConfidential ? '1.5px solid #7c3aed' : '1px solid #cbd5e1',
+                    background: isConfidential ? '#f5f3ff' : '#ffffff',
+                    color: isConfidential ? '#6d28d9' : 'var(--text-main)'
+                  }}
+                >
+                  <EyeOff size={14} /> {isConfidential ? 'Hidden booking: ON' : 'Mark as hidden booking'}
+                </button>
+              )}
 
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '14px', flexWrap: 'wrap', width: '100%' }}>
                 <button

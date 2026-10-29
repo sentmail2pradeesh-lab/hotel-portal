@@ -16,7 +16,9 @@ import {
   Clock, LogIn, LogOut, FileText, UserCheck, Mail, EyeOff, Calendar, Filter,
   Users, ShieldCheck, AlertCircle, UploadCloud, X
 } from 'lucide-react';
-import { PropertySwitcher } from './PropertySwitcher';
+import { PageHeaderActions } from './PageHeaderActions';
+import { PropertyTabs } from './PropertyTabs';
+import { ConfidentialBookingsTable } from './ConfidentialBookingsTable';
 
 // Settlement channel -> payment option stored on the booking (matches the breakdown categories)
 const SETTLE_PAYMENT_OPTION = {
@@ -567,43 +569,33 @@ export const Bookings = () => {
           <h1 className="page-heading">Booking & History</h1>
           <p className="page-subheading">Manage upcoming arrivals, active in-house guests, and completed stay logs for this property.</p>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'flex-end' }}>
-          <PropertySwitcher
-            compact
-            allOption
-            isAllSelected={viewAll}
-            onSelectAll={() => setViewAll(true)}
-            onSelectProperty={() => setViewAll(false)}
-          />
-          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-            {(isSuperAdmin || isAdmin) && (
-              <button
-                className="btn-sub"
-                disabled={!isRegisterOpen}
-                onClick={() => {
-                  if (!isRegisterOpen) {
-                    alert('Shift Register is Closed. Please open shift register to import external bookings.');
-                    return;
-                  }
-                  setIsImportModalOpen(true);
-                }}
-                style={{ padding: '9px 14px', fontSize: '13px', gap: '6px' }}
-                title={isRegisterOpen ? 'Import bookings from OYO or CSV file' : 'Shift Register is Closed (View-Only Mode)'}
-              >
-                <UploadCloud size={16} color="#0284c7" /> Import OYO / CSV
-              </button>
-            )}
+        <PageHeaderActions disableNewBooking={viewAll}>
+          {(isSuperAdmin || isAdmin) && (
             <button
-              className="btn-main"
-              disabled={!isRegisterOpen || viewAll}
-              onClick={() => navigateToCreateBooking()}
-              title={isRegisterOpen ? 'Open Dedicated Booking Console' : 'Shift Register is Closed (View-Only Mode)'}
+              className="btn-sub"
+              disabled={!isRegisterOpen}
+              onClick={() => {
+                if (!isRegisterOpen) {
+                  alert('Shift Register is Closed. Please open shift register to import external bookings.');
+                  return;
+                }
+                setIsImportModalOpen(true);
+              }}
+              style={{ height: '44px', padding: '0 14px', fontSize: '13px', gap: '6px' }}
+              title={isRegisterOpen ? 'Import bookings from OYO or CSV file' : 'Shift Register is Closed (View-Only Mode)'}
             >
-              <Plus size={17} /> New Booking
+              <UploadCloud size={16} color="#0284c7" /> Import OYO / CSV
             </button>
-          </div>
-        </div>
+          )}
+        </PageHeaderActions>
       </div>
+
+      <PropertyTabs
+        allOption
+        isAllSelected={viewAll}
+        onSelectAll={() => setViewAll(true)}
+        onSelect={() => setViewAll(false)}
+      />
 
       {/* Executive Metric Cards */}
       <div className="metrics-row" style={{ gridTemplateColumns: 'repeat(3, 1fr)', marginBottom: '18px' }}>
@@ -662,10 +654,6 @@ export const Bookings = () => {
         </div>
       </div>
 
-      <div style={{ marginBottom: '16px' }}>
-        <PaymentBreakdownBar items={computeMonthBreakdown(sourceBookings)} />
-      </div>
-
       {viewAll && (
         <div style={{ marginBottom: '16px', padding: '10px 14px', borderRadius: '10px', background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1e40af', fontSize: '13px', fontWeight: 600 }}>
           Showing bookings from all properties (read-only). Select a property at the top to check in, check out or edit stays.
@@ -712,6 +700,15 @@ export const Bookings = () => {
             <Clock size={15} /> Archived
             <span className="tab-badge-count" style={{ background: '#f1f5f9', color: '#475569' }}>{archivedStays.length}</span>
           </button>
+          {currentUser?.canViewConfidential && (
+            <button
+              className={`booking-tab-btn ${activeTab === 'confidential' ? 'active' : ''}`}
+              onClick={() => setActiveTab('confidential')}
+              style={{ color: '#6d28d9' }}
+            >
+              <EyeOff size={15} /> Confidential Bookings
+            </button>
+          )}
           {hiddenCount > 0 && currentUser?.role === 'Overall Admin' && (
             <button
               className={`booking-tab-btn ${activeTab === 'hidden' ? 'active' : ''}`}
@@ -730,6 +727,10 @@ export const Bookings = () => {
             <span className="tab-badge-count">{allCount}</span>
           </button>
         </div>
+      </div>
+
+      <div style={{ marginBottom: '16px' }}>
+        <PaymentBreakdownBar items={computeMonthBreakdown(sourceBookings)} />
       </div>
 
       {/* Search & Status Filter Toolbar */}
@@ -758,6 +759,9 @@ export const Bookings = () => {
             <option value="upcoming">Upcoming Reservations ({upcomingCount})</option>
             <option value="drafts">Drafts ({draftCount})</option>
             <option value="completed">Completed History ({completedCount})</option>
+            {currentUser?.canViewConfidential && (
+              <option value="confidential">Confidential Bookings</option>
+            )}
             {hiddenCount > 0 && currentUser?.role === 'Overall Admin' && (
               <option value="hidden">Hidden Bookings ({hiddenCount})</option>
             )}
@@ -775,6 +779,7 @@ export const Bookings = () => {
           </div>
         ) : (
           <>
+            {activeTab === 'confidential' && <ConfidentialBookingsTable />}
             {(activeTab === 'all' || activeTab === 'in-house') && renderBookingGroup('Active In-House Stays', inHouseStays)}
             {activeTab === 'in-house' && inHouseStays.length === 0 && (
               <div className="card-container" style={{ textAlign: 'center', padding: '36px 20px', color: 'var(--text-secondary)' }}>

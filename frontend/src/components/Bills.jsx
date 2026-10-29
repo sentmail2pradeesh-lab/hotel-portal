@@ -1,13 +1,16 @@
 import React, { useState } from 'react';
 import { useHotel } from '../context/HotelContext';
 import { formatCurrency, confirmDouble } from '../utils/formatters';
+import { computeMonthBreakdown } from '../utils/paymentBreakdown';
+import { PaymentBreakdownBar } from './PaymentBreakdownBar';
 import { BillModal } from './BillModal';
 import { BillInvoiceModal } from './BillInvoiceModal';
 import { Plus, Search, Trash2, Eye, FileText, Edit2 } from 'lucide-react';
-import { PropertySwitcher } from './PropertySwitcher';
+import { PageHeaderActions } from './PageHeaderActions';
+import { PropertyTabs } from './PropertyTabs';
 
 export const Bills = () => {
-  const { bills = [], deleteBill, isRegisterOpen, currentUser } = useHotel();
+  const { bills = [], deleteBill, isRegisterOpen, currentUser, bookings } = useHotel();
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingBill, setEditingBill] = useState(null);
@@ -50,8 +53,7 @@ export const Bills = () => {
             Itemized room billing statements — stay charges, extra amenities, and exportable guest receipts.
           </p>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'flex-end' }}>
-          <PropertySwitcher compact />
+        <PageHeaderActions>
           <button
             className="btn-main"
             disabled={!isRegisterOpen}
@@ -64,11 +66,14 @@ export const Bills = () => {
               setIsModalOpen(true);
             }}
             title={isRegisterOpen ? 'New Bill Statement' : 'Shift Register is Closed (View-Only Mode)'}
+            style={{ height: '44px' }}
           >
             <Plus size={17} /> New Bill Statement
           </button>
-        </div>
+        </PageHeaderActions>
       </div>
+
+      <PropertyTabs />
 
       {/* Executive Metric Cards */}
       <div className="metrics-row" style={{ gridTemplateColumns: 'repeat(3, 1fr)', marginBottom: '18px' }}>
@@ -122,6 +127,10 @@ export const Bills = () => {
             <span>Average checkout billing total</span>
           </div>
         </div>
+      </div>
+
+      <div style={{ marginBottom: '16px' }}>
+        <PaymentBreakdownBar items={computeMonthBreakdown(bookings)} />
       </div>
 
       <div className="toolbar-row">

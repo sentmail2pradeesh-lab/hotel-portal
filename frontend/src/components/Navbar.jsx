@@ -43,6 +43,13 @@ export const Navbar = () => {
   const [showShiftModal, setShowShiftModal] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showAddPropertyModal, setShowAddPropertyModal] = useState(false);
+
+  // Lets other pages (e.g. the My Properties cards on Overview) open the Add Property modal
+  useEffect(() => {
+    const openAddProperty = () => setShowAddPropertyModal(true);
+    window.addEventListener('open-add-property', openAddProperty);
+    return () => window.removeEventListener('open-add-property', openAddProperty);
+  }, []);
   const [showCreateManagerModal, setShowCreateManagerModal] = useState(false);
 
   const profileMenuRef = useRef(null);

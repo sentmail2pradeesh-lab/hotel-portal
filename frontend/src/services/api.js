@@ -384,6 +384,20 @@ export const api = {
     return await apiFetch('/bookings/all-properties', {}, 2, 'Failed to fetch bookings for all properties.');
   },
 
+  // Hidden (confidential) bookings for the active property; admin roles and permitted managers only
+  async getConfidentialBookings(firmId = null) {
+    return await apiFetch('/bookings/confidential', {
+      ...propertyHeaderOptions(firmId)
+    }, 2, 'Failed to load hidden bookings.');
+  },
+
+  async setManagerConfidentialAccess(managerId, canViewConfidential) {
+    return await apiFetch(`/managers/${managerId}/confidential-access`, {
+      method: 'PATCH',
+      body: JSON.stringify({ canViewConfidential })
+    }, 2, 'Failed to update hidden-booking access.');
+  },
+
   async createBooking(bookingData, firmId = null) {
     return await apiFetch('/bookings', {
       method: 'POST',
@@ -584,6 +598,11 @@ export const api = {
   },
 
   // Admin Consolidated Dashboard & Financial Logs (Requirements 4 & 19)
+  // Bookings, bills and expenses across every property, each tagged with firmId / propertyCode (admin only)
+  async getReportRecords() {
+    return await apiFetch('/admin/report-records', {}, 2, 'Failed to load report records for all properties.');
+  },
+
   async getAdminPropertiesSummary() {
     return await apiFetch('/admin/properties-summary', {}, 2, 'Failed to fetch properties summary.');
   },

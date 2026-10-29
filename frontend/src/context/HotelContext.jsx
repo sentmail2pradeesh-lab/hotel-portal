@@ -1,5 +1,4 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
-import { ALL_PROPERTY_ROOMS } from '../utils/formatters';
 import { api } from '../services/api';
 
 const HotelContext = createContext();
@@ -50,7 +49,7 @@ export const HotelProvider = ({ children }) => {
   });
 
   // Property Operational Data States
-  const [roomsList, setRoomsList] = useState(ALL_PROPERTY_ROOMS);
+  const [roomsList, setRoomsList] = useState([]);
   const [roomsDetails, setRoomsDetails] = useState([]);
   const [featureToggles, setFeatureToggles] = useState({
     Admin: { bookings: true, expenses: true, bills: true, guest_ids: true, reports: true, edit_rooms: true, shift_register: true },
@@ -106,6 +105,7 @@ export const HotelProvider = ({ children }) => {
       name: manager.name,
       email: manager.email,
       role: effectiveRole,
+      canViewConfidential: isSuper || isAdmin || Boolean(manager.canViewConfidential),
       firmId: activeProperty?.firmId || '',
       propertyCode: activeProperty?.propertyCode || '',
       firmName: activeProperty?.firmName || (propertiesList.length === 0 ? 'Aszen Ventures' : 'Select Property'),
@@ -191,9 +191,8 @@ export const HotelProvider = ({ children }) => {
     try {
       const data = await api.syncPropertyData();
       if (data) {
-        if (Array.isArray(data.rooms) && data.rooms.length > 0) {
-          setRoomsList(data.rooms);
-        }
+        // Only the rooms saved for this property are shown (no built-in fallback list)
+        setRoomsList(Array.isArray(data.rooms) ? data.rooms : []);
         if (Array.isArray(data.roomDetails)) {
           setRoomsDetails(data.roomDetails);
         }
@@ -255,7 +254,8 @@ export const HotelProvider = ({ children }) => {
           name: mgrMe.name,
           email: mgrMe.email,
           phone: mgrMe.phone || '',
-          role: mgrMe.role
+          role: mgrMe.role,
+          canViewConfidential: Boolean(mgrMe.canViewConfidential)
         });
         setPropertiesList(mgrMe.properties || []);
         if (mgrMe.activeProperty) {
@@ -283,7 +283,7 @@ export const HotelProvider = ({ children }) => {
   // Whenever manager or activePropertyId changes, fetch property data and poll
   useEffect(() => {
     if (!manager) {
-      setRoomsList(ALL_PROPERTY_ROOMS);
+      setRoomsList([]);
       setBookings([]);
       setExpenses([]);
       setBills([]);

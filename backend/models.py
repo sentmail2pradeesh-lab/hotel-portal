@@ -33,6 +33,7 @@ class ManagerAccount(Base):
     temp_password_hash = Column(String(255), nullable=True)
     temp_password_plain = Column(String(255), nullable=True)
     role = Column(String(64), default="Super Admin")  # "Super Admin", "Admin", "Manager"
+    can_view_confidential = Column(Boolean, default=False)
     created_by = Column(String(128), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -96,6 +97,7 @@ class BookingModel(Base):
     is_prepaid = Column(Boolean, default=False)
     is_guaranteed = Column(Boolean, default=False)
     is_hidden = Column(Boolean, default=False)
+    is_confidential = Column(Boolean, default=False)
     total_amount = Column(Float, default=0.0, nullable=True)
     payment_status = Column(String(64), default="Fully Paid", nullable=True)
     id_card_type = Column(String(64), nullable=True)

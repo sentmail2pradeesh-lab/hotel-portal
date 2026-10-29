@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useHotel } from '../context/HotelContext';
+import { computeMonthBreakdown } from '../utils/paymentBreakdown';
+import { PaymentBreakdownBar } from './PaymentBreakdownBar';
 import { api } from '../services/api';
 import { formatCurrency, formatDate, exportToCSV, confirmDouble } from '../utils/formatters';
 import { 
@@ -38,7 +40,8 @@ import {
 } from 'lucide-react';
 import { AddPropertyModal } from './AddPropertyModal';
 import { EditPropertyModal } from './EditPropertyModal';
-import { PropertySwitcher } from './PropertySwitcher';
+import { PageHeaderActions } from './PageHeaderActions';
+import { PropertyTabs } from './PropertyTabs';
 import { CreateManagerModal } from './CreateManagerModal';
 
 export const SettingsView = () => {
@@ -482,10 +485,13 @@ Login Portal: ${loginUrl}
           <h1 className="page-heading">Settings & Executive Analytics</h1>
           <p className="page-subheading">Common controls and active property overview. Choose a section below to manage its details.</p>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'flex-end' }}>
-          <PropertySwitcher compact />
+        <PageHeaderActions />
+      </div>
 
-        </div>
+      <PropertyTabs />
+
+      <div style={{ marginBottom: '16px' }}>
+        <PaymentBreakdownBar items={computeMonthBreakdown(bookings)} />
       </div>
 
       {/* Common bar: property switcher + active property summary, shared by every tab below */}

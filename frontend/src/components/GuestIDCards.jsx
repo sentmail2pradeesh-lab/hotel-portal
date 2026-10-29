@@ -1,9 +1,12 @@
 import React, { useState } from 'react';
 import { useHotel } from '../context/HotelContext';
 import { formatDate } from '../utils/formatters';
+import { computeMonthBreakdown } from '../utils/paymentBreakdown';
+import { PaymentBreakdownBar } from './PaymentBreakdownBar';
 import { IDCardViewerModal } from './IDCardViewerModal';
 import { Search, IdCard, Eye, Upload, CheckCircle2, AlertCircle, FileText } from 'lucide-react';
-import { PropertySwitcher } from './PropertySwitcher';
+import { PageHeaderActions } from './PageHeaderActions';
+import { PropertyTabs } from './PropertyTabs';
 import { StoredDocumentImage } from './StoredDocumentImage';
 import { storeIdScan } from '../utils/storedDocuments';
 
@@ -69,11 +72,10 @@ export const GuestIDCards = () => {
             Government identity verification cards (Photos & PDFs) mapped to active guest stay profiles.
           </p>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'flex-end' }}>
-          <PropertySwitcher compact />
-
-        </div>
+        <PageHeaderActions />
       </div>
+
+      <PropertyTabs />
 
       {/* Executive Metric Cards */}
       <div className="metrics-row" style={{ gridTemplateColumns: 'repeat(3, 1fr)', marginBottom: '18px' }}>
@@ -129,6 +131,10 @@ export const GuestIDCards = () => {
             <span>All guest profiles tracked in registry</span>
           </div>
         </div>
+      </div>
+
+      <div style={{ marginBottom: '16px' }}>
+        <PaymentBreakdownBar items={computeMonthBreakdown(allBookings)} />
       </div>
 
       <div className="toolbar-row">

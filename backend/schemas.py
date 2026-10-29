@@ -150,6 +150,7 @@ class BookingBase(BaseModel):
     isPrepaid: Optional[bool] = False
     isGuaranteed: Optional[bool] = False
     isHidden: Optional[bool] = False
+    isConfidential: Optional[bool] = False
     paymentOption: Optional[str] = None
 
 class BookingCreate(BookingBase):
@@ -183,6 +184,7 @@ class BookingUpdate(BaseModel):
     isPrepaid: Optional[bool] = None
     isGuaranteed: Optional[bool] = None
     isHidden: Optional[bool] = None
+    isConfidential: Optional[bool] = None
 
 class BookingResponse(BookingBase):
     id: str

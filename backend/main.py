@@ -155,6 +155,8 @@ try:
         ensure_column("bookings", "manual_id", "VARCHAR(191)")
         ensure_column("bookings", "email", "VARCHAR(191)")
         ensure_column("bookings", "is_hidden", "BOOLEAN DEFAULT 0" if engine.name == "sqlite" else "BOOLEAN DEFAULT FALSE")
+        ensure_column("bookings", "is_confidential", "BOOLEAN DEFAULT 0" if engine.name == "sqlite" else "BOOLEAN DEFAULT FALSE")
+        ensure_column("manager_accounts", "can_view_confidential", "BOOLEAN DEFAULT 0" if engine.name == "sqlite" else "BOOLEAN DEFAULT FALSE")
         ensure_column("bookings", "booking_type", "VARCHAR(191) DEFAULT 'Walk-in'")
         ensure_column("bookings", "is_prepaid", "BOOLEAN DEFAULT 0" if engine.name == "sqlite" else "BOOLEAN DEFAULT FALSE")
         ensure_column("bookings", "txn_id", "VARCHAR(191)")
@@ -683,6 +685,7 @@ def get_manager_me(
             "name": mgr.name,
             "email": mgr.email,
             "phone": getattr(mgr, "phone", None),
+            "canViewConfidential": mgr.role in ["Overall Admin", "Super Admin", "Admin"] or bool(mgr.can_view_confidential),
             "role": effective_role,
             "properties": prop_responses,
             "activeProperty": active_prop
@@ -1307,6 +1310,7 @@ def format_booking_response(b: BookingModel) -> BookingResponse:
         isPrepaid=bool(b.is_prepaid),
         isGuaranteed=bool(b.is_guaranteed),
         isHidden=bool(b.is_hidden),
+        isConfidential=bool(b.is_confidential),
         createdAt=b.created_at,
         confirmedAt=b.confirmed_at,
         paymentOption=b.payment_option
@@ -1330,6 +1334,32 @@ def format_bill_response(b: BillModel, prop_name: Optional[str] = None) -> BillR
         total=b.total,
         date=b.date
     )
+
+
+# --- HIDDEN (CONFIDENTIAL) BOOKINGS ---
+# A confidential booking still blocks its room, but it is left out of every list, total, report and export.
+# Only admin roles, and managers with can_view_confidential, can see or create them.
+def confidential_access_allowed(authorization: Optional[str], db: Session) -> bool:
+    if not authorization or not authorization.startswith("Bearer "):
+        return False
+    try:
+        payload = jwt.decode(authorization.split(" ")[1], SECRET_KEY, algorithms=[ALGORITHM])
+    except Exception:
+        return False
+    manager_id = payload.get("manager_id")
+    if not manager_id:
+        return False
+    mgr = db.query(ManagerAccount).filter(ManagerAccount.id == manager_id).first()
+    if not mgr:
+        return False
+    return mgr.role in ["Overall Admin", "Super Admin", "Admin"] or bool(mgr.can_view_confidential)
+
+
+def confidential_booking_ids(db: Session, firm_id: Optional[str] = None) -> set:
+    query = db.query(BookingModel.id).filter(BookingModel.is_confidential == True)
+    if firm_id:
+        query = query.filter(BookingModel.firm_id == firm_id)
+    return {row[0] for row in query.all()}
 
 
 # --- CONSOLIDATED FAST SYNC ENDPOINT ---
@@ -1357,7 +1387,7 @@ def sync_property_data(
             has_expired_updates = True
     if has_expired_updates:
         db.commit()
-    booking_list = [format_booking_response(b) for b in bookings]
+    booking_list = [format_booking_response(b) for b in bookings if not b.is_confidential]
 
     # Detailed Room Objects with real-time occupancy and availability
     valid_non_staff_rooms = set(r.room_number for r in rooms if not r.is_staff_room)
@@ -1401,8 +1431,9 @@ def sync_property_data(
     ]
 
     # Bills
+    hidden_ids = confidential_booking_ids(db, current_user.firm_id)
     bills = db.query(BillModel).filter(BillModel.firm_id == current_user.firm_id).all()
-    bill_list = [format_bill_response(b, current_user.firm_name) for b in bills]
+    bill_list = [format_bill_response(b, current_user.firm_name) for b in bills if b.booking_id not in hidden_ids]
 
     # Register state
     reg_state = db.query(RegisterStateModel).filter(RegisterStateModel.firm_id == current_user.firm_id).first()
@@ -1679,6 +1710,40 @@ def delete_room(
 
 # --- BOOKINGS ENDPOINTS ---
 
+@app.get("/api/bookings/confidential", response_model=List[BookingResponse])
+def list_confidential_bookings(
+    authorization: Optional[str] = Header(None),
+    current_user: PropertyAccount = Depends(get_current_property),
+    db: Session = Depends(get_db)
+):
+    """Hidden (confidential) bookings for the active property. Admin roles and permitted managers only."""
+    if not confidential_access_allowed(authorization, db):
+        raise HTTPException(status_code=403, detail="You do not have access to hidden bookings.")
+    rows = db.query(BookingModel).filter(
+        BookingModel.firm_id == current_user.firm_id,
+        BookingModel.is_confidential == True
+    ).order_by(BookingModel.check_in.desc()).all()
+    return [format_booking_response(b) for b in rows]
+
+
+@app.patch("/api/managers/{manager_id}/confidential-access")
+def set_manager_confidential_access(
+    manager_id: str,
+    body: dict,
+    mgr_token_payload: dict = Depends(get_manager_me),
+    db: Session = Depends(get_db)
+):
+    """Admins decide which managers can view and create hidden bookings."""
+    if mgr_token_payload.get("role") not in ["Overall Admin", "Super Admin", "Admin"]:
+        raise HTTPException(status_code=403, detail="Only admin accounts can change hidden-booking access.")
+    mgr = db.query(ManagerAccount).filter(ManagerAccount.id == manager_id).first()
+    if not mgr:
+        raise HTTPException(status_code=404, detail="Manager not found.")
+    mgr.can_view_confidential = bool(body.get("canViewConfidential"))
+    db.commit()
+    return {"id": mgr.id, "canViewConfidential": bool(mgr.can_view_confidential)}
+
+
 @app.get("/api/bookings/all-properties")
 def list_bookings_all_properties(
     mgr_payload: dict = Depends(get_manager_me),
@@ -1689,13 +1754,48 @@ def list_bookings_all_properties(
         raise HTTPException(status_code=403, detail="Only admin accounts can view bookings across all properties.")
     props = {p.firm_id: p for p in db.query(PropertyAccount).all()}
     rows = []
-    for b in db.query(BookingModel).order_by(BookingModel.created_at.desc()).all():
+    for b in db.query(BookingModel).filter(BookingModel.is_confidential == False).order_by(BookingModel.created_at.desc()).all():
         data = format_booking_response(b).model_dump()
         prop = props.get(b.firm_id)
         data["propertyCode"] = (prop.property_code if prop else None) or ""
         data["propertyName"] = (prop.firm_name if prop else None) or ""
         rows.append(data)
     return rows
+
+
+@app.get("/api/admin/report-records")
+def get_report_records(
+    mgr_payload: dict = Depends(get_manager_me),
+    db: Session = Depends(get_db)
+):
+    """Bookings, bills and expenses across every property, for report downloads (admin accounts only)."""
+    if mgr_payload.get("role") not in ["Overall Admin", "Super Admin", "Admin"]:
+        raise HTTPException(status_code=403, detail="Only admin accounts can export reports across all properties.")
+
+    props = {p.firm_id: p for p in db.query(PropertyAccount).all()}
+
+    def owner(firm_id):
+        prop = props.get(firm_id)
+        return {
+            "firmId": firm_id,
+            "propertyCode": (prop.property_code if prop else None) or "",
+            "propertyName": (prop.firm_name if prop else None) or "",
+        }
+
+    hidden_ids = confidential_booking_ids(db)
+    bookings = [
+        {**format_booking_response(b).model_dump(), **owner(b.firm_id)}
+        for b in db.query(BookingModel).all() if not b.is_confidential
+    ]
+    bills = [
+        {**format_bill_response(b, props[b.firm_id].firm_name if b.firm_id in props else None).model_dump(), **owner(b.firm_id)}
+        for b in db.query(BillModel).all() if b.booking_id not in hidden_ids
+    ]
+    expenses = [
+        {"id": e.id, "date": e.date, "category": e.category, "description": e.description or "", "amount": e.amount, **owner(e.firm_id)}
+        for e in db.query(ExpenseModel).all()
+    ]
+    return {"bookings": bookings, "bills": bills, "expenses": expenses}
 
 
 @app.get("/api/bookings", response_model=List[BookingResponse])
@@ -1712,7 +1812,7 @@ def get_bookings(
             has_expired_updates = True
     if has_expired_updates:
         db.commit()
-    res = [format_booking_response(b) for b in bookings]
+    res = [format_booking_response(b) for b in bookings if not b.is_confidential]
     return res
 
 
@@ -1739,8 +1839,11 @@ def generate_next_booking_id(db: Session) -> str:
 def create_booking(
     req: BookingCreate,
     current_user: PropertyAccount = Depends(get_current_property),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    authorization: Optional[str] = Header(None)
 ):
+    if req.isConfidential and not confidential_access_allowed(authorization, db):
+        raise HTTPException(status_code=403, detail="You do not have access to create hidden bookings.")
     booking_id = None
     if req.id:
         existing = db.query(BookingModel).filter(BookingModel.id == req.id).first()
@@ -1839,6 +1942,7 @@ def create_booking(
         is_prepaid=effective_is_prepaid,
         is_guaranteed=effective_is_guaranteed,
         is_hidden=bool(req.isHidden),
+        is_confidential=bool(req.isConfidential),
         created_at=now_iso,
         confirmed_at=now_iso if (req.status or "Upcoming") == "Upcoming" else None,
         payment_option=req.paymentOption
@@ -2201,7 +2305,8 @@ def update_booking(
     booking_id: str,
     req: BookingUpdate,
     current_user: PropertyAccount = Depends(get_current_property),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    authorization: Optional[str] = Header(None)
 ):
     b = db.query(BookingModel).filter(
         BookingModel.id == booking_id,
@@ -2286,6 +2391,12 @@ def update_booking(
         b.is_guaranteed = req.isGuaranteed
     if req.isHidden is not None:
         b.is_hidden = req.isHidden
+    if b.is_confidential and not confidential_access_allowed(authorization, db):
+        raise HTTPException(status_code=404, detail="Booking not found.")
+    if req.isConfidential is not None:
+        if req.isConfidential != bool(b.is_confidential) and not confidential_access_allowed(authorization, db):
+            raise HTTPException(status_code=403, detail="You do not have access to change hidden bookings.")
+        b.is_confidential = req.isConfidential
 
     # Recalculate the payment status from the amounts unless one was given explicitly
     if req.paymentStatus is None:
@@ -2300,12 +2411,15 @@ def update_booking(
 def delete_booking(
     booking_id: str,
     current_user: PropertyAccount = Depends(get_current_property),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    authorization: Optional[str] = Header(None)
 ):
     b = db.query(BookingModel).filter(
         BookingModel.id == booking_id,
         BookingModel.firm_id == current_user.firm_id
     ).first()
+    if b and b.is_confidential and not confidential_access_allowed(authorization, db):
+        raise HTTPException(status_code=404, detail="Booking not found.")
     if b:
         db.delete(b)
         db.commit()
@@ -2860,6 +2974,7 @@ def list_managers(
             "propertyId": assigned_prop.firm_id if assigned_prop else None,
             "propertyCode": assigned_prop.property_code if assigned_prop else ("ALL" if role_label == "Admin" else None),
             "propertyName": assigned_prop.firm_name if assigned_prop else ("All Properties" if role_label == "Admin" else "Unassigned"),
+            "canViewConfidential": bool(m.can_view_confidential),
             "tempPassword": m.temp_password_plain if caller_role in ["Overall Admin", "Super Admin"] else None
         })
     return result
@@ -3172,10 +3287,11 @@ def get_admin_properties_summary(
     for p in properties:
         rooms = db.query(RoomModel).filter(RoomModel.firm_id == p.firm_id, RoomModel.is_staff_room == False).all()
         total_rooms = len(rooms)
-        all_bookings = db.query(BookingModel).filter(BookingModel.firm_id == p.firm_id, BookingModel.is_hidden == False).all()
+        occupancy_bookings = db.query(BookingModel).filter(BookingModel.firm_id == p.firm_id, BookingModel.is_hidden == False).all()
+        all_bookings = [b for b in occupancy_bookings if not b.is_confidential]
 
         in_house_stays = [b for b in all_bookings if b.status in ["In-House", "Checked-In"]]
-        occupied_rooms = len(set(b.room for b in in_house_stays if b.room))
+        occupied_rooms = len(set(b.room for b in occupancy_bookings if b.status in ["In-House", "Checked-In"] and b.room))
 
         # Financials
         today_income = sum(b.amount_paid or 0.0 for b in all_bookings if b.check_in == today_str and b.payment_status != "Unpaid")
@@ -3227,9 +3343,10 @@ def get_consolidated_financial_logs(
         raise HTTPException(status_code=403, detail="Unauthorized.")
 
     properties = {p.firm_id: p for p in db.query(PropertyAccount).all()}
-    all_bills = db.query(BillModel).order_by(BillModel.date.desc()).all()
+    hidden_ids = confidential_booking_ids(db)
+    all_bills = [b for b in db.query(BillModel).order_by(BillModel.date.desc()).all() if b.booking_id not in hidden_ids]
     all_expenses = db.query(ExpenseModel).order_by(ExpenseModel.date.desc()).all()
-    all_bookings = db.query(BookingModel).filter(BookingModel.is_hidden == False).order_by(BookingModel.check_in.desc()).all()
+    all_bookings = db.query(BookingModel).filter(BookingModel.is_hidden == False, BookingModel.is_confidential == False).order_by(BookingModel.check_in.desc()).all()
 
     bill_logs = []
     for b in all_bills:
