@@ -12,6 +12,24 @@ import os
 import sys
 from datetime import datetime, timedelta, timezone
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+PARENT_DIR = os.path.dirname(BASE_DIR)
+for path_dir in (BASE_DIR, PARENT_DIR):
+    if path_dir not in sys.path:
+        sys.path.insert(0, path_dir)
+
+try:
+    from dotenv import load_dotenv
+    for env_file in [
+        os.path.join(BASE_DIR, ".env"),
+        os.path.join(PARENT_DIR, ".env"),
+        os.path.join(os.getcwd(), ".env")
+    ]:
+        if os.path.isfile(env_file):
+            load_dotenv(env_file)
+except ImportError:
+    pass
+
 from cryptography.fernet import Fernet
 from sqlalchemy import select
 

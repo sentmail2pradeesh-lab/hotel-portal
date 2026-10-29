@@ -313,7 +313,7 @@ export const Overview = () => {
     return [...bookings]
       .sort((a, b) => new Date(b.createdAt || b.checkIn || 0) - new Date(a.createdAt || a.checkIn || 0))
       .slice(0, 5);
-  }, [liveBookings]);
+  }, [bookings]);
 
   // Open Edit Room Modal
   const handleOpenEditRoom = (roomNum) => {

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, ConfigDict
 from typing import Optional, List, Any
 
 class ManagerRegisterRequest(BaseModel):
@@ -103,6 +103,8 @@ class UserProfileResponse(BaseModel):
     eSignature: Optional[str] = None
     address: Optional[str] = None
     phone: Optional[str] = None
+    mapLocation: Optional[str] = None
+    checkinBufferMinutes: Optional[int] = 120
     sessionTimeoutMinutes: int = 15
     role: str = "Property Manager"
     initials: str
@@ -136,7 +138,7 @@ class BookingBase(BaseModel):
     checkOut: str
     amountPaid: float = 0.0
     totalAmount: Optional[float] = 0.0
-    paymentStatus: Optional[str] = "Fully Paid"
+    paymentStatus: Optional[str] = None
     paidVia: Optional[str] = "Cash"
     txnId: Optional[str] = None
     notes: Optional[str] = ""
@@ -190,9 +192,7 @@ class BookingResponse(BookingBase):
     id: str
     createdAt: Optional[str] = None
     confirmedAt: Optional[str] = None
-
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class BulkImportBookingItem(BaseModel):
     id: Optional[str] = None
@@ -208,7 +208,7 @@ class BulkImportBookingItem(BaseModel):
     checkOut: str
     amountPaid: Optional[float] = 0.0
     totalAmount: Optional[float] = 0.0
-    paymentStatus: Optional[str] = "Fully Paid"
+    paymentStatus: Optional[str] = None
     paidVia: Optional[str] = "Cash"
     txnId: Optional[str] = None
     notes: Optional[str] = ""
@@ -248,12 +248,16 @@ class ExpenseBase(BaseModel):
 class ExpenseCreate(ExpenseBase):
     pass
 
+class ExpenseUpdate(BaseModel):
+    date: Optional[str] = None
+    category: Optional[str] = None
+    description: Optional[str] = None
+    amount: Optional[float] = None
+
 class ExpenseResponse(ExpenseBase):
     id: str
     createdAt: Optional[str] = None
-
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class AddOnItem(BaseModel):
     id: str
@@ -287,9 +291,7 @@ class BillUpdate(BaseModel):
 
 class BillResponse(BillBase):
     id: str
-
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class RoomCreate(BaseModel):
     roomNumber: str
@@ -327,9 +329,7 @@ class InvitationResponse(BaseModel):
     status: str
     inviteUrl: str
     createdAt: str
-
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class AcceptInvitationRequest(BaseModel):
     token: str
@@ -371,7 +371,5 @@ class EmployeeResponse(BaseModel):
     phone: Optional[str] = None
     email: Optional[str] = None
     createdAt: Optional[str] = None
-
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 

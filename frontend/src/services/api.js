@@ -470,6 +470,13 @@ export const api = {
     }, 2, 'Failed to create expense.');
   },
 
+  async updateExpense(expenseId, expenseData) {
+    return await apiFetch(`/expenses/${encodeURIComponent(expenseId)}`, {
+      method: 'PUT',
+      body: JSON.stringify(expenseData)
+    }, 2, 'Failed to update expense.');
+  },
+
   async deleteExpense(expenseId) {
     return await apiFetch(`/expenses/${encodeURIComponent(expenseId)}`, {
       method: 'DELETE'

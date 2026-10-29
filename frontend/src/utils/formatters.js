@@ -21,6 +21,13 @@ export const formatCurrency = (amount) => {
 export const formatDate = (dateStr) => {
   if (!dateStr) return '—';
   try {
+    if (typeof dateStr === 'string') {
+      const match = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (match) {
+        const [, year, month, day] = match;
+        return `${day}/${month}/${year}`;
+      }
+    }
     const d = new Date(dateStr);
     if (isNaN(d.getTime())) return dateStr;
     const day = String(d.getDate()).padStart(2, '0');

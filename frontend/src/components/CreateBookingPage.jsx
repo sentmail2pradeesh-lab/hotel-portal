@@ -66,6 +66,7 @@ export const CreateBookingPage = () => {
   const [foreignData, setForeignData] = useState(null);
   const isActiveTarget = !targetFirmId || targetFirmId === activePropertyId;
   const targetCode = (propertiesList || []).find(p => p.firmId === targetFirmId)?.propertyCode || currentUser?.propertyCode;
+  const [errorMsg, setErrorMsg] = useState('');
 
   useEffect(() => {
     if (isActiveTarget) {
@@ -183,7 +184,6 @@ export const CreateBookingPage = () => {
   const [showSummaryModal, setShowSummaryModal] = useState(false);
   const [pendingActionType, setPendingActionType] = useState('save'); // 'save' | 'draft' | 'save_and_bill'
   const [submitting, setSubmitting] = useState(false);
-  const [errorMsg, setErrorMsg] = useState('');
 
   // Auto update channel based on payment option (Requirements 8, 9)
   useEffect(() => {

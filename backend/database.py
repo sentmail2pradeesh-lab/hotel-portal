@@ -8,6 +8,18 @@ for path_dir in (BASE_DIR, PARENT_DIR):
         sys.path.insert(0, path_dir)
 
 try:
+    from dotenv import load_dotenv
+    for env_file in [
+        os.path.join(BASE_DIR, ".env"),
+        os.path.join(PARENT_DIR, ".env"),
+        os.path.join(os.getcwd(), ".env")
+    ]:
+        if os.path.isfile(env_file):
+            load_dotenv(env_file)
+except ImportError:
+    pass
+
+try:
     import pymysql
     pymysql.install_as_MySQLdb()
 except Exception:

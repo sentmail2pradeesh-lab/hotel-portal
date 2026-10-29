@@ -3528,8 +3528,10 @@ button:disabled,
 /* Booking History Tabs */
 .booking-tabs-container {
   display: flex;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 8px;
+  max-width: 100%;
   background: #f1f5f9;
   padding: 4px;
   border-radius: var(--radius-md);
@@ -3538,8 +3540,10 @@ button:disabled,
 
 .booking-tab-btn {
   display: inline-flex;
+  flex-shrink: 0;
   align-items: center;
   gap: 8px;
+  white-space: nowrap;
   padding: 8px 16px;
   font-size: 13px;
   font-weight: 700;
@@ -3554,6 +3558,18 @@ button:disabled,
 .booking-tab-btn:hover {
   color: var(--text-main);
   background: rgba(255, 255, 255, 0.6);
+}
+
+@media (max-width: 1400px) {
+  .booking-tabs-container {
+    gap: 4px;
+  }
+
+  .booking-tab-btn {
+    gap: 6px;
+    padding: 8px 10px;
+    font-size: 12px;
+  }
 }
 
 .booking-tab-btn.active {

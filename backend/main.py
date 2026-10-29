@@ -23,18 +23,24 @@ try:
 except ImportError:
     pass
 
-try:
-    from dotenv import load_dotenv
-    load_dotenv()
-except ImportError:
-    pass
-
 # Ensure both backend/ and parent project directory are available on sys.path
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PARENT_DIR = os.path.dirname(BASE_DIR)
 for path_dir in (BASE_DIR, PARENT_DIR):
     if path_dir not in sys.path:
         sys.path.insert(0, path_dir)
+
+try:
+    from dotenv import load_dotenv
+    for env_file in [
+        os.path.join(BASE_DIR, ".env"),
+        os.path.join(PARENT_DIR, ".env"),
+        os.path.join(os.getcwd(), ".env")
+    ]:
+        if os.path.isfile(env_file):
+            load_dotenv(env_file)
+except ImportError:
+    pass
 
 try:
     from backend.database import engine, Base, get_db, SessionLocal
@@ -49,7 +55,7 @@ try:
         RegisterRequest, LoginRequest, UserProfileResponse, ProfileUpdateRequest,
         BookingCreate, BookingUpdate, BookingResponse, AllotRoomRequest, EarlyCheckoutRequest,
         BulkImportRequest, BulkImportResponse,
-        ExpenseCreate, ExpenseResponse,
+        ExpenseCreate, ExpenseUpdate, ExpenseResponse,
         BillCreate, BillUpdate, BillResponse,
         RoomCreate, RoomUpdate, BulkRoomsCreate, RoomDetailResponse, RegisterStateResponse,
         InvitationCreateRequest, InvitationResponse, AcceptInvitationRequest,
@@ -69,7 +75,7 @@ except (ModuleNotFoundError, ImportError):
         RegisterRequest, LoginRequest, UserProfileResponse, ProfileUpdateRequest,
         BookingCreate, BookingUpdate, BookingResponse, AllotRoomRequest, EarlyCheckoutRequest,
         BulkImportRequest, BulkImportResponse,
-        ExpenseCreate, ExpenseResponse,
+        ExpenseCreate, ExpenseUpdate, ExpenseResponse,
         BillCreate, BillUpdate, BillResponse,
         RoomCreate, RoomUpdate, BulkRoomsCreate, RoomDetailResponse, RegisterStateResponse,
         InvitationCreateRequest, InvitationResponse, AcceptInvitationRequest,
@@ -291,6 +297,7 @@ def sanitize_orphan_rooms():
                         if avail:
                             print(f"[Sanitizer] Reassigning in-house stay {b.id} ({b.guest_name}) from invalid room '{b.room}' to '{avail.room_number}'")
                             b.room = avail.room_number
+                            occupied_rooms.add(avail.room_number)
                         else:
                             b.room = ""
                     else:
@@ -408,18 +415,22 @@ def get_current_property(
     except Exception:
         raise HTTPException(status_code=401, detail="Could not validate credentials.")
 
+    clean_prop_id = x_property_id.strip() if x_property_id else None
+    if clean_prop_id in ["null", "undefined", ""]:
+        clean_prop_id = None
+
     if manager_id:
         mgr = db.query(ManagerAccount).filter(ManagerAccount.id == manager_id).first()
         is_privileged = mgr and (mgr.role in ["Overall Admin", "Super Admin", "Admin"])
         # Never fall back to another property: a wrong or missing property must not receive writes silently
-        if x_property_id:
+        if clean_prop_id:
             if is_privileged:
                 prop = db.query(PropertyAccount).filter(
-                    (PropertyAccount.firm_id == x_property_id) | (PropertyAccount.property_code == x_property_id)
+                    (PropertyAccount.firm_id == clean_prop_id) | (PropertyAccount.property_code == clean_prop_id)
                 ).first()
             else:
                 prop = db.query(PropertyAccount).filter(
-                    ((PropertyAccount.firm_id == x_property_id) | (PropertyAccount.property_code == x_property_id)),
+                    ((PropertyAccount.firm_id == clean_prop_id) | (PropertyAccount.property_code == clean_prop_id)),
                     PropertyAccount.manager_id == manager_id
                 ).first()
             if prop:
@@ -527,7 +538,12 @@ def register_manager(req: ManagerRegisterRequest, db: Session = Depends(get_db))
     db.commit()
     db.refresh(new_mgr)
 
-    token = create_access_token({"manager_id": mgr_id})
+    token = create_access_token({
+        "sub": mgr_id,
+        "manager_id": mgr_id,
+        "role": "Manager",
+        "email": new_mgr.email
+    })
     return {
         "token": token,
         "manager": {
@@ -995,6 +1011,8 @@ def delete_property(
     db.query(RoomModel).filter(RoomModel.firm_id == firm_id).delete()
     db.query(ExpenseModel).filter(ExpenseModel.firm_id == firm_id).delete()
     db.query(BillModel).filter(BillModel.firm_id == firm_id).delete()
+    db.query(EmployeeModel).filter(EmployeeModel.firm_id == firm_id).delete()
+    db.query(DocumentModel).filter(DocumentModel.firm_id == firm_id).delete()
     db.query(RegisterStateModel).filter(RegisterStateModel.firm_id == firm_id).delete()
     db.query(InvitationModel).filter(InvitationModel.property_id == firm_id).delete()
 
@@ -1697,14 +1715,27 @@ def delete_room(
         RoomModel.firm_id == current_user.firm_id,
         RoomModel.room_number == room_number
     ).first()
-    if room:
-        # Cascade unallot any bookings that had this room
-        db.query(BookingModel).filter(
-            BookingModel.firm_id == current_user.firm_id,
-            BookingModel.room == room_number
-        ).update({"room": ""}, synchronize_session=False)
-        db.delete(room)
-        db.commit()
+    if not room:
+        raise HTTPException(status_code=404, detail=f"Room '{room_number}' not found.")
+
+    occupied = db.query(BookingModel).filter(
+        BookingModel.firm_id == current_user.firm_id,
+        BookingModel.room == room_number,
+        BookingModel.status.in_(["In-House", "Checked-In"])
+    ).first()
+    if occupied:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot delete Room '{room_number}' because guest '{occupied.guest_name}' is currently staying in it. Check out the guest first."
+        )
+
+    # Cascade unallot any bookings that had this room
+    db.query(BookingModel).filter(
+        BookingModel.firm_id == current_user.firm_id,
+        BookingModel.room == room_number
+    ).update({"room": ""}, synchronize_session=False)
+    db.delete(room)
+    db.commit()
     return {"success": True}
 
 
@@ -1870,6 +1901,13 @@ def create_booking(
 
     is_draft = (req.status == "Draft")
 
+    clean_in = (req.checkIn or "").strip()
+    clean_out = (req.checkOut or "").strip()
+    if not clean_in or not clean_out:
+        raise HTTPException(status_code=400, detail="Check-in and check-out dates are mandatory.")
+    if clean_out <= clean_in:
+        raise HTTPException(status_code=400, detail="Check-out date must be strictly after check-in date.")
+
     allocated_room = req.room.strip() if (req.room and req.room.strip()) else ""
     if allocated_room and not is_draft:
         room_rec = db.query(RoomModel).filter(
@@ -1880,6 +1918,21 @@ def create_booking(
             raise HTTPException(status_code=400, detail=f"Room suite '{allocated_room}' does not exist in property inventory.")
         if room_rec.is_staff_room:
             raise HTTPException(status_code=400, detail=f"Room '{allocated_room}' is a designated staff room and cannot be assigned to guests.")
+
+        # Check date collision with other active bookings for the same room
+        conflicts = db.query(BookingModel).filter(
+            BookingModel.firm_id == current_user.firm_id,
+            BookingModel.room == allocated_room,
+            BookingModel.status.in_(["In-House", "Checked-In", "Upcoming", "Confirmed"]),
+            BookingModel.check_in < clean_out,
+            BookingModel.check_out > clean_in
+        ).all()
+        if conflicts:
+            c_names = ", ".join([c.guest_name for c in conflicts])
+            raise HTTPException(
+                status_code=400,
+                detail=f"Room {allocated_room} is already occupied or reserved during these stay dates ({clean_in} to {clean_out}) by {c_names}."
+            )
 
     # Document type is mandatory (Requirement 3) for confirmed stays, optional for draft saves
     doc_type = req.idCardType
@@ -1911,6 +1964,13 @@ def create_booking(
     if not clean_guest_name:
         raise HTTPException(status_code=400, detail="Guest name is required.")
 
+    clean_total = float(req.totalAmount if (req.totalAmount is not None and req.totalAmount > 0) else (req.amountPaid or 0.0))
+    clean_paid = float(req.amountPaid or 0.0)
+    calculated_p_status = derive_payment_status(clean_total, clean_paid, clean_paid_via, effective_is_prepaid)
+    clean_p_status = req.paymentStatus or calculated_p_status
+    if clean_total > 0 and clean_paid < clean_total and clean_p_status == "Fully Paid":
+        clean_p_status = "Partially Paid"
+
     new_b = BookingModel(
         id=booking_id,
         manual_id=req.manualId.strip() if req.manualId else booking_id,
@@ -1922,13 +1982,11 @@ def create_booking(
         guest_count=total_guest_cnt,
         adults=adults_cnt,
         children=children_cnt,
-        check_in=req.checkIn,
-        check_out=req.checkOut,
-        amount_paid=req.amountPaid,
-        total_amount=req.totalAmount if (req.totalAmount is not None and req.totalAmount > 0) else req.amountPaid,
-        payment_status=req.paymentStatus or derive_payment_status(
-            req.totalAmount if (req.totalAmount is not None and req.totalAmount > 0) else req.amountPaid,
-            req.amountPaid or 0.0, clean_paid_via, effective_is_prepaid),
+        check_in=clean_in,
+        check_out=clean_out,
+        amount_paid=clean_paid,
+        total_amount=clean_total,
+        payment_status=clean_p_status,
         paid_via=clean_paid_via,
         txn_id=req.txnId.strip() if req.txnId else None,
         notes=req.notes,
@@ -2114,8 +2172,23 @@ def checkin_booking(
     if not b:
         raise HTTPException(status_code=404, detail="Booking not found.")
 
+    if b.status in ["Cancelled", "Archived"]:
+        raise HTTPException(status_code=400, detail=f"Cannot check in a {b.status.lower()} booking.")
+
     if not b.room or not b.room.strip():
         raise HTTPException(status_code=400, detail="Cannot check in without an allotted room suite. Please allot a room first.")
+
+    active_occupant = db.query(BookingModel).filter(
+        BookingModel.firm_id == current_user.firm_id,
+        BookingModel.id != booking_id,
+        BookingModel.room == b.room.strip(),
+        BookingModel.status.in_(["In-House", "Checked-In"])
+    ).first()
+    if active_occupant:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Room {b.room} is currently occupied by guest '{active_occupant.guest_name}'. Check out the current occupant before checking in another guest."
+        )
 
     b.status = "In-House"
     db.commit()
@@ -2138,11 +2211,17 @@ def checkout_booking(
     if not b:
         raise HTTPException(status_code=404, detail="Booking not found.")
 
+    if b.status not in ["In-House", "Checked-In"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot check out a booking with status '{b.status}'. Only in-house guests can be checked out."
+        )
+
     # Requirement 11 & Requirement 7: Checkout not possible if full amount is not paid
     tot = float(b.total_amount or 0.0)
     paid = float(b.amount_paid or 0.0)
-    if b.payment_status == "Unpaid" or (tot > 0 and paid < tot and b.payment_status not in ["Fully Paid", "Pre paid"]):
-        outstanding = tot - paid
+    if (tot > 0 and paid < tot) or b.payment_status in ["Unpaid", "Partially Paid"]:
+        outstanding = max(0.0, tot - paid)
         raise HTTPException(
             status_code=400,
             detail=f"Checkout blocked: Full payment is required before checkout. Outstanding balance: ₹{outstanding:,.2f}. Please collect full payment to proceed."
@@ -2170,11 +2249,17 @@ def early_checkout_booking(
     if not b:
         raise HTTPException(status_code=404, detail="Booking not found.")
 
+    if b.status not in ["In-House", "Checked-In"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot perform early check-out on a booking with status '{b.status}'. Only in-house guests can be checked out."
+        )
+
     # Requirement 11 & Requirement 7: Checkout not possible if full amount is not paid
     tot = float(b.total_amount or 0.0)
     paid = float(b.amount_paid or 0.0)
-    if b.payment_status == "Unpaid" or (tot > 0 and paid < tot and b.payment_status not in ["Fully Paid", "Pre paid"]):
-        outstanding = tot - paid
+    if (tot > 0 and paid < tot) or b.payment_status in ["Unpaid", "Partially Paid"]:
+        outstanding = max(0.0, tot - paid)
         raise HTTPException(
             status_code=400,
             detail=f"Checkout blocked: Full payment is required before checkout. Outstanding balance: ₹{outstanding:,.2f}. Please collect full payment to proceed."
@@ -2259,6 +2344,9 @@ def allot_room(
     if not b:
         raise HTTPException(status_code=404, detail="Booking not found.")
 
+    if b.status in ["Cancelled", "Archived", "Completed"]:
+        raise HTTPException(status_code=400, detail=f"Cannot allot a room to a {b.status.lower()} booking.")
+
     target_room = req.room.strip() if req.room else ""
     if not target_room:
         raise HTTPException(status_code=400, detail="Room suite number is required.")
@@ -2315,6 +2403,29 @@ def update_booking(
 
     if not b:
         raise HTTPException(status_code=404, detail="Booking not found.")
+
+    eff_checkin = (req.checkIn or b.check_in).strip()
+    eff_checkout = (req.checkOut or b.check_out).strip()
+    if eff_checkout <= eff_checkin:
+        raise HTTPException(status_code=400, detail="Check-out date must be strictly after check-in date.")
+
+    eff_room = (req.room.strip() if req.room is not None else (b.room or "")).strip()
+    eff_status = req.status or b.status or "Upcoming"
+    if eff_room and eff_status in ["In-House", "Checked-In", "Upcoming", "Confirmed"]:
+        conflicts = db.query(BookingModel).filter(
+            BookingModel.firm_id == current_user.firm_id,
+            BookingModel.id != booking_id,
+            BookingModel.room == eff_room,
+            BookingModel.status.in_(["In-House", "Checked-In", "Upcoming", "Confirmed"]),
+            BookingModel.check_in < eff_checkout,
+            BookingModel.check_out > eff_checkin
+        ).all()
+        if conflicts:
+            c_names = ", ".join([c.guest_name for c in conflicts])
+            raise HTTPException(
+                status_code=400,
+                detail=f"Room {eff_room} is already occupied or reserved during these stay dates ({eff_checkin} to {eff_checkout}) by {c_names}."
+            )
 
     if req.manualId is not None:
         b.manual_id = req.manualId.strip()
@@ -2398,9 +2509,15 @@ def update_booking(
             raise HTTPException(status_code=403, detail="You do not have access to change hidden bookings.")
         b.is_confidential = req.isConfidential
 
-    # Recalculate the payment status from the amounts unless one was given explicitly
+    # Recalculate the payment status from the amounts
+    clean_tot = float(b.total_amount if b.total_amount is not None else (b.amount_paid or 0.0))
+    clean_pd = float(b.amount_paid or 0.0)
     if req.paymentStatus is None:
-        b.payment_status = derive_payment_status(float(b.total_amount or 0.0), float(b.amount_paid or 0.0), b.paid_via, bool(b.is_prepaid))
+        b.payment_status = derive_payment_status(clean_tot, clean_pd, b.paid_via, bool(b.is_prepaid))
+    else:
+        b.payment_status = req.paymentStatus
+        if clean_tot > 0 and clean_pd < clean_tot and b.payment_status == "Fully Paid":
+            b.payment_status = "Partially Paid"
     db.commit()
     db.refresh(b)
 
@@ -2478,6 +2595,41 @@ def create_expense(
         description=new_e.description or "",
         amount=new_e.amount,
         createdAt=new_e.created_at
+    )
+
+
+@app.put("/api/expenses/{expense_id}", response_model=ExpenseResponse)
+def update_expense(
+    expense_id: str,
+    req: ExpenseUpdate,
+    current_user: PropertyAccount = Depends(get_current_property),
+    db: Session = Depends(get_db)
+):
+    e = db.query(ExpenseModel).filter(
+        ExpenseModel.id == expense_id,
+        ExpenseModel.firm_id == current_user.firm_id
+    ).first()
+    if not e:
+        raise HTTPException(status_code=404, detail="Expense not found.")
+
+    if req.date is not None:
+        e.date = req.date
+    if req.category is not None:
+        e.category = req.category
+    if req.description is not None:
+        e.description = req.description
+    if req.amount is not None:
+        e.amount = req.amount
+
+    db.commit()
+    db.refresh(e)
+    return ExpenseResponse(
+        id=e.id,
+        date=e.date,
+        category=e.category,
+        description=e.description or "",
+        amount=e.amount,
+        createdAt=e.created_at
     )
 
 
@@ -3287,11 +3439,12 @@ def get_admin_properties_summary(
     for p in properties:
         rooms = db.query(RoomModel).filter(RoomModel.firm_id == p.firm_id, RoomModel.is_staff_room == False).all()
         total_rooms = len(rooms)
+        valid_room_numbers = set(r.room_number for r in rooms)
         occupancy_bookings = db.query(BookingModel).filter(BookingModel.firm_id == p.firm_id, BookingModel.is_hidden == False).all()
         all_bookings = [b for b in occupancy_bookings if not b.is_confidential]
 
         in_house_stays = [b for b in all_bookings if b.status in ["In-House", "Checked-In"]]
-        occupied_rooms = len(set(b.room for b in occupancy_bookings if b.status in ["In-House", "Checked-In"] and b.room))
+        occupied_rooms = len(set(b.room for b in occupancy_bookings if b.status in ["In-House", "Checked-In"] and b.room and b.room.strip() in valid_room_numbers))
 
         # Financials
         today_income = sum(b.amount_paid or 0.0 for b in all_bookings if b.check_in == today_str and b.payment_status != "Unpaid")
@@ -3401,7 +3554,13 @@ def get_consolidated_financial_logs(
             "status": bk.status
         })
 
-    total_revenue = sum(b.total for b in all_bills) + sum(bk.amount_paid or 0.0 for bk in all_bookings if bk.payment_status != "Unpaid")
+    bill_booking_ids = set(b.booking_id for b in all_bills if b.booking_id)
+    bills_rev = sum(b.total for b in all_bills)
+    standalone_booking_rev = sum(
+        bk.amount_paid or 0.0 for bk in all_bookings
+        if bk.id not in bill_booking_ids and bk.payment_status != "Unpaid"
+    )
+    total_revenue = bills_rev + standalone_booking_rev
     total_expenses = sum(e.amount for e in all_expenses)
     total_dues = sum(max(0.0, (bk.total_amount or 0.0) - (bk.amount_paid or 0.0)) for bk in all_bookings if bk.status in ["In-House", "Checked-In"])
 
